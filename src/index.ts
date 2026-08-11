@@ -704,7 +704,7 @@ Instructions:
 5. Add or update tests where practical.
 6. Run lint/tests and summarize results.
 7. Commit the fix on the current branch.
-8. At the end of your response, add a Hindi section titled "पहले क्या था और अब क्या है" that clearly explains what was wrong before and what changed now.
+8. At the end of your response, add a Hindi section titled "à¤ªà¤¹à¤²à¥ à¤à¥à¤¯à¤¾ à¤¥à¤¾ à¤à¤° à¤à¤¬ à¤à¥à¤¯à¤¾ à¤¹à¥" that clearly explains what was wrong before and what changed now.
 
 If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
 }
@@ -725,7 +725,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
     const aiResult = await generateAIContent([
       {
         role: "system",
-        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "पहले क्या था और अब क्या है" explaining the before/after.`,
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "à¤ªà¤¹à¤²à¥ à¤à¥à¤¯à¤¾ à¤¥à¤¾ à¤à¤° à¤à¤¬ à¤à¥à¤¯à¤¾ à¤¹à¥" explaining the before/after.`,
       },
       {
         role: "user",
@@ -1272,12 +1272,12 @@ export function generateEmailHTML(
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
       <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">🙏 ${title}</h1>
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">ð ${title}</h1>
       </div>
       <div style="background: #f8fafc; padding: 32px; color: #334155;">
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
-          <p style="margin: 0;">Om! 🙏</p>
+          <p style="margin: 0;">Om! ð</p>
           <p style="margin: 4px 0 0 0;">${dashboardName} (${childCompany})</p>
         </div>
       </div>
@@ -1293,7 +1293,7 @@ export function generateRedAlertHTML(
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fecaca; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);">
       <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">🚨 ${title}</h1>
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">ð¨ ${title}</h1>
       </div>
       <div style="background: #fff1f2; padding: 32px; color: #881337;">
         ${bodyContent}
@@ -1509,7 +1509,7 @@ async function getAnnouncementRecipients(
 
 function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string; title: string; html: string; text: string } {
   const itemLabel = payload.kind === "course" ? "Course" : "Batch";
-  const hindiLabel = payload.kind === "course" ? "नया कोर्स" : "नया बैच";
+  const hindiLabel = payload.kind === "course" ? "à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸" : "à¤¨à¤¯à¤¾ à¤¬à¥à¤";
   const title = payload.titleHi || payload.title;
   const description = stripHtml(payload.descriptionHi || payload.description || "");
   const details: string[] = [];
@@ -1517,7 +1517,7 @@ function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string
   if (payload.startDate) details.push(`Start date: ${payload.startDate}`);
   if (payload.classDays) details.push(`Class days: ${payload.classDays}`);
   if (payload.classStartTime) details.push(`Class time: ${payload.classStartTime}`);
-  if (payload.priceRupees != null) details.push(`Fees: ₹${payload.priceRupees}`);
+  if (payload.priceRupees != null) details.push(`Fees: â¹${payload.priceRupees}`);
 
   const detailHtml = details.length
     ? `<ul>${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
@@ -1528,10 +1528,10 @@ function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string
 
   return {
     subject: `${hindiLabel}: ${title}`,
-    title: `${hindiLabel} प्रकाशित हुआ`,
+    title: `${hindiLabel} à¤ªà¥à¤°à¤à¤¾à¤¶à¤¿à¤¤ à¤¹à¥à¤`,
     html: `
       <p>Namaste,</p>
-      <p>हमने <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} किया है।</p>
+      <p>à¤¹à¤®à¤¨à¥ <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤</p>
       ${description ? `<p>${escapeHtml(description)}</p>` : ""}
       ${detailHtml}
       ${actionHtml}
@@ -1561,15 +1561,15 @@ async function sendAnnouncementEmails(
 }
 
 function buildSocialPost(payload: AnnouncementPayload): string {
-  const prefix = payload.kind === "course" ? "📚 New Course" : "🎓 New Batch";
+  const prefix = payload.kind === "course" ? "ð New Course" : "ð New Batch";
   const title = payload.titleHi || payload.title;
   const lines = [prefix, title];
   const description = stripHtml(payload.descriptionHi || payload.description || "");
   if (description) lines.push("", description.slice(0, 500));
   if (payload.courseTitle && payload.kind === "batch") lines.push(`Course: ${payload.courseTitle}`);
   if (payload.startDate) lines.push(`Starts: ${payload.startDate}`);
-  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" • ")}`);
-  if (payload.priceRupees != null) lines.push(`Fees: ₹${payload.priceRupees}`);
+  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" â¢ ")}`);
+  if (payload.priceRupees != null) lines.push(`Fees: â¹${payload.priceRupees}`);
   if (payload.url) lines.push("", payload.url);
   lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
   return lines.join("\n");
@@ -1613,8 +1613,8 @@ type SocialIntegrationId = (typeof SOCIAL_INTEGRATION_CONFIG)[number]["id"];
 
 function maskSecretValue(value: string | null): string {
   if (!value) return "";
-  if (value.length <= 8) return "••••";
-  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+  if (value.length <= 8) return "â¢â¢â¢â¢";
+  return `${value.slice(0, 4)}â¢â¢â¢â¢${value.slice(-4)}`;
 }
 
 async function isSocialPlatformEnabled(env: Env, platform: string): Promise<boolean> {
@@ -1793,7 +1793,7 @@ async function handleAdminGoogleCallback(
     return new Response(
       `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0a0a0a;color:#fff;">
         <div style="text-align:center;padding:2rem;border-radius:1rem;border:1px solid #333;background:#111;">
-          <h1 style="color:#22c55e;">✅ Google Calendar Connected</h1>
+          <h1 style="color:#22c55e;">â Google Calendar Connected</h1>
           <p>${userInfo.email ? `Connected as: <strong>${escapeHtml(userInfo.email)}</strong>` : ""}</p>
           <p style="color:#888;font-size:14px;">You can close this tab and return to the Integrations page.</p>
         </div>
@@ -2235,7 +2235,7 @@ async function logAdminActivity(
   details: string,
   ip: string = "Unknown",
 ) {
-  const subject = `🛡️ Admin Activity Alert: ${action}`;
+  const subject = `ð¡ï¸ Admin Activity Alert: ${action}`;
   const title = "Admin Activity Logged";
   const html = `
     <p><strong>Admin:</strong> ${adminEmail}</p>
@@ -2373,7 +2373,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    // Log OTP request for debugging — email and OTP value intentionally excluded from logs
+    // Log OTP request for debugging â email and OTP value intentionally excluded from logs
     console.log(`[OTP GENERATED]`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
@@ -2402,7 +2402,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
             "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)"
           ).bind(email, oldOtpRow.otp, oldOtpRow.expires_at).run();
         } else {
-          // No previous OTP — delete the new one so user can request fresh
+          // No previous OTP â delete the new one so user can request fresh
           await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
         }
       }
@@ -2618,7 +2618,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
     try {
       const clientIp = getClientIP(request);
       const loginTime = getISTTime();
-      const loginSubject = `🔓 Login Alert: ${user.role.toUpperCase()}`;
+      const loginSubject = `ð Login Alert: ${user.role.toUpperCase()}`;
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
@@ -2706,18 +2706,18 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
     // Send Welcome Email
     const welcomeHtml = `
-      <p style="font-size:16px;">नमस्ते <strong>${escapeHtml(full_name)}</strong>,</p>
-      <p>आपका Adityanveshan LMS पर account बन गया है।</p>
+      <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${escapeHtml(full_name)}</strong>,</p>
+      <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
-      <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+      <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
     `;
     const safeName = full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const welcomeText = `नमस्ते ${safeName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${generatedId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+    const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${safeName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${generatedId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
       "Welcome to Adityanveshan",
-      "यज्ञ आश्रम में स्वागत!",
+      "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
       welcomeHtml,
       welcomeText,
     ));
@@ -2764,7 +2764,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   }
 }
 
-// GET /api/auth/validate-session — used by middleware to check if session is still valid
+// GET /api/auth/validate-session â used by middleware to check if session is still valid
 async function handleValidateSession(
   request: Request,
   env: Env,
@@ -2842,7 +2842,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   return response;
 }
 
-// POST /api/auth/refresh — Activity ping: validates session & checks inactivity (1 hour limit)
+// POST /api/auth/refresh â Activity ping: validates session & checks inactivity (1 hour limit)
 // Returns new token if active, 401 if expired or inactive >1h
 async function handleRefreshSession(
   request: Request,
@@ -3048,7 +3048,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
                  }
               }
            } catch {
-              // Invalid/expired session — deny below without IP blacklist
+              // Invalid/expired session â deny below without IP blacklist
            }
         }
         // No valid session credential found. Deny immediately so expired or
@@ -3095,7 +3095,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Without appUrl we cannot verify the origin, so block to prevent CSRF.
       if (origin || referer) return false;
 
-      // No identifying headers at all — allow through to route-level auth
+      // No identifying headers at all â allow through to route-level auth
       return true;
   }
 
@@ -3147,7 +3147,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 // This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
 let _jwtSecretCache: string | null = null;
 let _jwtSecretCacheExpiry = 0;
-const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds — shorter window to limit auth bypass risk on rotation
+const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds â shorter window to limit auth bypass risk on rotation
 
 async function getCachedJwtSecret(env: Env): Promise<string | null> {
   const now = Date.now();
@@ -3174,7 +3174,7 @@ function generateSecureOTP(): string {
 /**
  * Constant-time string comparison to prevent timing attacks on secrets like OTPs.
  * Always compares all characters regardless of where a mismatch occurs.
- * No early returns — same code path for any input length or content.
+ * No early returns â same code path for any input length or content.
  */
 function timingSafeEqual(a: string, b: string): boolean {
   const aBytes = new TextEncoder().encode(a);
@@ -3220,7 +3220,7 @@ function generateBatchId(courseId: string): string {
 }
 
 // ================================================================
-// 📡 BROADCAST HELPERS — DataSyncDO ke through WebSocket broadcast
+// ð¡ BROADCAST HELPERS â DataSyncDO ke through WebSocket broadcast
 // ================================================================
 
 /**
@@ -3258,7 +3258,7 @@ async function broadcastToAll(env: Env, type: string, data: any): Promise<void> 
     const stub = env.DATA_SYNC_DO.get(doId);
     await stub.fetch("http://do/broadcast", {
       method: "POST",
-      body: JSON.stringify({ type, data }),  // No userId → broadcasts to ALL WS
+      body: JSON.stringify({ type, data }),  // No userId â broadcasts to ALL WS
     });
   } catch (e) {
     console.error("[Broadcast] Global broadcast failed:", e);
@@ -3359,16 +3359,16 @@ function transliterateFirstLetter(char: string): string {
 
   // Devanagari (Hindi, Marathi, Sanskrit) first-letter mappings
   const DEVANAGARI_MAP: Record<string, string> = {
-    'अ': 'A', 'आ': 'A', 'इ': 'I', 'ई': 'I', 'उ': 'U', 'ऊ': 'U',
-    'ए': 'E', 'ऐ': 'A', 'ओ': 'O', 'औ': 'O',
-    'क': 'K', 'ख': 'K', 'ग': 'G', 'घ': 'G', 'ङ': 'N',
-    'च': 'C', 'छ': 'C', 'ज': 'J', 'झ': 'J', 'ञ': 'N',
-    'ट': 'T', 'ठ': 'T', 'ड': 'D', 'ढ': 'D', 'ण': 'N',
-    'त': 'T', 'थ': 'T', 'द': 'D', 'ध': 'D', 'न': 'N',
-    'प': 'P', 'फ': 'P', 'ब': 'B', 'भ': 'B', 'म': 'M',
-    'य': 'Y', 'र': 'R', 'ल': 'L', 'व': 'V',
-    'श': 'S', 'ष': 'S', 'स': 'S', 'ह': 'H',
-    'ळ': 'L', 'क्ष': 'K', 'ज्ञ': 'J',
+    'à¤': 'A', 'à¤': 'A', 'à¤': 'I', 'à¤': 'I', 'à¤': 'U', 'à¤': 'U',
+    'à¤': 'E', 'à¤': 'A', 'à¤': 'O', 'à¤': 'O',
+    'à¤': 'K', 'à¤': 'K', 'à¤': 'G', 'à¤': 'G', 'à¤': 'N',
+    'à¤': 'C', 'à¤': 'C', 'à¤': 'J', 'à¤': 'J', 'à¤': 'N',
+    'à¤': 'T', 'à¤ ': 'T', 'à¤¡': 'D', 'à¤¢': 'D', 'à¤£': 'N',
+    'à¤¤': 'T', 'à¤¥': 'T', 'à¤¦': 'D', 'à¤§': 'D', 'à¤¨': 'N',
+    'à¤ª': 'P', 'à¤«': 'P', 'à¤¬': 'B', 'à¤­': 'B', 'à¤®': 'M',
+    'à¤¯': 'Y', 'à¤°': 'R', 'à¤²': 'L', 'à¤µ': 'V',
+    'à¤¶': 'S', 'à¤·': 'S', 'à¤¸': 'S', 'à¤¹': 'H',
+    'à¤³': 'L', 'à¤à¥à¤·': 'K', 'à¤à¥à¤': 'J',
   };
 
   const devMap = DEVANAGARI_MAP[char] || DEVANAGARI_MAP[upper];
@@ -3376,108 +3376,108 @@ function transliterateFirstLetter(char: string): string {
 
   // Bengali
   const BENGALI_MAP: Record<string, string> = {
-    'অ': 'A', 'আ': 'A', 'ই': 'I', 'ঈ': 'I', 'উ': 'U', 'ঊ': 'U',
-    'এ': 'E', 'ঐ': 'A', 'ও': 'O', 'ঔ': 'O',
-    'ক': 'K', 'খ': 'K', 'গ': 'G', 'ঘ': 'G', 'ঙ': 'N',
-    'চ': 'C', 'ছ': 'C', 'জ': 'J', 'ঝ': 'J', 'ঞ': 'N',
-    'ট': 'T', 'ঠ': 'T', 'ড': 'D', 'ঢ': 'D', 'ণ': 'N',
-    'ত': 'T', 'থ': 'T', 'দ': 'D', 'ধ': 'D', 'ন': 'N',
-    'প': 'P', 'ফ': 'P', 'ব': 'B', 'ভ': 'B', 'ম': 'M',
-    'য': 'Y', 'র': 'R', 'ল': 'L', 'শ': 'S', 'ষ': 'S', 'স': 'S', 'হ': 'H',
+    'à¦': 'A', 'à¦': 'A', 'à¦': 'I', 'à¦': 'I', 'à¦': 'U', 'à¦': 'U',
+    'à¦': 'E', 'à¦': 'A', 'à¦': 'O', 'à¦': 'O',
+    'à¦': 'K', 'à¦': 'K', 'à¦': 'G', 'à¦': 'G', 'à¦': 'N',
+    'à¦': 'C', 'à¦': 'C', 'à¦': 'J', 'à¦': 'J', 'à¦': 'N',
+    'à¦': 'T', 'à¦ ': 'T', 'à¦¡': 'D', 'à¦¢': 'D', 'à¦£': 'N',
+    'à¦¤': 'T', 'à¦¥': 'T', 'à¦¦': 'D', 'à¦§': 'D', 'à¦¨': 'N',
+    'à¦ª': 'P', 'à¦«': 'P', 'à¦¬': 'B', 'à¦­': 'B', 'à¦®': 'M',
+    'à¦¯': 'Y', 'à¦°': 'R', 'à¦²': 'L', 'à¦¶': 'S', 'à¦·': 'S', 'à¦¸': 'S', 'à¦¹': 'H',
   };
   if (BENGALI_MAP[char]) return BENGALI_MAP[char];
 
   // Gurmukhi (Punjabi)
   const GURMUKHI_MAP: Record<string, string> = {
-    'ਅ': 'A', 'ਆ': 'A', 'ਇ': 'I', 'ਈ': 'I', 'ਉ': 'U', 'ਊ': 'U',
-    'ਏ': 'E', 'ਐ': 'A', 'ਓ': 'O', 'ਔ': 'O',
-    'ਕ': 'K', 'ਖ': 'K', 'ਗ': 'G', 'ਘ': 'G', 'ਙ': 'N',
-    'ਚ': 'C', 'ਛ': 'C', 'ਜ': 'J', 'ਝ': 'J', 'ਞ': 'N',
-    'ਟ': 'T', 'ਠ': 'T', 'ਡ': 'D', 'ਢ': 'D', 'ਣ': 'N',
-    'ਤ': 'T', 'ਥ': 'T', 'ਦ': 'D', 'ਧ': 'D', 'ਨ': 'N',
-    'ਪ': 'P', 'ਫ': 'P', 'ਬ': 'B', 'ਭ': 'B', 'ਮ': 'M',
-    'ਯ': 'Y', 'ਰ': 'R', 'ਲ': 'L', 'ਵ': 'V', 'ਸ': 'S', 'ਹ': 'H',
+    'à¨': 'A', 'à¨': 'A', 'à¨': 'I', 'à¨': 'I', 'à¨': 'U', 'à¨': 'U',
+    'à¨': 'E', 'à¨': 'A', 'à¨': 'O', 'à¨': 'O',
+    'à¨': 'K', 'à¨': 'K', 'à¨': 'G', 'à¨': 'G', 'à¨': 'N',
+    'à¨': 'C', 'à¨': 'C', 'à¨': 'J', 'à¨': 'J', 'à¨': 'N',
+    'à¨': 'T', 'à¨ ': 'T', 'à¨¡': 'D', 'à¨¢': 'D', 'à¨£': 'N',
+    'à¨¤': 'T', 'à¨¥': 'T', 'à¨¦': 'D', 'à¨§': 'D', 'à¨¨': 'N',
+    'à¨ª': 'P', 'à¨«': 'P', 'à¨¬': 'B', 'à¨­': 'B', 'à¨®': 'M',
+    'à¨¯': 'Y', 'à¨°': 'R', 'à¨²': 'L', 'à¨µ': 'V', 'à¨¸': 'S', 'à¨¹': 'H',
   };
   if (GURMUKHI_MAP[char]) return GURMUKHI_MAP[char];
 
   // Gujarati
   const GUJARATI_MAP: Record<string, string> = {
-    'અ': 'A', 'આ': 'A', 'ઇ': 'I', 'ઈ': 'I', 'ઉ': 'U', 'ઊ': 'U',
-    'એ': 'E', 'ઐ': 'A', 'ઓ': 'O', 'ઔ': 'O',
-    'ક': 'K', 'ખ': 'K', 'ગ': 'G', 'ઘ': 'G', 'ઙ': 'N',
-    'ચ': 'C', 'છ': 'C', 'જ': 'J', 'ઝ': 'J', 'ઞ': 'N',
-    'ટ': 'T', 'ઠ': 'T', 'ડ': 'D', 'ઢ': 'D', 'ણ': 'N',
-    'ત': 'T', 'થ': 'T', 'દ': 'D', 'ધ': 'D', 'ન': 'N',
-    'પ': 'P', 'ફ': 'P', 'બ': 'B', 'ભ': 'B', 'મ': 'M',
-    'ય': 'Y', 'ર': 'R', 'લ': 'L', 'વ': 'V',
-    'શ': 'S', 'ષ': 'S', 'સ': 'S', 'હ': 'H', 'ળ': 'L',
+    'àª': 'A', 'àª': 'A', 'àª': 'I', 'àª': 'I', 'àª': 'U', 'àª': 'U',
+    'àª': 'E', 'àª': 'A', 'àª': 'O', 'àª': 'O',
+    'àª': 'K', 'àª': 'K', 'àª': 'G', 'àª': 'G', 'àª': 'N',
+    'àª': 'C', 'àª': 'C', 'àª': 'J', 'àª': 'J', 'àª': 'N',
+    'àª': 'T', 'àª ': 'T', 'àª¡': 'D', 'àª¢': 'D', 'àª£': 'N',
+    'àª¤': 'T', 'àª¥': 'T', 'àª¦': 'D', 'àª§': 'D', 'àª¨': 'N',
+    'àªª': 'P', 'àª«': 'P', 'àª¬': 'B', 'àª­': 'B', 'àª®': 'M',
+    'àª¯': 'Y', 'àª°': 'R', 'àª²': 'L', 'àªµ': 'V',
+    'àª¶': 'S', 'àª·': 'S', 'àª¸': 'S', 'àª¹': 'H', 'àª³': 'L',
   };
   if (GUJARATI_MAP[char]) return GUJARATI_MAP[char];
 
   // Tamil
   const TAMIL_MAP: Record<string, string> = {
-    'அ': 'A', 'ஆ': 'A', 'இ': 'I', 'ஈ': 'I', 'உ': 'U', 'ஊ': 'U',
-    'எ': 'E', 'ஏ': 'E', 'ஐ': 'A', 'ஒ': 'O', 'ஓ': 'O', 'ஔ': 'O',
-    'க': 'K', 'ங': 'N', 'ச': 'C', 'ஞ': 'N', 'ட': 'T',
-    'ண': 'N', 'த': 'T', 'ந': 'N', 'ன': 'N', 'ப': 'P',
-    'ம': 'M', 'ய': 'Y', 'ர': 'R', 'ல': 'L', 'ள': 'L',
-    'ழ': 'L', 'வ': 'V', 'ஶ': 'S', 'ஷ': 'S', 'ஸ': 'S', 'ஹ': 'H',
+    'à®': 'A', 'à®': 'A', 'à®': 'I', 'à®': 'I', 'à®': 'U', 'à®': 'U',
+    'à®': 'E', 'à®': 'E', 'à®': 'A', 'à®': 'O', 'à®': 'O', 'à®': 'O',
+    'à®': 'K', 'à®': 'N', 'à®': 'C', 'à®': 'N', 'à®': 'T',
+    'à®£': 'N', 'à®¤': 'T', 'à®¨': 'N', 'à®©': 'N', 'à®ª': 'P',
+    'à®®': 'M', 'à®¯': 'Y', 'à®°': 'R', 'à®²': 'L', 'à®³': 'L',
+    'à®´': 'L', 'à®µ': 'V', 'à®¶': 'S', 'à®·': 'S', 'à®¸': 'S', 'à®¹': 'H',
   };
   if (TAMIL_MAP[char]) return TAMIL_MAP[char];
 
   // Telugu
   const TELUGU_MAP: Record<string, string> = {
-    'అ': 'A', 'ఆ': 'A', 'ఇ': 'I', 'ఈ': 'I', 'ఉ': 'U', 'ఊ': 'U',
-    'ఎ': 'E', 'ఏ': 'E', 'ఐ': 'A', 'ఒ': 'O', 'ఓ': 'O', 'ఔ': 'O',
-    'క': 'K', 'ఖ': 'K', 'గ': 'G', 'ఘ': 'G', 'ఙ': 'N',
-    'చ': 'C', 'ఛ': 'C', 'జ': 'J', 'ఝ': 'J', 'ఞ': 'N',
-    'ట': 'T', 'ఠ': 'T', 'డ': 'D', 'ఢ': 'D', 'ణ': 'N',
-    'త': 'T', 'థ': 'T', 'ద': 'D', 'ధ': 'D', 'న': 'N',
-    'ప': 'P', 'ఫ': 'P', 'బ': 'B', 'భ': 'B', 'మ': 'M',
-    'య': 'Y', 'ర': 'R', 'ల': 'L', 'వ': 'V',
-    'శ': 'S', 'ష': 'S', 'స': 'S', 'హ': 'H', 'ళ': 'L', 'క్ష': 'K',
+    'à°': 'A', 'à°': 'A', 'à°': 'I', 'à°': 'I', 'à°': 'U', 'à°': 'U',
+    'à°': 'E', 'à°': 'E', 'à°': 'A', 'à°': 'O', 'à°': 'O', 'à°': 'O',
+    'à°': 'K', 'à°': 'K', 'à°': 'G', 'à°': 'G', 'à°': 'N',
+    'à°': 'C', 'à°': 'C', 'à°': 'J', 'à°': 'J', 'à°': 'N',
+    'à°': 'T', 'à° ': 'T', 'à°¡': 'D', 'à°¢': 'D', 'à°£': 'N',
+    'à°¤': 'T', 'à°¥': 'T', 'à°¦': 'D', 'à°§': 'D', 'à°¨': 'N',
+    'à°ª': 'P', 'à°«': 'P', 'à°¬': 'B', 'à°­': 'B', 'à°®': 'M',
+    'à°¯': 'Y', 'à°°': 'R', 'à°²': 'L', 'à°µ': 'V',
+    'à°¶': 'S', 'à°·': 'S', 'à°¸': 'S', 'à°¹': 'H', 'à°³': 'L', 'à°à±à°·': 'K',
   };
   if (TELUGU_MAP[char]) return TELUGU_MAP[char];
 
   // Kannada
   const KANNADA_MAP: Record<string, string> = {
-    'ಅ': 'A', 'ಆ': 'A', 'ಇ': 'I', 'ಈ': 'I', 'ಉ': 'U', 'ಊ': 'U',
-    'ಎ': 'E', 'ಏ': 'E', 'ಐ': 'A', 'ಒ': 'O', 'ಓ': 'O', 'ಔ': 'O',
-    'ಕ': 'K', 'ಖ': 'K', 'ಗ': 'G', 'ಘ': 'G', 'ಙ': 'N',
-    'ಚ': 'C', 'ಛ': 'C', 'ಜ': 'J', 'ಝ': 'J', 'ಞ': 'N',
-    'ಟ': 'T', 'ಠ': 'T', 'ಡ': 'D', 'ಢ': 'D', 'ಣ': 'N',
-    'ತ': 'T', 'ಥ': 'T', 'ದ': 'D', 'ಧ': 'D', 'ನ': 'N',
-    'ಪ': 'P', 'ಫ': 'P', 'ಬ': 'B', 'ಭ': 'B', 'ಮ': 'M',
-    'ಯ': 'Y', 'ರ': 'R', 'ಲ': 'L', 'ವ': 'V',
-    'ಶ': 'S', 'ಷ': 'S', 'ಸ': 'S', 'ಹ': 'H', 'ಳ': 'L',
+    'à²': 'A', 'à²': 'A', 'à²': 'I', 'à²': 'I', 'à²': 'U', 'à²': 'U',
+    'à²': 'E', 'à²': 'E', 'à²': 'A', 'à²': 'O', 'à²': 'O', 'à²': 'O',
+    'à²': 'K', 'à²': 'K', 'à²': 'G', 'à²': 'G', 'à²': 'N',
+    'à²': 'C', 'à²': 'C', 'à²': 'J', 'à²': 'J', 'à²': 'N',
+    'à²': 'T', 'à² ': 'T', 'à²¡': 'D', 'à²¢': 'D', 'à²£': 'N',
+    'à²¤': 'T', 'à²¥': 'T', 'à²¦': 'D', 'à²§': 'D', 'à²¨': 'N',
+    'à²ª': 'P', 'à²«': 'P', 'à²¬': 'B', 'à²­': 'B', 'à²®': 'M',
+    'à²¯': 'Y', 'à²°': 'R', 'à²²': 'L', 'à²µ': 'V',
+    'à²¶': 'S', 'à²·': 'S', 'à²¸': 'S', 'à²¹': 'H', 'à²³': 'L',
   };
   if (KANNADA_MAP[char]) return KANNADA_MAP[char];
 
   // Malayalam
   const MALAYALAM_MAP: Record<string, string> = {
-    'അ': 'A', 'ആ': 'A', 'ഇ': 'I', 'ഈ': 'I', 'ഉ': 'U', 'ഊ': 'U',
-    'എ': 'E', 'ഏ': 'E', 'ഐ': 'A', 'ഒ': 'O', 'ഓ': 'O', 'ഔ': 'O',
-    'ക': 'K', 'ഖ': 'K', 'ഗ': 'G', 'ഘ': 'G', 'ങ': 'N',
-    'ച': 'C', 'ഛ': 'C', 'ജ': 'J', 'ഝ': 'J', 'ഞ': 'N',
-    'ട': 'T', 'ഠ': 'T', 'ഡ': 'D', 'ഢ': 'D', 'ണ': 'N',
-    'ത': 'T', 'ഥ': 'T', 'ദ': 'D', 'ധ': 'D', 'ന': 'N',
-    'പ': 'P', 'ഫ': 'P', 'ബ': 'B', 'ഭ': 'B', 'മ': 'M',
-    'യ': 'Y', 'ര': 'R', 'ല': 'L', 'വ': 'V',
-    'ശ': 'S', 'ഷ': 'S', 'സ': 'S', 'ഹ': 'H', 'ള': 'L', 'ഴ': 'L', 'റ': 'R',
+    'à´': 'A', 'à´': 'A', 'à´': 'I', 'à´': 'I', 'à´': 'U', 'à´': 'U',
+    'à´': 'E', 'à´': 'E', 'à´': 'A', 'à´': 'O', 'à´': 'O', 'à´': 'O',
+    'à´': 'K', 'à´': 'K', 'à´': 'G', 'à´': 'G', 'à´': 'N',
+    'à´': 'C', 'à´': 'C', 'à´': 'J', 'à´': 'J', 'à´': 'N',
+    'à´': 'T', 'à´ ': 'T', 'à´¡': 'D', 'à´¢': 'D', 'à´£': 'N',
+    'à´¤': 'T', 'à´¥': 'T', 'à´¦': 'D', 'à´§': 'D', 'à´¨': 'N',
+    'à´ª': 'P', 'à´«': 'P', 'à´¬': 'B', 'à´­': 'B', 'à´®': 'M',
+    'à´¯': 'Y', 'à´°': 'R', 'à´²': 'L', 'à´µ': 'V',
+    'à´¶': 'S', 'à´·': 'S', 'à´¸': 'S', 'à´¹': 'H', 'à´³': 'L', 'à´´': 'L', 'à´±': 'R',
   };
   if (MALAYALAM_MAP[char]) return MALAYALAM_MAP[char];
 
   // Odia
   const ODIA_MAP: Record<string, string> = {
-    'ଅ': 'A', 'ଆ': 'A', 'ଇ': 'I', 'ଈ': 'I', 'ଉ': 'U', 'ଊ': 'U',
-    'ଏ': 'E', 'ଐ': 'A', 'ଓ': 'O', 'ଔ': 'O',
-    'କ': 'K', 'ଖ': 'K', 'ଗ': 'G', 'ଘ': 'G', 'ଙ': 'N',
-    'ଚ': 'C', 'ଛ': 'C', 'ଜ': 'J', 'ଝ': 'J', 'ଞ': 'N',
-    'ଟ': 'T', 'ଠ': 'T', 'ଡ': 'D', 'ଢ': 'D', 'ଣ': 'N',
-    'ତ': 'T', 'ଥ': 'T', 'ଦ': 'D', 'ଧ': 'D', 'ନ': 'N',
-    'ପ': 'P', 'ଫ': 'P', 'ବ': 'B', 'ଭ': 'B', 'ମ': 'M',
-    'ଯ': 'Y', 'ର': 'R', 'ଲ': 'L', 'ଵ': 'V',
-    'ଶ': 'S', 'ଷ': 'S', 'ସ': 'S', 'ହ': 'H', 'ଳ': 'L',
+    'à¬': 'A', 'à¬': 'A', 'à¬': 'I', 'à¬': 'I', 'à¬': 'U', 'à¬': 'U',
+    'à¬': 'E', 'à¬': 'A', 'à¬': 'O', 'à¬': 'O',
+    'à¬': 'K', 'à¬': 'K', 'à¬': 'G', 'à¬': 'G', 'à¬': 'N',
+    'à¬': 'C', 'à¬': 'C', 'à¬': 'J', 'à¬': 'J', 'à¬': 'N',
+    'à¬': 'T', 'à¬ ': 'T', 'à¬¡': 'D', 'à¬¢': 'D', 'à¬£': 'N',
+    'à¬¤': 'T', 'à¬¥': 'T', 'à¬¦': 'D', 'à¬§': 'D', 'à¬¨': 'N',
+    'à¬ª': 'P', 'à¬«': 'P', 'à¬¬': 'B', 'à¬­': 'B', 'à¬®': 'M',
+    'à¬¯': 'Y', 'à¬°': 'R', 'à¬²': 'L', 'à¬µ': 'V',
+    'à¬¶': 'S', 'à¬·': 'S', 'à¬¸': 'S', 'à¬¹': 'H', 'à¬³': 'L',
   };
   if (ODIA_MAP[char]) return ODIA_MAP[char];
 
@@ -3719,7 +3719,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       return new Response(_adminStatsCache.payload, { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
-    // ⚡ Bolt: Batch these queries to execute concurrently instead of sequentially
+    // â¡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
     const results = await env.DB.batch([
       env.DB.prepare(`
@@ -3873,7 +3873,7 @@ async function handleAdminSendActionOTP(
       }
     }
 
-    const title = "🔐 Action Verification";
+    const title = "ð Action Verification";
     const body = `
       <p style="font-size:16px;color:#334155;">Namaste <strong>${user.full_name || "User"}</strong>,</p>
       <p style="color:#475569;">You have requested an OTP to perform a sensitive action.</p>
@@ -3965,7 +3965,7 @@ async function handleContactForm(request: Request, env: Env): Promise<Response> 
     if (existing) {
       const windowAge = Date.now() - new Date(existing.window_start).getTime();
       if (windowAge < 3600 * 1000 && existing.window_used >= 3) {
-        return new Response(JSON.stringify({ error: "बहुत अधिक अनुरोध। कृपया एक घंटे बाद पुनः प्रयास करें।" }), {
+        return new Response(JSON.stringify({ error: "à¤¬à¤¹à¥à¤¤ à¤à¤§à¤¿à¤ à¤à¤¨à¥à¤°à¥à¤§à¥¤ à¤à¥à¤ªà¤¯à¤¾ à¤à¤ à¤à¤à¤à¥ à¤¬à¤¾à¤¦ à¤ªà¥à¤¨à¤ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤à¤°à¥à¤à¥¤" }), {
           status: 429,
           headers: { "Content-Type": "application/json" },
         });
@@ -4002,9 +4002,9 @@ async function handleContactForm(request: Request, env: Env): Promise<Response> 
     `;
     const textBody = `New Contact Form Submission\n\nName: ${name}\nEmail: ${email}\nMessage: ${message}`;
 
-    await safeSendEmail(env, adminEmail, `Contact Form: ${name}`, "📬 New Contact Message", emailBody, textBody);
+    await safeSendEmail(env, adminEmail, `Contact Form: ${name}`, "ð¬ New Contact Message", emailBody, textBody);
 
-    return new Response(JSON.stringify({ success: true, message: "आपका संदेश भेज दिया गया है।" }), {
+    return new Response(JSON.stringify({ success: true, message: "à¤à¤ªà¤à¤¾ à¤¸à¤à¤¦à¥à¤¶ à¤­à¥à¤ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -4205,7 +4205,7 @@ async function handleAdminSecrets(
     if (request.method === "POST") {
       const body = await parseRequestBody(request);
 
-      // POST /api/admin/secrets/delete — delete a key
+      // POST /api/admin/secrets/delete â delete a key
       if (pathname === "/api/admin/secrets/delete") {
         const { key } = body;
         if (!key || typeof key !== "string") {
@@ -4223,7 +4223,7 @@ async function handleAdminSecrets(
         });
       }
 
-      // POST /api/admin/secrets/{key} — create/update single key
+      // POST /api/admin/secrets/{key} â create/update single key
       const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
         let key: string;
@@ -4257,10 +4257,10 @@ async function handleAdminSecrets(
         });
       }
 
-      // POST /api/admin/secrets — bulk update
+      // POST /api/admin/secrets â bulk update
       const { secrets } = body;
       if (!secrets || typeof secrets !== "object") {
-        return new Response(JSON.stringify({ error: "Invalid format — expected { secrets: { ... } }" }), {
+        return new Response(JSON.stringify({ error: "Invalid format â expected { secrets: { ... } }" }), {
           status: 400,
         });
       }
@@ -4384,7 +4384,7 @@ async function handleAdminAddBalance(
       return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
     }
     if (amount > MAX_AMOUNT) {
-      return new Response(JSON.stringify({ error: `Amount exceeds maximum of ₹${MAX_AMOUNT}` }), { status: 400 });
+      return new Response(JSON.stringify({ error: `Amount exceeds maximum of â¹${MAX_AMOUNT}` }), { status: 400 });
     }
     if (!otp) {
       return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
@@ -4413,28 +4413,28 @@ async function handleAdminAddBalance(
     );
 
     const emailBody = `
-      <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "Student"}</strong>,</p>
-      <p style="color:#475569;">व्यवस्थापक (Admin) द्वारा आपके खाते में <strong>₹${amount}</strong> जोड़े गए हैं।</p>
-      <p style="color:#475569;">आपका नया बैलेंस: <strong>₹${wallet.balance_rupees}</strong></p>
+      <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${targetUser.full_name || "Student"}</strong>,</p>
+      <p style="color:#475569;">à¤µà¥à¤¯à¤µà¤¸à¥à¤¥à¤¾à¤ªà¤ (Admin) à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ à¤à¤¾à¤¤à¥ à¤®à¥à¤ <strong>â¹${amount}</strong> à¤à¥à¤¡à¤¼à¥ à¤à¤ à¤¹à¥à¤à¥¤</p>
+      <p style="color:#475569;">à¤à¤ªà¤à¤¾ à¤¨à¤¯à¤¾ à¤¬à¥à¤²à¥à¤à¤¸: <strong>â¹${wallet.balance_rupees}</strong></p>
     `;
     await safeSendEmail(
       env,
       targetUser.email,
       "Balance Added - Adityanveshan LMS",
-      "💰 Balance Added",
+      "ð° Balance Added",
       emailBody,
-      `Namaste,\nYour account has been credited with ₹${amount}. Your new balance is ₹${wallet.balance_rupees}.`
+      `Namaste,\nYour account has been credited with â¹${amount}. Your new balance is â¹${wallet.balance_rupees}.`
     ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
 
     await logAdminActivity(
       env,
       admin.email || "Unknown Admin",
       "Give Credits",
-      `Added ₹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
+      `Added â¹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
-    // 🎯 [NEW] DataSyncDO ke through broadcast karo — full balance data
+    // ð¯ [NEW] DataSyncDO ke through broadcast karo â full balance data
     try {
       const dataDoId = env.DATA_SYNC_DO.idFromName("data-sync");
       const dataStub = env.DATA_SYNC_DO.get(dataDoId);
@@ -4633,12 +4633,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
 
-      const title = "अलविदा! खाता हटा दिया गया है";
+      const title = "à¤à¤²à¤µà¤¿à¤¦à¤¾! à¤à¤¾à¤¤à¤¾ à¤¹à¤à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥";
       const emailBody = `
-        <p style="font-size:16px;color:#334155;">नमस्ते <strong>${targetUser.full_name || "User"}</strong>,</p>
-        <p style="color:#475569;">आपका <strong>Adityanveshan LMS</strong> का खाता व्यवस्थापक (Admin) द्वारा हटा दिया गया है।</p>
+        <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${targetUser.full_name || "User"}</strong>,</p>
+        <p style="color:#475569;">à¤à¤ªà¤à¤¾ <strong>Adityanveshan LMS</strong> à¤à¤¾ à¤à¤¾à¤¤à¤¾ à¤µà¥à¤¯à¤µà¤¸à¥à¤¥à¤¾à¤ªà¤ (Admin) à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¹à¤à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
         <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
-          <p style="margin:0;color:#991b1b;font-weight:600;">यदि आपको लगता है कि यह कोई गलती है, तो कृपया सपोर्ट टीम से संपर्क करें।</p>
+          <p style="margin:0;color:#991b1b;font-weight:600;">à¤¯à¤¦à¤¿ à¤à¤ªà¤à¥ à¤²à¤à¤¤à¤¾ à¤¹à¥ à¤à¤¿ à¤¯à¤¹ à¤à¥à¤ à¤à¤²à¤¤à¥ à¤¹à¥, à¤¤à¥ à¤à¥à¤ªà¤¯à¤¾ à¤¸à¤ªà¥à¤°à¥à¤ à¤à¥à¤® à¤¸à¥ à¤¸à¤à¤ªà¤°à¥à¤ à¤à¤°à¥à¤à¥¤</p>
         </div>
       `;
       await safeSendEmail(
@@ -4759,17 +4759,17 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .run();
 
       // Send Welcome Email
-      const welcomeTitle = "🎉 आपका Adityanveshan LMS में स्वागत है!";
+      const welcomeTitle = "ð à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤ à¤¹à¥!";
       const appUrl = await getPublicAppUrl(env);
       const welcomeBody = `
-        <p>नमस्ते <strong>${full_name || "छात्र"}</strong>,</p>
-        <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
+        <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+        <p>à¤à¤ªà¤à¤¾ à¤à¤¾à¤¤à¤¾ <strong>à¤à¤à¤¾à¤°à¥à¤¯ ${adminName}</strong> à¤à¥ à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¬à¤¨à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
         <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
-          <p style="margin:0;font-weight:600;">आपके लॉगिन विवरण:</p>
-          <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
-          <p style="margin:0;">आप OTP के माध्यम से लॉगिन कर सकते हैं।</p>
+          <p style="margin:0;font-weight:600;">à¤à¤ªà¤à¥ à¤²à¥à¤à¤¿à¤¨ à¤µà¤¿à¤µà¤°à¤£:</p>
+          <p style="margin:8px 0;">à¤à¤®à¥à¤²: <strong>${email}</strong></p>
+          <p style="margin:0;">à¤à¤ª OTP à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤²à¥à¤à¤¿à¤¨ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
         </div>
-        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+        <p>à¤à¤ª à¤¯à¤¹à¤¾à¤ à¤¸à¥ à¤²à¥à¤à¤¿à¤¨ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
       await safeSendEmail(
         env,
@@ -5024,7 +5024,7 @@ async function handleAdminCourses(
         )
         .run();
 
-      // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
+      // Global Broadcast: à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸ à¤ªà¤¬à¥à¤²à¤¿à¤¶ à¤¹à¥à¤¨à¥ à¤ªà¤° à¤¸à¤­à¥ à¤¯à¥à¤à¤¼à¤°à¥à¤¸ à¤à¥ à¤¤à¥à¤°à¤à¤¤ à¤à¤ªà¤¡à¥à¤ à¤¦à¥à¤
       broadcastToAll(env, "course", { courseId, title: title || "Untitled Course" });
 
       let announcementResult = {};
@@ -5054,8 +5054,8 @@ async function handleAdminCourses(
         try {
           const pushResult = await sendPush(env, {
             all: true,
-            title: `📚 नया कोर्स: ${title || "Untitled Course"}`,
-            body: "अभी enroll करें और सीखना शुरू करें।",
+            title: `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${title || "Untitled Course"}`,
+            body: "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤",
             data: {
               url: `/course/${courseId}`,
               clickUrl: `/course/${courseId}`,
@@ -5070,8 +5070,8 @@ async function handleAdminCourses(
             pushBroadcastId,
             (userAuth as any).sub || null,
             "all",
-            `📚 नया कोर्स: ${title || "Untitled Course"}`,
-            "अभी enroll करें और सीखना शुरू करें।",
+            `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${title || "Untitled Course"}`,
+            "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤",
             JSON.stringify({ courseId, type: "new_course_announcement" }),
             pushResult.sent,
             pushResult.failed,
@@ -5494,7 +5494,7 @@ async function ensureEnrollment(
 
   const id = generateCustomId("YA-ENR");
 
-  // Atomic INSERT — ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
+  // Atomic INSERT â ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
   // If another request already inserted the same (user_id, course_id), the INSERT
   // is silently ignored and we fall through to the UPDATE path below.
   const insertResult = await env.DB.prepare(
@@ -5519,7 +5519,7 @@ async function ensureEnrollment(
     };
   }
 
-  // Row already existed — do UPDATE with preservePaidStatus logic
+  // Row already existed â do UPDATE with preservePaidStatus logic
   const existing: any = await env.DB.prepare(
     "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
   )
@@ -5709,16 +5709,16 @@ async function handleAdminEnrollments(
 
       if (user?.email && course?.title) {
         const welcomeHtml = `
-            <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-            <p>Admin द्वारा आपको <strong>${course.title}</strong> में सफलतापूर्वक enroll कर दिया गया है। ${payment_status === "paid" ? "आपको प्रीमियम एक्सेस दे दिया गया है।" : ""}</p>
-            <p>आप अभी से सीखना शुरू कर सकते हैं।</p>
+            <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+            <p>Admin à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ <strong>${course.title}</strong> à¤®à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤ ${payment_status === "paid" ? "à¤à¤ªà¤à¥ à¤ªà¥à¤°à¥à¤®à¤¿à¤¯à¤® à¤à¤à¥à¤¸à¥à¤¸ à¤¦à¥ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤" : ""}</p>
+            <p>à¤à¤ª à¤à¤­à¥ à¤¸à¥ à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
          `;
-        const welcomeText = `नमस्ते ${user.full_name || "छात्र"},\n\nAdmin द्वारा आपको ${course.title} में सफलतापूर्वक enroll कर दिया गया है।\nआप अभी से सीखना शुरू कर सकते हैं।`;
+        const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nAdmin à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ ${course.title} à¤®à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nà¤à¤ª à¤à¤­à¥ à¤¸à¥ à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤`;
         await safeSendEmail(
           env,
           user.email,
           `Welcome to ${course.title}`,
-          "🎉 Course Enrollment Successful!",
+          "ð Course Enrollment Successful!",
           welcomeHtml,
           welcomeText,
         );
@@ -5859,15 +5859,15 @@ async function handleAdminIssueCertificate(
     await createNotification(
       env,
       enrollment.user_id,
-      "Certificate issued 🎓",
+      "Certificate issued ð",
       `Your certificate for "${enrollment.course_title}" has been issued by admin.`,
       "success",
     );
 
     if (enrollment.user_email) {
       const html = `
-        <p>नमस्ते <strong>${enrollment.user_name || "छात्र"}</strong>,</p>
-        <p>आपका <strong>${enrollment.course_title}</strong> course certificate issue कर दिया गया है।</p>
+        <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${enrollment.user_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+        <p>à¤à¤ªà¤à¤¾ <strong>${enrollment.course_title}</strong> course certificate issue à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
         <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:16px 0;">
           <p style="margin:0;color:#166534;font-weight:700;">Certificate ID: ${certificateId}</p>
           <p style="margin:8px 0 0;color:#166534;">Issued at: ${getISTTime(issuedAt)}</p>
@@ -5878,7 +5878,7 @@ async function handleAdminIssueCertificate(
         env,
         enrollment.user_email,
         `Certificate issued: ${enrollment.course_title}`,
-        "🎓 Certificate Issued",
+        "ð Certificate Issued",
         html,
         text,
       );
@@ -5993,7 +5993,7 @@ async function handleAdminBatches(
       if (!course_id && !book_id)
         return new Response(
           JSON.stringify({
-            error: "कोर्स या पुस्तक आईडी अनिवार्य है (Course or Book ID is required)",
+            error: "à¤à¥à¤°à¥à¤¸ à¤¯à¤¾ à¤ªà¥à¤¸à¥à¤¤à¤ à¤à¤à¤¡à¥ à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥ (Course or Book ID is required)",
           }),
           { status: 400 },
         );
@@ -6008,7 +6008,7 @@ async function handleAdminBatches(
       if (!name)
         return new Response(
           JSON.stringify({
-            error: "बैच का नाम अनिवार्य है (Batch name is required)",
+            error: "à¤¬à¥à¤ à¤à¤¾ à¤¨à¤¾à¤® à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥ (Batch name is required)",
           }),
           { status: 400 },
         );
@@ -6103,8 +6103,8 @@ async function handleAdminBatches(
           try {
             const pushResult = await sendPush(env, {
               all: true,
-              title: `🎓 नई कक्षा: ${name}`,
-              body: `${courseOrBookTitle} — अभी join करें।`,
+              title: `ð à¤¨à¤ à¤à¤à¥à¤·à¤¾: ${name}`,
+              body: `${courseOrBookTitle} â à¤à¤­à¥ join à¤à¤°à¥à¤à¥¤`,
               data: {
                 url: urlPath,
                 clickUrl: urlPath,
@@ -6121,8 +6121,8 @@ async function handleAdminBatches(
               pushBroadcastId,
               (userAuth as any).sub || null,
               "all",
-              `🎓 नई कक्षा: ${name}`,
-              `${courseOrBookTitle} — अभी join करें।`,
+              `ð à¤¨à¤ à¤à¤à¥à¤·à¤¾: ${name}`,
+              `${courseOrBookTitle} â à¤à¤­à¥ join à¤à¤°à¥à¤à¥¤`,
               JSON.stringify({ batchId: id, courseId: course_id || null, bookId: book_id || null, type: "new_batch_announcement" }),
               pushResult.sent,
               pushResult.failed,
@@ -6447,11 +6447,11 @@ async function handleAdminBatchStudents(
         .first();
 
       if (student?.email) {
-        const title = "🎉 बैच में नामांकन सफल!";
+        const title = "ð à¤¬à¥à¤ à¤®à¥à¤ à¤¨à¤¾à¤®à¤¾à¤à¤à¤¨ à¤¸à¤«à¤²!";
         const body = `
-          <p>नमस्ते <strong>${student.full_name || "छात्र"}</strong>,</p>
-          <p>आपको सफलतापूर्वक <strong>${batch.name}</strong> (${course.title}) में जोड़ दिया गया है।</p>
-          <p>अब आप अपनी पढ़ाई शुरू कर सकते हैं।</p>
+          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${student.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+          <p>à¤à¤ªà¤à¥ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ <strong>${batch.name}</strong> (${course.title}) à¤®à¥à¤ à¤à¥à¥ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+          <p>à¤à¤¬ à¤à¤ª à¤à¤ªà¤¨à¥ à¤ªà¥à¤¾à¤ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
         `;
         await safeSendEmail(
           env,
@@ -6975,7 +6975,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
       "SELECT id, course_id, batch_id FROM LiveSessions WHERE id = ?"
     ).bind(sessionId).first();
 
-    if (!session || !session.batch_id) return;
+    if (!session) return;
 
     const batch: any = await env.DB.prepare(
       "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
@@ -7022,7 +7022,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 
     if (pendingCharges.length === 0) return;
 
-    // Batch: check existing charges for ALL no-show students — chunked for D1 parameter limit
+    // Batch: check existing charges for ALL no-show students â chunked for D1 parameter limit
     // Check both PendingCharges AND CreditLedger to prevent double deduction
     const allNoShowIds = pendingCharges.map((c) => c.userId);
     const existingSet = new Set<string>();
@@ -7048,7 +7048,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
          VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
       ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
 
-      // changes === 0 means a duplicate was ignored — another call already inserted
+      // changes === 0 means a duplicate was ignored â another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
 
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
@@ -7380,13 +7380,13 @@ async function sendFCM(
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
-      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets — add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
+      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets â add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
     }
 
-    // FCM v1 API — OAuth2 via service account
+    // FCM v1 API â OAuth2 via service account
     const accessToken = await getFCMAccessToken(env);
     if (!accessToken) {
-      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable — set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
+      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable â set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
     }
 
     const payload: any = {
@@ -7439,7 +7439,7 @@ async function sendFCM(
     const errBody = await res.text();
     console.error("FCM v1 send error:", res.status, errBody);
 
-    // On 401, invalidate cached token and retry once — token may be stale
+    // On 401, invalidate cached token and retry once â token may be stale
     if (res.status === 401) {
       await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN");
       await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
@@ -7485,7 +7485,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-// Batch FCM sender — sends in parallel chunks to avoid per-device sequential blocking
+// Batch FCM sender â sends in parallel chunks to avoid per-device sequential blocking
 async function sendFCMBatch(
   env: Env,
   devices: { id: string; fcm_token: string }[],
@@ -7599,7 +7599,7 @@ async function handleRegisterDevice(
       const auth = await requireAuth(request, env);
       userId = auth.sub;
     } catch {
-      // Anonymous — save token without user_id; associate-user links it on login
+      // Anonymous â save token without user_id; associate-user links it on login
     }
 
     const ipAddress =
@@ -7789,7 +7789,7 @@ async function handleAssociateUser(
 
     const associated = ((associateResult as any)?.meta?.changes ?? 0) > 0;
 
-    // Conversion tracking: anonymous → user (analytics + free-limit reset)
+    // Conversion tracking: anonymous â user (analytics + free-limit reset)
     await env.DB.prepare(
       `UPDATE AnonymousUsers
        SET converted_to_user_id = ?, converted_at = datetime('now')
@@ -8001,7 +8001,7 @@ async function handleSendPush(
   }
 }
 
-// Unified send push function — sends to all devices of a user (or all users)
+// Unified send push function â sends to all devices of a user (or all users)
 
 // Helper: unified push broadcast executor handling audiences, exclusions, and limits
 async function executePushBroadcast(
@@ -8199,7 +8199,7 @@ async function executePushBroadcast(
 }
 
 
-// Unified send push function — sends to all devices of a user (or all users)
+// Unified send push function â sends to all devices of a user (or all users)
 async function sendPush(
   env: Env,
   options: {
@@ -8415,7 +8415,7 @@ async function handleLiveClassReminders(
       );
     }
 
-    // Reminder window: 14-16 minutes from now (15-min lead time, ±1 min tolerance)
+    // Reminder window: 14-16 minutes from now (15-min lead time, Â±1 min tolerance)
     const upcoming: any = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, l.start_time as start_date, b.course_id, b.book_id,
               c.title as course_title, c.title_hi as course_title_hi,
@@ -8456,7 +8456,7 @@ async function handleLiveClassReminders(
       batchUserMap.get(row.batch_id)!.add(uid);
     }
 
-    // Batch: get ALL devices for ALL enrolled users — chunked for D1 parameter limit
+    // Batch: get ALL devices for ALL enrolled users â chunked for D1 parameter limit
     const allUserIds = [...new Set([...batchUserMap.values()].flatMap((s) => [...s]))];
     if (allUserIds.length === 0) {
       return new Response(
@@ -8474,7 +8474,7 @@ async function handleLiveClassReminders(
       allDevices.push(...(result.results || []));
     }
 
-    // Map user_id → devices[] in memory
+    // Map user_id â devices[] in memory
     const userDeviceMap = new Map<string, { id: string; fcm_token: string }[]>();
     for (const dev of allDevices) {
       const uid = (dev as any).user_id;
@@ -8483,14 +8483,14 @@ async function handleLiveClassReminders(
       userDeviceMap.get(uid)!.push({ id: (dev as any).id, fcm_token: (dev as any).fcm_token });
     }
 
-    // Now process each batch — no more DB queries, just memory lookups + parallel FCM
+    // Now process each batch â no more DB queries, just memory lookups + parallel FCM
     for (const batch of batches) {
       const userIds = [...(batchUserMap.get(batch.id) || [])];
       if (userIds.length === 0) continue;
 
       const title = batch.course_title || batch.book_title || batch.name;
-      const reminderTitle = `🔔 ${title} — कक्षा जल्द शुरू होगी`;
-      const reminderBody = `15 मिनट में लाइव क्लास शुरू हो रही है। तैयार रहें!`;
+      const reminderTitle = `ð ${title} â à¤à¤à¥à¤·à¤¾ à¤à¤²à¥à¤¦ à¤¶à¥à¤°à¥ à¤¹à¥à¤à¥`;
+      const reminderBody = `15 à¤®à¤¿à¤¨à¤ à¤®à¥à¤ à¤²à¤¾à¤à¤µ à¤à¥à¤²à¤¾à¤¸ à¤¶à¥à¤°à¥ à¤¹à¥ à¤°à¤¹à¥ à¤¹à¥à¥¤ à¤¤à¥à¤¯à¤¾à¤° à¤°à¤¹à¥à¤!`;
       const pushData = {
         url: `/dashboard/course/learn?batch=${batch.id}`,
         clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
@@ -8545,8 +8545,8 @@ async function handleNewCourseAnnouncement(
     }
     const target = audience === "anonymous" ? "anonymous" : "all";
 
-    const title = `📚 नया कोर्स: ${course_title}`;
-    const bodyText = "अभी enroll करें और सीखना शुरू करें।";
+    const title = `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${course_title}`;
+    const bodyText = "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤";
     const result = await sendPush(env, {
       all: target === "all",
       title,
@@ -8681,7 +8681,7 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
     }
-    // No more in this month → first valid day of next month
+    // No more in this month â first valid day of next month
     const firstDay = daysOfMonth[0];
     const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, utcHH, utcMM, 0));
     return candidate.toISOString().replace("T", " ").substring(0, 19);
@@ -9333,7 +9333,7 @@ async function handleFirebaseConfig(env: Env): Promise<Response> {
   const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
 
   if (!appId) {
-    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS — FCM token generation may fail");
+    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS â FCM token generation may fail");
   }
 
   if (!apiKey || !projectId || !messagingSenderId || !appId) {
@@ -10997,7 +10997,7 @@ async function handleGetBook(
           completedLessonIds = completedRes.results?.map((r: any) => r.lesson_id) || [];
         }
       } catch (e) {
-        // Not authenticated — treat as unauthenticated user
+        // Not authenticated â treat as unauthenticated user
       }
     }
 
@@ -11044,7 +11044,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
     const url = new URL(request.url);
     const id = bookId || url.searchParams.get("bookId");
 
-    // Single book fetch — used by [bookId] page to get title
+    // Single book fetch â used by [bookId] page to get title
     if (id) {
       const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
@@ -11192,7 +11192,7 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
   }
 }
 
-// ── Book Lesson Handlers ─────────────────────────────────────────────────────
+// ââ Book Lesson Handlers âââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // These handle /api/admin/books/lessons with bookId and lessonId as query params.
 // Book-only lessons have course_id = NULL and book_id = bookId.
 
@@ -11612,8 +11612,8 @@ async function handleListLessons(
           ...r,
           content_url: "",
           text_content: premiumLocked 
-            ? "🔒 This content is premium. Please enroll/pay to unlock." 
-            : "🔒 You must complete the previous lesson/quiz to unlock this.",
+            ? "ð This content is premium. Please enroll/pay to unlock." 
+            : "ð You must complete the previous lesson/quiz to unlock this.",
           is_locked: true,
           locked_reason: premiumLocked ? 'premium' : 'sequential'
         };
@@ -11735,7 +11735,7 @@ async function handleGetLesson(
                 type: lesson.type,
                 is_free: lesson.is_free,
                 content_url: "",
-                text_content: "🔒 You must complete the previous lesson/quiz to unlock this."
+                text_content: "ð You must complete the previous lesson/quiz to unlock this."
               };
               return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Sequential lock active" }), { status: 403, headers: { "Content-Type": "application/json" } });
            }
@@ -11755,7 +11755,7 @@ async function handleGetLesson(
         text_content:
           lesson.is_free === 1
             ? lesson.text_content
-            : "🔒 Premium Content Locked. Please upgrade your enrollment to access.",
+            : "ð Premium Content Locked. Please upgrade your enrollment to access.",
       };
       return new Response(
         JSON.stringify({
@@ -12253,7 +12253,7 @@ async function handleAdminCreateLesson(
   }
 }
 
-// ── Chapter Names API ───────────────────────────────────────────────────────
+// ââ Chapter Names API âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function handleAdminGetCourseChapters(
   request: Request,
   env: Env,
@@ -13339,17 +13339,17 @@ async function handleFormResponseSubmit(
 
           // Welcome email for new account
           const welcomeHtml = `
-            <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
-            <p>आपका Adityanveshan LMS पर account बन गया है।</p>
+            <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
+            <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
-            <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
+            <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
           `;
-          const welcomeText = `नमस्ते ${fullName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
+          const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${newUserId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
           await safeSendEmail(
             env,
             email,
-            "यज्ञ आश्रम - Account Created",
-            "यज्ञ आश्रम में स्वागत!",
+            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® - Account Created",
+            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
             welcomeHtml,
             welcomeText,
           );
@@ -13373,7 +13373,7 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `आपके course enrollment का batch अपडेट कर दिया गया है।`,
+                `à¤à¤ªà¤à¥ course enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
                 "success",
               );
             }
@@ -13395,7 +13395,7 @@ async function handleFormResponseSubmit(
               env,
               user.id,
               "Course Enrollment",
-              `आपको form के माध्यम से course में enroll किया गया है।`,
+              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ course à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
               "success",
             );
           }
@@ -13418,7 +13418,7 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `आपकी पुस्तक enrollment का batch अपडेट कर दिया गया है।`,
+                `à¤à¤ªà¤à¥ à¤ªà¥à¤¸à¥à¤¤à¤ enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
                 "success",
               );
             }
@@ -13440,7 +13440,7 @@ async function handleFormResponseSubmit(
               env,
               user.id,
               "Book Enrollment",
-              `आपको form के माध्यम से पुस्तक में enroll किया गया है।`,
+              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤ªà¥à¤¸à¥à¤¤à¤ à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
               "success",
             );
           }
@@ -13481,17 +13481,17 @@ async function handleFormResponseSubmit(
       let userBody = template.confirmation_email_body;
       if (!userBody) {
         userBody = `
-          <p>नमस्ते <strong>${fullName}</strong>,</p>
-          <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
-          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${courseInfo.price_rupees > 0 ? " Premium access के लिए course page पर भुगतान करें।" : ""}</p></div>` : ""}
+          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
+          <p>à¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "<strong>${template.title}</strong>" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">ð à¤à¤ªà¤à¥ <strong>${courseInfo.title}</strong> à¤®à¥à¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥!${courseInfo.price_rupees > 0 ? " Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}</p></div>` : ""}
         `;
       }
-      const userText = `नमस्ते ${fullName},\n\nआपका फॉर्म "${template.title}" सफलतापूर्वक प्राप्त हो गया है।\n\nOm!`;
+      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "${template.title}" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
       await safeSendEmail(
         env,
         email,
         subject,
-        "✅ फॉर्म जमा हुआ!",
+        "â à¤«à¥à¤°à¥à¤® à¤à¤®à¤¾ à¤¹à¥à¤!",
         userBody,
         userText,
       );
@@ -13521,7 +13521,7 @@ async function handleFormResponseSubmit(
       env,
       adminEmail,
       `[LMS Form] New Submission: ${template.title}`,
-      "📋 New Form Submission",
+      "ð New Form Submission",
       adminHtml,
       adminText,
     );
@@ -13568,7 +13568,7 @@ async function callRealtimeAPI(
 
     if (missingKeys.length > 0) {
       const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(", ")}`;
-      console.error(`[Realtime] ${msg} — returning null, callers will treat as empty result`);
+      console.error(`[Realtime] ${msg} â returning null, callers will treat as empty result`);
       // Send urgent alert to admin
       await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => { });
       return null;
@@ -13660,7 +13660,7 @@ async function getRealtimeParticipantToken(
     "POST",
     {
       custom_participant_id: userId,
-      name: name || "छात्र",
+      name: name || "à¤à¤¾à¤¤à¥à¤°",
       preset_name: isAdmin ? "group_call_host" : "group_call_participant",
     },
   );
@@ -14591,7 +14591,7 @@ const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
   const unit = String(value || "fifteen_minute");
-  const valid = ["fifteen_minute", "per_class", "monthly"];
+  const valid = ["fifteen_minute", "per_class", "monthly", "per_minute"];
   return valid.includes(unit) ? unit : "fifteen_minute";
 }
 
@@ -14695,8 +14695,8 @@ async function deductFromWallet(
   const before = await getWalletBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
-  // 🔴 FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
-  // insert succeed or fail together — no inconsistent state.
+  // ð´ FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
+  // insert succeed or fail together â no inconsistent state.
   const ledgerId = generateCustomId("YA-CRL");
   const batchResult = await env.DB.batch([
     env.DB.prepare(
@@ -15056,7 +15056,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
         requiredAmount: rate,
         availableBalance: wallet.balance_rupees,
         maxMinutes: 0,
-        message: `इस flat-rate live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें।`,
+        message: `à¤à¤¸ flat-rate live class à¤®à¥à¤ à¤à¥à¤¡à¤¼à¤¨à¥ à¤à¥ à¤²à¤¿à¤ â¹${rate} à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ balance recharge à¤à¤°à¥à¤à¥¤`,
       };
     }
 
@@ -15065,7 +15065,26 @@ async function chargeSelfStudyGroupClassIfNeeded(
     return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: -1 };
   }
 
-  // fifteen_minute / pro-rata pricing (default behavior)
+  // Exact time-based ("per_minute") pricing: charge only for actual attended time on leave/end.
+  if (creditUnit === "per_minute") {
+    const paidValue = (prepaid / FIFTEEN_MIN_SECONDS) * rate;
+    const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+    const maxMinutes = Math.round(prepaid / 60) + Math.max(0, affordableMinutes);
+
+    if (wallet.balance_rupees + paidValue <= 0) {
+      return {
+        allowed: false,
+        requiredAmount: 0,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `Wallet mein balance khatam ho gaya hai. Kripya recharge karein.`,
+      };
+    }
+
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes, message: "" };
+  }
+
+  // fifteen_minute / monthly pricing (default 15-minute block behaviour)
   const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
   const prepaidMinutes = Math.floor(prepaid / 60);
 
@@ -15092,7 +15111,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       requiredAmount: rate,
       availableBalance: wallet.balance_rupees,
       maxMinutes: 0,
-      message: `इस credit-based live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें। (₹${rate} required to join this class. Please recharge your wallet.)`,
+      message: `à¤à¤¸ credit-based live class à¤®à¥à¤ à¤à¥à¤¡à¤¼à¤¨à¥ à¤à¥ à¤²à¤¿à¤ â¹${rate} à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ balance recharge à¤à¤°à¥à¤à¥¤ (â¹${rate} required to join this class. Please recharge your wallet.)`,
     };
   }
 
@@ -15126,16 +15145,24 @@ async function chargeAttendanceGroupClassCredits(
   const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
 
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
-
-  if (totalSeconds <= 0 || creditUnit === "per_class") return;
   if (totalSeconds <= 0) return;
 
-  const totalMinutes = Math.ceil(totalSeconds / 60);
-  const requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  if (creditUnit === "per_class") return;
+
+  let requiredAmount = 0;
+
+  if (creditUnit === "per_minute") {
+    requiredAmount = roundToTwo(rate * totalSeconds / FIFTEEN_MIN_SECONDS);
+  } else {
+    // fifteen_minute / monthly legacy behaviour: round up to next full minute
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  }
+
   if (requiredAmount <= 0) return;
 
   const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraAmountNeeded = requiredAmount - alreadyCharged;
+  const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
 
   let finalChargedAmount = alreadyCharged;
 
@@ -15149,7 +15176,7 @@ async function chargeAttendanceGroupClassCredits(
       sessionId,
     );
     if (!deduction.ok) {
-      console.error(`Failed to deduct ₹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+      console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
       await env.DB.prepare(
         "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
       ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
@@ -15157,9 +15184,8 @@ async function chargeAttendanceGroupClassCredits(
       finalChargedAmount += extraAmountNeeded;
     }
   } else if (extraAmountNeeded < 0) {
-    // Student left early — refund excess charged amount
     const refundAmount = Math.abs(extraAmountNeeded);
-    const roundedRefund = Math.round(refundAmount * 100) / 100;
+    const roundedRefund = roundToTwo(refundAmount);
     if (roundedRefund > 0) {
       await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
       finalChargedAmount -= roundedRefund;
@@ -15192,7 +15218,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     .bind(sessionId)
     .all()).results as any[];
 
-  // Batch: get total charged amounts for all attendees — chunked for D1 parameter limit
+  // Batch: get total charged amounts for all attendees â chunked for D1 parameter limit
   const userIds = rows.map((r: any) => r.user_id).filter(Boolean);
   const chargedMap = new Map<string, number>();
   for (const chunk of chunkArray(userIds, 50)) {
@@ -15204,19 +15230,20 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   }
 
   for (const row of rows || []) {
+    const creditUnit = normalizeGroupClassCreditUnit(session?.live_class_credit_unit);
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
-    // Read fresh remaining prepaid from DB — chargeAttendanceGroupClassCredits just updated it
-    if (rate > 0) {
+    // Read fresh remaining prepaid from DB â chargeAttendanceGroupClassCredits just updated it
+    if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
-        const refundAmount = (finalPrepaid / 60) * (rate / 15);
+        const refundAmount = (finalPrepaid * rate) / FIFTEEN_MIN_SECONDS;
         const roundedRefund = Math.round(refundAmount * 100) / 100;
         const totalCharged = chargedMap.get(row.user_id) || 0;
         const safeRefund = Math.min(roundedRefund, totalCharged);
         if (safeRefund > 0) {
           await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
-          console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+          console.log(`[Live.EndSession] Refunded â¹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
         }
       }
     }
@@ -15269,7 +15296,7 @@ async function handleBookIndividualClass(
     if (wallet.balance_rupees < creditCost) {
       return new Response(JSON.stringify({
         error: "INSUFFICIENT_BALANCE",
-        message: `Individual class ke liye ₹${creditCost} chahiye. Aapke paas sirf ₹${wallet.balance_rupees} hain.`,
+        message: `Individual class ke liye â¹${creditCost} chahiye. Aapke paas sirf â¹${wallet.balance_rupees} hain.`,
       }), { status: 402 });
     }
 
@@ -15477,7 +15504,7 @@ async function handleRazorpayCreateTopupOrder(
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
-      // Record actual amount paid (₹0 for full coupon), not the original price
+      // Record actual amount paid (â¹0 for full coupon), not the original price
       const discountedAmountRupees = paiseToInr(amount_paise);
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
@@ -15751,7 +15778,7 @@ async function handleAdminCreateLiveSession(
           `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
         );
         return new Response(
-          JSON.stringify({ error: "Meeting room बनाने में विफल। कृपया पुनः प्रयास करें।" }),
+          JSON.stringify({ error: "Meeting room à¤¬à¤¨à¤¾à¤¨à¥ à¤®à¥à¤ à¤µà¤¿à¤«à¤²à¥¤ à¤à¥à¤ªà¤¯à¤¾ à¤ªà¥à¤¨à¤ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤à¤°à¥à¤à¥¤" }),
           { status: 500, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -16013,7 +16040,7 @@ async function handleLiveSignaling(
         .bind(id, sessionId, payload.sub, type, JSON.stringify(data))
         .run();
 
-      // Update Attendance if it's a student joining — atomic conditional insert prevents TOCTOU race
+      // Update Attendance if it's a student joining â atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
         const attId = generateCustomId("YA-ATT");
         await env.DB.prepare(
@@ -16384,7 +16411,7 @@ async function handleEnrollWithCredits(
     );
 
     if (!deduction.ok) {
-      // Wallet deduction failed — clean up the enrollment we just created
+      // Wallet deduction failed â clean up the enrollment we just created
       try {
         await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
           .bind(enrollmentResult.id)
@@ -16412,7 +16439,7 @@ async function handleEnrollWithCredits(
       env,
       payload.sub,
       "Course Unlocked",
-      `You unlocked "${course.title}" using ₹${requiredCost} from wallet.`,
+      `You unlocked "${course.title}" using â¹${requiredCost} from wallet.`,
       "success",
     );
 
@@ -16514,25 +16541,25 @@ async function handleEnroll(
       "navasanganakah@gmail.com";
     if (user?.email) {
       const userHtml = `
-        <p style="font-size:16px;color:#334155;">नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-        <p style="font-size:16px;color:#334155;">आपको <strong>${course.title}</strong> का <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> मिल गया है!</p>
+        <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+        <p style="font-size:16px;color:#334155;">à¤à¤ªà¤à¥ <strong>${course.title}</strong> à¤à¤¾ <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!</p>
         <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
-          <p style="margin:0;color:#5b21b6;font-weight:600;">📚 Free lessons अभी देखें।</p>
-          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">💎 Premium access के लिए course page पर जाएँ और भुगतान करें।</p>` : ""}
+          <p style="margin:0;color:#5b21b6;font-weight:600;">ð Free lessons à¤à¤­à¥ à¤¦à¥à¤à¥à¤à¥¤</p>
+          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">ð Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤à¤¾à¤à¤ à¤à¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤</p>` : ""}
         </div>
       `;
-      const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपको ${course.title} का Free Preview Access मिल गया है!\nFree lessons अभी देखें।\n${course.price_rupees > 0 ? "Premium access के लिए course page पर जाएँ और भुगतान करें।" : ""}`;
+      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¥ ${course.title} à¤à¤¾ Free Preview Access à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!\nFree lessons à¤à¤­à¥ à¤¦à¥à¤à¥à¤à¥¤\n${course.price_rupees > 0 ? "Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤à¤¾à¤à¤ à¤à¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}`;
       await safeSendEmail(
         env,
         user.email,
-        `✅ Enrollment Confirmed: ${course.title}`,
-        "🎓 Free Access मिल गया!",
+        `â Enrollment Confirmed: ${course.title}`,
+        "ð Free Access à¤®à¤¿à¤² à¤à¤¯à¤¾!",
         userHtml,
         userText,
       );
     }
-    const adminHtml = `<p>नमस्ते Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) ने <strong>${course.title}</strong> में <b>Free Enroll</b> किया है।</p><p>Om!</p>`;
-    const adminText = `नमस्ते Admin,\n\n${user?.full_name || userId} (${user?.email}) ने ${course.title} में Free Enroll किया है।\n\nOm!`;
+    const adminHtml = `<p>à¤¨à¤®à¤¸à¥à¤¤à¥ Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) à¤¨à¥ <strong>${course.title}</strong> à¤®à¥à¤ <b>Free Enroll</b> à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤</p><p>Om!</p>`;
+    const adminText = `à¤¨à¤®à¤¸à¥à¤¤à¥ Admin,\n\n${user?.full_name || userId} (${user?.email}) à¤¨à¥ ${course.title} à¤®à¥à¤ Free Enroll à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
     await safeSendEmail(
       env,
       adminEmail,
@@ -16576,7 +16603,7 @@ async function handleBookCompleteLesson(
 
     const userId = payload.sub;
 
-    // Check enrollment — user must be enrolled in this book (or a linked course)
+    // Check enrollment â user must be enrolled in this book (or a linked course)
     const enrollment: any = await env.DB.prepare(
       "SELECT id, progress FROM Enrollments WHERE user_id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?)) AND status IN ('active', 'completed') LIMIT 1",
     ).bind(userId, bookId, bookId).first();
@@ -16634,7 +16661,7 @@ async function handleBookCompleteLesson(
     const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
     const status = progress >= 100 ? "completed" : "active";
 
-    // Update enrollment progress — try book_id match first, then fallback to course_id
+    // Update enrollment progress â try book_id match first, then fallback to course_id
     const updated = await env.DB.prepare(
       "UPDATE Enrollments SET progress = ?, status = ? WHERE id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?))",
     ).bind(progress, status, enrollment.id, bookId, bookId).run();
@@ -16644,7 +16671,7 @@ async function handleBookCompleteLesson(
         "SELECT title FROM Books WHERE id = ?",
       ).bind(bookId).first();
       await createNotification(
-        env, userId, "Book Completed! 🎉",
+        env, userId, "Book Completed! ð",
         `Congratulations on completing "${c?.title || "this book"}"!`,
         "success",
       );
@@ -16830,7 +16857,7 @@ async function handleCompleteLesson(
       status = "completed";
     }
 
-    // Check if paid enrollment → set certificate_eligible
+    // Check if paid enrollment â set certificate_eligible
     const paidEnrollment: any = await env.DB.prepare(
       "SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
@@ -16859,8 +16886,8 @@ async function handleCompleteLesson(
       await createNotification(
         env,
         userId,
-        "Course Completed! 🎉",
-        `Congratulations on completing "${c?.title}"!${isPaid ? " आप अब Certificate के लिए eligible हैं!" : ""}`,
+        "Course Completed! ð",
+        `Congratulations on completing "${c?.title}"!${isPaid ? " à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤!" : ""}`,
         "success",
       );
 
@@ -16871,32 +16898,32 @@ async function handleCompleteLesson(
         .first();
       if (user?.email) {
         let emailHtml = `
-          <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-          <p>आपने <strong>${c?.title}</strong> course 100% पूरा कर लिया है! 🎉</p>
+          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+          <p>à¤à¤ªà¤¨à¥ <strong>${c?.title}</strong> course 100% à¤ªà¥à¤°à¤¾ à¤à¤° à¤²à¤¿à¤¯à¤¾ à¤¹à¥! ð</p>
         `;
-        let emailText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपने ${c?.title} course 100% पूरा कर लिया है! 🎉\n`;
+        let emailText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤¨à¥ ${c?.title} course 100% à¤ªà¥à¤°à¤¾ à¤à¤° à¤²à¤¿à¤¯à¤¾ à¤¹à¥! ð\n`;
 
         if (isPaid) {
           emailHtml += `
             <div style="background:#fffbeb;padding:16px;border-radius:12px;border:1px solid #fde68a;margin-top:16px;">
-              <p style="color:#92400e;font-weight:600;margin:0;">🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।</p>
+              <p style="color:#92400e;font-weight:600;margin:0;">ð à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¥¤ Admin à¤à¤²à¥à¤¦ à¤¹à¥ à¤à¤ªà¤à¤¾ certificate issue à¤à¤°à¥à¤à¤¾à¥¤</p>
             </div>
           `;
-          emailText += `\n🎓 आप अब Certificate के लिए eligible हैं। Admin जल्द ही आपका certificate issue करेगा।`;
+          emailText += `\nð à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¥¤ Admin à¤à¤²à¥à¤¦ à¤¹à¥ à¤à¤ªà¤à¤¾ certificate issue à¤à¤°à¥à¤à¤¾à¥¤`;
         } else {
           emailHtml += `
             <div style="background:#f0fdf4;padding:16px;border-radius:12px;border:1px solid #bbf7d0;margin-top:16px;">
-              <p style="color:#166534;font-weight:600;margin:0;">✨ Certificate प्राप्त करने के लिए Premium Enrollment में upgrade करें।</p>
+              <p style="color:#166534;font-weight:600;margin:0;">â¨ Certificate à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ Premium Enrollment à¤®à¥à¤ upgrade à¤à¤°à¥à¤à¥¤</p>
             </div>
           `;
-          emailText += `\n✨ Certificate प्राप्त करने के लिए Premium Enrollment में upgrade करें।`;
+          emailText += `\nâ¨ Certificate à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ Premium Enrollment à¤®à¥à¤ upgrade à¤à¤°à¥à¤à¥¤`;
         }
 
         await safeSendEmail(
           env,
           user.email,
           `Course Completed: ${c?.title}`,
-          "🏆 Course Completed!",
+          "ð Course Completed!",
           emailHtml,
           emailText,
         );
@@ -17312,7 +17339,7 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
+    // Step 1: Create Transaction FIRST â prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -17320,7 +17347,7 @@ async function handleCreatePaymentOrder(
       .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
-    // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
+    // Step 2: Create Enrollment â uses ON CONFLICT DO NOTHING to prevent duplicates
     const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
     if (itemType === "course") enrollPayload.courseId = itemId;
     if (itemType === "book") enrollPayload.bookId = itemId;
@@ -17399,14 +17426,14 @@ async function handleVerifyPayment(
       const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(orderOwner.user_id).first();
       if (user?.email) {
         const userHtml = `
-          <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-          <p><strong>${title}</strong> का <b>Premium Access</b> आपको मिल गया है!</p>
+          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+          <p><strong>${title}</strong> à¤à¤¾ <b>Premium Access</b> à¤à¤ªà¤à¥ à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!</p>
           <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
-            <p style="margin:0;color:#166534;font-weight:600;">🏆 Course पूरा करने पर आप Certificate के लिए eligible होंगे!</p>
+            <p style="margin:0;color:#166534;font-weight:600;">ð Course à¤ªà¥à¤°à¤¾ à¤à¤°à¤¨à¥ à¤ªà¤° à¤à¤ª Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¤à¥!</p>
           </div>
         `;
-        const userText = `नमस्ते ${user.full_name || "छात्र"}\n\n${title} का Premium Access आपको मिल गया है!\n\nOm!`;
-        await safeSendEmail(env, user.email, `🎉 Premium Access Confirmed: ${title}`, "🎉 भुगतान सफल!", userHtml, userText);
+        const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}\n\n${title} à¤à¤¾ Premium Access à¤à¤ªà¤à¥ à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!\n\nOm!`;
+        await safeSendEmail(env, user.email, `ð Premium Access Confirmed: ${title}`, "ð à¤­à¥à¤à¤¤à¤¾à¤¨ à¤¸à¤«à¤²!", userHtml, userText);
         await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
       }
     } catch (e) {
@@ -17542,7 +17569,7 @@ async function checkAndConsumeAICredit(
   if (!deductionResult.ok) {
     return {
       allowed: false,
-      reason: `Balance कम है। इस action के लिए ₹${deduction} चाहिए। कृपया wallet recharge करें। (Insufficient balance. ₹${deduction} required. Please recharge your wallet.)`,
+      reason: `Balance à¤à¤® à¤¹à¥à¥¤ à¤à¤¸ action à¤à¥ à¤²à¤¿à¤ â¹${deduction} à¤à¤¾à¤¹à¤¿à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ wallet recharge à¤à¤°à¥à¤à¥¤ (Insufficient balance. â¹${deduction} required. Please recharge your wallet.)`,
       remaining: deductionResult.balance_rupees,
     };
   }
@@ -17658,7 +17685,7 @@ async function checkHourlyLimit(
     const resetMin = Math.ceil((3600000 - diffMs) / 60000);
     return {
       allowed: false,
-      reason: `Rate limit exceeded (${rateLimit}/hour). ${resetMin} मिनट बाद try करें।`,
+      reason: `Rate limit exceeded (${rateLimit}/hour). ${resetMin} à¤®à¤¿à¤¨à¤ à¤¬à¤¾à¤¦ try à¤à¤°à¥à¤à¥¤`,
     };
   }
 
@@ -17699,7 +17726,7 @@ async function userHasActiveSubscription(
   return profile.hasActiveSub;
 }
 
-// GET /api/subscription/plans — Public list of active plans
+// GET /api/subscription/plans â Public list of active plans
 async function handleListSubscriptionPlans(
   request: Request,
   env: Env,
@@ -17724,7 +17751,7 @@ async function handleListSubscriptionPlans(
   }
 }
 
-// GET /api/subscription/me — User ka current subscription status
+// GET /api/subscription/me â User ka current subscription status
 async function handleGetUserSubscription(
   request: Request,
   env: Env,
@@ -17771,7 +17798,7 @@ async function handleGetUserSubscription(
   }
 }
 
-// POST /api/subscription/create — Create Razorpay subscription & save to DB
+// POST /api/subscription/create â Create Razorpay subscription & save to DB
 async function handleCreateSubscription(
   request: Request,
   env: Env,
@@ -17906,7 +17933,7 @@ async function handleCreateSubscription(
       );
     }
 
-    // Save subscription record to D1 — reuse pre-select created subscription if available
+    // Save subscription record to D1 â reuse pre-select created subscription if available
     const existingCreatedSub: any = await env.DB.prepare(
       `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' AND razorpay_subscription_id IS NULL ORDER BY created_at DESC LIMIT 1`,
     )
@@ -17943,12 +17970,12 @@ async function handleCreateSubscription(
         <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
           <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>Please complete the payment in the checkout window to activate your subscription.</p>
         <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -17973,7 +18000,7 @@ async function handleCreateSubscription(
   }
 }
 
-// POST /api/subscription/cancel — Request cancellation of active subscription
+// POST /api/subscription/cancel â Request cancellation of active subscription
 async function handleCancelSubscription(
   request: Request,
   env: Env,
@@ -18180,7 +18207,7 @@ async function handleAdminPlanPool(
   }
 }
 
-// GET /api/subscription/plans/:id/pool — Student sees what they can choose from
+// GET /api/subscription/plans/:id/pool â Student sees what they can choose from
 async function handleStudentPlanPool(
   request: Request,
   env: Env,
@@ -18248,7 +18275,7 @@ async function handleStudentPlanPool(
   }
 }
 
-// POST /api/subscription/pre-select — Student saves selection before payment
+// POST /api/subscription/pre-select â Student saves selection before payment
 async function handleStudentPreSelect(
   request: Request,
   env: Env,
@@ -18448,7 +18475,7 @@ async function handleStudentPreSelect(
   }
 }
 
-// GET /api/subscription/my-selections — Get student's locked selections
+// GET /api/subscription/my-selections â Get student's locked selections
 async function handleGetMySelections(
   request: Request,
   env: Env,
@@ -18500,7 +18527,7 @@ async function handleGetMySelections(
   }
 }
 
-// GET /api/subscription/ai-credits — Get student's current wallet balance
+// GET /api/subscription/ai-credits â Get student's current wallet balance
 async function handleGetMyWalletBalance(
   request: Request,
   env: Env,
@@ -18522,7 +18549,7 @@ async function handleGetMyWalletBalance(
   }
 }
 
-// GET+POST+PUT+DELETE /api/admin/subscription/plans — Admin: Manage plans (with Razorpay auto-creation)
+// GET+POST+PUT+DELETE /api/admin/subscription/plans â Admin: Manage plans (with Razorpay auto-creation)
 async function handleAdminSubscriptionPlans(
   request: Request,
   env: Env,
@@ -18534,7 +18561,7 @@ async function handleAdminSubscriptionPlans(
     const planId = url.pathname.split("/").pop();
     const isSpecificPlan = planId && planId !== "plans";
 
-    // GET — List all plans
+    // GET â List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
         "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
@@ -18545,7 +18572,7 @@ async function handleAdminSubscriptionPlans(
       });
     }
 
-    // POST — Create plan (auto-creates in Razorpay first, then saves to DB)
+    // POST â Create plan (auto-creates in Razorpay first, then saves to DB)
     if (request.method === "POST") {
       const {
         name,
@@ -18671,13 +18698,13 @@ async function handleAdminSubscriptionPlans(
           razorpay_plan_id: razorpayPlanId,
           message: razorpayPlanId
             ? `Plan created successfully and linked to Razorpay (${razorpayPlanId})`
-            : "Plan saved to DB. Razorpay keys not configured — plan not created in Razorpay.",
+            : "Plan saved to DB. Razorpay keys not configured â plan not created in Razorpay.",
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // PUT — Update plan (all fields updateable)
+    // PUT â Update plan (all fields updateable)
     if (request.method === "PUT" && isSpecificPlan) {
       const {
         name, interval, interval_count, amount_rupees, razorpay_plan_id,
@@ -18771,7 +18798,7 @@ async function handleAdminSubscriptionPlans(
       });
     }
 
-      // DELETE — Deactivate plan (soft delete — keeps existing subscriptions intact)
+      // DELETE â Deactivate plan (soft delete â keeps existing subscriptions intact)
     if (request.method === "DELETE" && isSpecificPlan) {
       const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
       const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
@@ -18929,7 +18956,7 @@ async function getOrCreateRazorpayCustomer(
   );
 }
 
-// POST /api/admin/subscription/assign — Admin: Manually assign plan to user (sends Razorpay link)
+// POST /api/admin/subscription/assign â Admin: Manually assign plan to user (sends Razorpay link)
 async function handleAdminAssignSubscription(
   request: Request,
   env: Env,
@@ -19056,7 +19083,7 @@ async function handleAdminAssignSubscription(
         <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
           <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
         <p style="text-align: center; margin: 32px 0;">
@@ -19064,7 +19091,7 @@ async function handleAdminAssignSubscription(
         </p>
         <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ₹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -19082,7 +19109,7 @@ async function handleAdminAssignSubscription(
     return handleGlobalError(error, "Admin.AssignSubscription", env, request);
   }
 }
-// POST /api/payment/webhook — Razorpay Webhook (server-side event processing)
+// POST /api/payment/webhook â Razorpay Webhook (server-side event processing)
 async function handleRazorpayWebhook(
   request: Request,
   env: Env,
@@ -19114,7 +19141,7 @@ async function handleRazorpayWebhook(
     );
 
     if (!isValid) {
-      console.error("[Webhook] Signature mismatch — possible forgery attempt");
+      console.error("[Webhook] Signature mismatch â possible forgery attempt");
       return new Response(
         JSON.stringify({ error: "Invalid webhook signature" }),
         { status: 400 },
@@ -19131,7 +19158,7 @@ async function handleRazorpayWebhook(
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // 3. Idempotency guard — insert the event ID up front. If another concurrent
+    // 3. Idempotency guard â insert the event ID up front. If another concurrent
     // delivery already inserted it, we skip. If processing later throws, we delete
     // the row so Razorpay can retry transient failures.
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
@@ -19169,7 +19196,7 @@ async function handleRazorpayWebhook(
         )
           .bind(orderId)
           .first();
-        // actualAmountInr paise→rupees conversion ke baad INR mein hai
+        // actualAmountInr paiseârupees conversion ke baad INR mein hai
         const amountPaid = actualAmountInr || txForAmount?.amount_rupees || 0;
 
         await env.DB.prepare(
@@ -19199,14 +19226,14 @@ async function handleRazorpayWebhook(
           await createNotification(
             env,
             enrollment.user_id,
-            "Payment Successful! 🎉",
+            "Payment Successful! ð",
             `"${enrollment.title}" course ka access unlock ho gaya hai.`,
             "success",
           );
         }
 
         // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
-        // D1 (SQLite-based) RETURNING clause support nahi karta — do step mein karte hain
+        // D1 (SQLite-based) RETURNING clause support nahi karta â do step mein karte hain
         const creditTxFind: any = await env.DB.prepare(
           "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
@@ -19229,8 +19256,8 @@ async function handleRazorpayWebhook(
           await createNotification(
             env,
             creditTxUpdate.user_id,
-            "Balance Added! 🎉",
-            `₹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
+            "Balance Added! ð",
+            `â¹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -19238,7 +19265,7 @@ async function handleRazorpayWebhook(
     } else if (eventType === "subscription.activated") {
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
-        // Idempotency check — skip if already active (prevents double AI credit allocation on webhook retry)
+        // Idempotency check â skip if already active (prevents double AI credit allocation on webhook retry)
         const existingSub: any = await env.DB.prepare(
           "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
         )
@@ -19286,16 +19313,16 @@ async function handleRazorpayWebhook(
             if (dbSub.live_class_amount_rupees > 0) {
               const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                // 🔴 FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
+                // ð´ FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
                 // Previously: status update, then addToWallet, then tracking field update
                 // were 3 separate calls. If the worker crashed after status update
                 // but before wallet credit, retry would see status='active' and
-                // skip the entire block — permanently losing the credit.
-                // Now they execute in one DB transaction — all succeed or none.
+                // skip the entire block â permanently losing the credit.
+                // Now they execute in one DB transaction â all succeed or none.
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
                 const batchStmts = [
-                  // Status update (no-op if already active — safe for retry)
+                  // Status update (no-op if already active â safe for retry)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
                   ).bind(periodStart, periodEnd, dbSub.id),
@@ -19313,7 +19340,7 @@ async function handleRazorpayWebhook(
                     `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
                      SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
                   ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
-                  // Accumulate tracking field — add plan value to existing balance (rollover)
+                  // Accumulate tracking field â add plan value to existing balance (rollover)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
                   ).bind(renewalAmount, dbSub.id),
@@ -19324,7 +19351,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               dbSub.user_id,
-              "Subscription Active! ✅",
+              "Subscription Active! â",
               "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
               "success",
             );
@@ -19337,16 +19364,16 @@ async function handleRazorpayWebhook(
               .first();
             if (user?.email) {
               const userHtml = `
-                <p>नमस्ते <strong>${user.full_name || "छात्र"}</strong>,</p>
-                <p>आपका subscription सफलतापूर्वक activate हो गया है!</p>
-                <p>आप अपने selected courses और AI credits का उपयोग कर सकते हैं।</p>
+                <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+                <p>à¤à¤ªà¤à¤¾ subscription à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ activate à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥!</p>
+                <p>à¤à¤ª à¤à¤ªà¤¨à¥ selected courses à¤à¤° AI credits à¤à¤¾ à¤à¤ªà¤¯à¥à¤ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
               `;
-              const userText = `नमस्ते ${user.full_name || "छात्र"},\n\nआपका subscription सफलतापूर्वक activate हो गया है!\nआप अपने selected courses और AI credits का उपयोग कर सकते हैं।\n\nOm!`;
+              const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¤¾ subscription à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ activate à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥!\nà¤à¤ª à¤à¤ªà¤¨à¥ selected courses à¤à¤° AI credits à¤à¤¾ à¤à¤ªà¤¯à¥à¤ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤\n\nOm!`;
               await safeSendEmail(
                 env,
                 user.email,
                 "Subscription Activated",
-                "✅ Subscription Active!",
+                "â Subscription Active!",
                 userHtml,
                 userText,
               );
@@ -19356,7 +19383,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.authenticated") {
-      // Payment authenticated by user — update status to 'authenticated' (payment captured separately)
+      // Payment authenticated by user â update status to 'authenticated' (payment captured separately)
       const authSub = event.payload?.subscription?.entity;
       if (authSub?.id) {
         const existingAuthSub: any = await env.DB.prepare(
@@ -19378,7 +19405,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal — update period dates and refill live_class_amount_rupees
+      // Renewal â update period dates and refill live_class_amount_rupees
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
@@ -19415,7 +19442,7 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
-              // 🔴 FIX: Atomic batch for status update, wallet credit, tracking field.
+              // ð´ FIX: Atomic batch for status update, wallet credit, tracking field.
               // Prevents permanent credit loss if worker crashes mid-way.
               const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
@@ -19461,7 +19488,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               chargedSub.user_id,
-              "Subscription Renewed! ♻️",
+              "Subscription Renewed! â»ï¸",
               "Aapka subscription renew ho gaya hai aur wallet me paise add ho gaye hain.",
               "success",
             );
@@ -19469,7 +19496,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.halted") {
-      // Payment failed — halt subscription
+      // Payment failed â halt subscription
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         // Check previous status to avoid duplicate notifications on retry
@@ -19496,7 +19523,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               dbSub.user_id,
-              "Subscription Payment Failed ⚠️",
+              "Subscription Payment Failed â ï¸",
               "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
               "alert",
             );
@@ -19508,17 +19535,17 @@ async function handleRazorpayWebhook(
               .first();
             if (haltedUser?.email) {
               const haltedHtml = `
-                <p>नमस्ते <strong>${haltedUser.full_name || "छात्र"}</strong>,</p>
-                <p>आपके subscription का भुगतान विफल हो गया है।</p>
-                <p>कृपया Razorpay dashboard पर जाकर अपने payment method को update करें ताकि आपका subscription जारी रह सके।</p>
-                <p>अगर आपने यह नहीं किया है तो कृपया इस संदेश को अनदेखा करें।</p>
+                <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${haltedUser.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
+                <p>à¤à¤ªà¤à¥ subscription à¤à¤¾ à¤­à¥à¤à¤¤à¤¾à¤¨ à¤µà¤¿à¤«à¤² à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+                <p>à¤à¥à¤ªà¤¯à¤¾ Razorpay dashboard à¤ªà¤° à¤à¤¾à¤à¤° à¤à¤ªà¤¨à¥ payment method à¤à¥ update à¤à¤°à¥à¤ à¤¤à¤¾à¤à¤¿ à¤à¤ªà¤à¤¾ subscription à¤à¤¾à¤°à¥ à¤°à¤¹ à¤¸à¤à¥à¥¤</p>
+                <p>à¤à¤à¤° à¤à¤ªà¤¨à¥ à¤¯à¤¹ à¤¨à¤¹à¥à¤ à¤à¤¿à¤¯à¤¾ à¤¹à¥ à¤¤à¥ à¤à¥à¤ªà¤¯à¤¾ à¤à¤¸ à¤¸à¤à¤¦à¥à¤¶ à¤à¥ à¤à¤¨à¤¦à¥à¤à¤¾ à¤à¤°à¥à¤à¥¤</p>
               `;
-              const haltedText = `नमस्ते ${haltedUser.full_name || "छात्र"},\n\nआपके subscription का भुगतान विफल हो गया है।\nकृपया Razorpay dashboard पर जाकर अपने payment method को update करें।\n\nOm!`;
+              const haltedText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${haltedUser.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¥ subscription à¤à¤¾ à¤­à¥à¤à¤¤à¤¾à¤¨ à¤µà¤¿à¤«à¤² à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nà¤à¥à¤ªà¤¯à¤¾ Razorpay dashboard à¤ªà¤° à¤à¤¾à¤à¤° à¤à¤ªà¤¨à¥ payment method à¤à¥ update à¤à¤°à¥à¤à¥¤\n\nOm!`;
               await safeSendEmail(
                 env,
                 haltedUser.email,
                 "Subscription Payment Failed",
-                "⚠️ Subscription Payment Failed",
+                "â ï¸ Subscription Payment Failed",
                 haltedHtml,
                 haltedText,
               );
@@ -20017,7 +20044,7 @@ async function getAIGlobalContext(
   try {
     let context = "";
     if (role === "admin") {
-      // ⚡ Bolt: Batch independent queries to execute concurrently instead of sequentially
+      // â¡ Bolt: Batch independent queries to execute concurrently instead of sequentially
       const [statsResult, recentEnrollments, courseList] = await env.DB.batch([
         env.DB.prepare(
           `
@@ -20067,7 +20094,7 @@ Actions:
 18. send_email: { to, subject, body, isHtml }
 `;
     } else if (userId) {
-      // ⚡ Bolt: Batch independent user context queries
+      // â¡ Bolt: Batch independent user context queries
       const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
         env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?").bind(userId),
         env.DB.prepare(
@@ -20116,7 +20143,7 @@ Joined: ${user?.created_at}
       // Deep lesson titles for enrolled courses
       const enrolledCourses = (enrollments.results as any[]) || [];
       if (enrolledCourses.length > 0) {
-        // ⚡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
+        // â¡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
         const lessonQueries = enrolledCourses.map((enrolled) =>
           env.DB.prepare("SELECT id, title, type FROM Lessons WHERE course_id = ?").bind(enrolled.course_id)
         );
@@ -20290,27 +20317,27 @@ function buildReleaseContent(options: {
     .filter(Boolean)
     .slice(0, 10);
   const summaryLines = [
-    `Branch ${options.sourceBranch} से ${options.targetBranch} में release changes तैयार हैं।`,
-    commitTitles.length ? `मुख्य commits: ${commitTitles.join("; ")}` : "GitHub compare में commit details उपलब्ध नहीं मिले।",
-    fileNames.length ? `प्रभावित files: ${fileNames.join(", ")}` : "File level changes उपलब्ध नहीं मिले।",
+    `Branch ${options.sourceBranch} à¤¸à¥ ${options.targetBranch} à¤®à¥à¤ release changes à¤¤à¥à¤¯à¤¾à¤° à¤¹à¥à¤à¥¤`,
+    commitTitles.length ? `à¤®à¥à¤à¥à¤¯ commits: ${commitTitles.join("; ")}` : "GitHub compare à¤®à¥à¤ commit details à¤à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¥à¥¤",
+    fileNames.length ? `à¤ªà¥à¤°à¤­à¤¾à¤µà¤¿à¤¤ files: ${fileNames.join(", ")}` : "File level changes à¤à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¥à¥¤",
   ];
   if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
   const changeSummary = summaryLines.join("\n");
-  const subject = `नई वेबसाइट अपडेट: ${options.sourceBranch} → ${options.targetBranch}`;
-  const body = `Namaste,\n\nहमने वेबसाइट में नए बदलाव publish किये हैं।\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const subject = `à¤¨à¤ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤à¤ªà¤¡à¥à¤: ${options.sourceBranch} â ${options.targetBranch}`;
+  const body = `Namaste,\n\nà¤¹à¤®à¤¨à¥ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤®à¥à¤ à¤¨à¤ à¤¬à¤¦à¤²à¤¾à¤µ publish à¤à¤¿à¤¯à¥ à¤¹à¥à¤à¥¤\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
   const html = `
     <p>Namaste,</p>
-    <p>हमने वेबसाइट में नए बदलाव publish किये हैं।</p>
+    <p>à¤¹à¤®à¤¨à¥ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤®à¥à¤ à¤¨à¤ à¤¬à¤¦à¤²à¤¾à¤µ publish à¤à¤¿à¤¯à¥ à¤¹à¥à¤à¥¤</p>
     <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
-    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare देखें</a></p>` : ""}
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare à¤¦à¥à¤à¥à¤</a></p>` : ""}
     <p><strong>Article API integration:</strong> Coming soon.</p>
     <p>Om!</p>
   `;
   const social = [
-    "🚀 Website Update Published",
-    `${options.sourceBranch} → ${options.targetBranch}`,
+    "ð Website Update Published",
+    `${options.sourceBranch} â ${options.targetBranch}`,
     "",
-    commitTitles.length ? commitTitles.map((title: string) => `• ${title}`).join("\n") : "नए सुधार और changes live हुए हैं।",
+    commitTitles.length ? commitTitles.map((title: string) => `â¢ ${title}`).join("\n") : "à¤¨à¤ à¤¸à¥à¤§à¤¾à¤° à¤à¤° changes live à¤¹à¥à¤ à¤¹à¥à¤à¥¤",
     "",
     "Article: Coming soon",
     "#Adityanveshan #WebsiteUpdate #YagyaAshram",
@@ -21106,7 +21133,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: `Course "${params.title}" created successfully with ID ${id}. Prices: ₹${params.price_rupees}, $${params.price_usd}.`,
+          message: `Course "${params.title}" created successfully with ID ${id}. Prices: â¹${params.price_rupees}, $${params.price_usd}.`,
         };
       }
       case "edit_course": {
@@ -21478,7 +21505,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: "डैशबोर्ड पर ईमेल ड्राफ्ट सहेज लिया गया है।",
+          message: "à¤¡à¥à¤¶à¤¬à¥à¤°à¥à¤¡ à¤ªà¤° à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤ à¤¸à¤¹à¥à¤ à¤²à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤",
           draft_id: id,
         };
       }
@@ -21539,7 +21566,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: `फॉर्म और ईमेल ड्राफ्ट सफलतापूर्वक बनाए गए। (Form Link: ${formLink})`,
+          message: `à¤«à¥à¤°à¥à¤® à¤à¤° à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¬à¤¨à¤¾à¤ à¤à¤à¥¤ (Form Link: ${formLink})`,
         };
       }
       case "bulk_draft_email": {
@@ -21562,7 +21589,7 @@ async function executeAIAction(
         await env.DB.batch(queries);
         return {
           success: true,
-          message: `${recipients.length} छात्रों के लिए ईमेल ड्राफ्ट्स सफलतापूर्वक तैयार किए गए हैं।`,
+          message: `${recipients.length} à¤à¤¾à¤¤à¥à¤°à¥à¤ à¤à¥ à¤²à¤¿à¤ à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤à¥à¤¸ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¤à¥à¤¯à¤¾à¤° à¤à¤¿à¤ à¤à¤ à¤¹à¥à¤à¥¤`,
         };
       }
       case "query_users": {
@@ -21882,14 +21909,14 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     let systemContext = "";
     if (isTutor) {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the AI Tutor for Adityanveshan / Yagya Ashram.
+      systemContext = `You are "Yagya Mitra" (à¤¯à¤à¥à¤ à¤®à¤¿à¤¤à¥à¤°), the AI Tutor for Adityanveshan / Yagya Ashram.
 ROLE: You are an intelligent tutor designed to help students learn effectively based on the course materials.
 
 KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 CONVERSATIONAL PROTOCOL:
-1. Speak gently, respectfully, and conversationally (बातों की तरह) primarily in highly fluent Devanagari Hindi (or English if the user strictly asks in English). Ensure your Hindi typing is completely natural, grammatically flawless, and uses appropriate respectful vocabulary.
+1. Speak gently, respectfully, and conversationally (à¤¬à¤¾à¤¤à¥à¤ à¤à¥ à¤¤à¤°à¤¹) primarily in highly fluent Devanagari Hindi (or English if the user strictly asks in English). Ensure your Hindi typing is completely natural, grammatically flawless, and uses appropriate respectful vocabulary.
 2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
 3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
 4. If the user asks about the active lesson context or search results, answer from that context first. Use "[Source: ...]" markers if provided in the search results to cite your information. Look at everything in the context.
@@ -21947,7 +21974,7 @@ If the user asks to "create", "delete", "edit", or "add" something AND provided 
     - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
 ABOUT YAGYA ASHRAM:
-- Name: Adityanveshan (यज्ञ आश्रम)
+- Name: Adityanveshan (à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤®)
 - Mission: A traditional yet modern Vedic educational institution focused on preserving Vedic wisdom, character building, and teaching modern skills like Yoga, Sanskrit, and technology.
 - Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
 - Location: Spiritual heart of India.
@@ -21955,7 +21982,7 @@ ABOUT YAGYA ASHRAM:
 - You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
-      systemContext = `You are "Yagya Mitra" (यज्ञ मित्र), the ultimate AI Academic Guide at Adityanveshan.
+      systemContext = `You are "Yagya Mitra" (à¤¯à¤à¥à¤ à¤®à¤¿à¤¤à¥à¤°), the ultimate AI Academic Guide at Adityanveshan.
 
 CORE AUTHORITY:
 You have been provided with a high-fidelity AI-generated 'Content Summary/Transcript' of the current lesson. You must treat this as your primary textbook. Your answers should be authoritative, detailed, and directly based on the specific concepts found in this analysis and the Course Overview.
@@ -21965,7 +21992,7 @@ ${context}
 
 STRATEGIC TUTORING COMMANDS:
 1. **Intent Detection**: First infer whether the student needs a direct answer, lesson summary, example, step-by-step explanation, comparison, quiz, revision plan, or motivation. Respond in that mode.
-2. **Conversational Tone**: Act like a wise, conversational mentor (बातचीत लायक हों). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
+2. **Conversational Tone**: Act like a wise, conversational mentor (à¤¬à¤¾à¤¤à¤à¥à¤¤ à¤²à¤¾à¤¯à¤ à¤¹à¥à¤). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
 3. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second. Look at ALL provided context (sabhi cheejo ko dekhkar).
 4. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
 5. **Structured Mastery**: Always format your response for high readability:
@@ -22106,8 +22133,8 @@ Example JSON structure:
         JSON.stringify({
           reply:
             (role === "admin" || role === "teacher")
-              ? `❌ AI Error: ${aiError.message}`
-              : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)",
+              ? `â AI Error: ${aiError.message}`
+              : "à¤®à¤¾à¤«à¤¼ à¤à¤°à¥à¤, à¤à¤­à¥ à¤®à¥à¤°à¤¾ à¤¸à¤¿à¤¸à¥à¤à¤® à¤à¤¦à¥à¤¯à¤¤à¤¨ à¤¹à¥ à¤°à¤¹à¤¾ à¤¹à¥à¥¤ (AI Setup Incomplete or Error)",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -22150,12 +22177,12 @@ Example JSON structure:
         // If it was a data fetch action, we might want to re-ask AI with data,
         // but for now, we just append the success info to the reply or modify it.
         if (actionResult.data) {
-          parsed.reply += `\n\n[सिस्टम डेटा]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} रिकॉर्ड मिले।`;
+          parsed.reply += `\n\n[à¤¸à¤¿à¤¸à¥à¤à¤® à¤¡à¥à¤à¤¾]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} à¤°à¤¿à¤à¥à¤°à¥à¤¡ à¤®à¤¿à¤²à¥à¥¤`;
         } else {
-          parsed.reply += `\n\n✅ [सिस्टम]: ${actionResult.message}`;
+          parsed.reply += `\n\nâ [à¤¸à¤¿à¤¸à¥à¤à¤®]: ${actionResult.message}`;
         }
       } else {
-        parsed.reply += `\n\n❌ [System Error]: ${actionResult.message}`;
+        parsed.reply += `\n\nâ [System Error]: ${actionResult.message}`;
       }
     }
 
@@ -22303,7 +22330,7 @@ async function autoAnalyzeLesson(
     } else if (type === "pdf") {
       // PDF analysis is harder, but we can try to extract some text or describe the intent
       analysis = `[Auto-AI Note]: Automatic text extraction for PDFs is currently limited. Please study the PDF titled "${title}" directly.`;
-      analysis_hi = `[Auto-AI Note]: PDFs के लिए स्वचालित टेक्स्ट निष्कर्षण वर्तमान में सीमित है। कृपया "${title}" नामक PDF का सीधे अध्ययन करें।`;
+      analysis_hi = `[Auto-AI Note]: PDFs à¤à¥ à¤²à¤¿à¤ à¤¸à¥à¤µà¤à¤¾à¤²à¤¿à¤¤ à¤à¥à¤à¥à¤¸à¥à¤ à¤¨à¤¿à¤·à¥à¤à¤°à¥à¤·à¤£ à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤®à¥à¤ à¤¸à¥à¤®à¤¿à¤¤ à¤¹à¥à¥¤ à¤à¥à¤ªà¤¯à¤¾ "${title}" à¤¨à¤¾à¤®à¤ PDF à¤à¤¾ à¤¸à¥à¤§à¥ à¤à¤§à¥à¤¯à¤¯à¤¨ à¤à¤°à¥à¤à¥¤`;
     }
 
     if (analysis || analysis_hi) {
@@ -22443,7 +22470,7 @@ const worker = {
 
     for (const path of cronJobs) {
       try {
-        // Secret URL mein leak na ho — header mein bhejo
+        // Secret URL mein leak na ho â header mein bhejo
         await fetch(`${baseUrl}${path}`, {
           headers: { "x-cron-secret": cronSecret },
         });
@@ -22460,7 +22487,7 @@ const worker = {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // --- Web Push routes removed — all push uses FCM HTTP v1 API ---
+    // --- Web Push routes removed â all push uses FCM HTTP v1 API ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
@@ -22515,27 +22542,27 @@ const worker = {
         }
 
         // ================================================================
-        // 🛡️ WORKER-SHIELD PATTERN: /api/data
+        // ð¡ï¸ WORKER-SHIELD PATTERN: /api/data
         // ================================================================
         // Rules:
-        //   GET  → Worker directly queries D1 (NO DO invocation)
-        //   POST → Worker forwards to DO (DO does D1 write + WS broadcast)
-        //   WS   → Worker forwards to DO (DO manages WebSocket lifecycle)
+        //   GET  â Worker directly queries D1 (NO DO invocation)
+        //   POST â Worker forwards to DO (DO does D1 write + WS broadcast)
+        //   WS   â Worker forwards to DO (DO manages WebSocket lifecycle)
         // ================================================================
         if (url.pathname === "/api/data") {
           const isWebSocket = request.headers.get("Upgrade") === "websocket";
 
-          // 🟢 FLUTTER: WebSocket upgrade → forward to DO
+          // ð¢ FLUTTER: WebSocket upgrade â forward to DO
           //
           // Auth: Flutter sends session cookie via WebSocket upgrade headers
-          //   (see real_time_service.dart lines 86-97 — 'Cookie' header is set
+          //   (see real_time_service.dart lines 86-97 â 'Cookie' header is set
           //    using stored session cookie from ApiService.getSessionCookie()).
-          //   requireAuth() reads "Cookie: session=<jwt>" — this works natively
+          //   requireAuth() reads "Cookie: session=<jwt>" â this works natively
           //   in Cloudflare Workers because Upgrade requests carry full HTTP
           //   headers, including cookies.
           //
           //   X-App-JWT header (Play Integrity) is NOT used for user identity
-          //   — its payload has sub:'play_integrity_verified', not userId.
+          //   â its payload has sub:'play_integrity_verified', not userId.
           //
           //   Query param auth (e.g. ?token=xxx) is REJECTED by policy:
           //   it leaks credentials in server access logs and URL history.
@@ -22553,7 +22580,7 @@ const worker = {
             return stub.fetch(new Request(doUrl.toString(), request));
           }
 
-          // 🟢 NEXT.JS GET: Worker reads D1 directly — NO DO COST
+          // ð¢ NEXT.JS GET: Worker reads D1 directly â NO DO COST
           if (request.method === "GET") {
             const dataType = url.searchParams.get("type");
             const userId = url.searchParams.get("userId");
@@ -22568,21 +22595,21 @@ const worker = {
             }
 
             // Add more GET handlers here as needed (courses, lessons, etc.)
-            // Always query D1 directly — DO ko mat jagao
+            // Always query D1 directly â DO ko mat jagao
 
             return new Response(JSON.stringify({ error: "Invalid GET type" }), {
               status: 400, headers: { "Content-Type": "application/json" }
             });
           }
 
-          // 🟢 NEXT.JS POST/PUT/DELETE: Forward to DO
+          // ð¢ NEXT.JS POST/PUT/DELETE: Forward to DO
           // DO D1 write karega + WebSocket broadcast karega
           const doId = env.DATA_SYNC_DO.idFromName("data-sync");
           const stub = env.DATA_SYNC_DO.get(doId);
           return stub.fetch(request);
         }
 
-        // Try to resolve user auth (don't throw — admin-only handlers will check)
+        // Try to resolve user auth (don't throw â admin-only handlers will check)
         let userAuth: any = null;
         try {
           userAuth = await requireAuth(request, env);
@@ -22613,7 +22640,7 @@ const worker = {
           }
         }
 
-        // KV Backup — read all KV keys/values and store JSON in R2
+        // KV Backup â read all KV keys/values and store JSON in R2
         if (url.pathname === "/api/admin/database/backup-kv" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
@@ -22654,7 +22681,7 @@ const worker = {
           }
         }
 
-        // KV Restore — read JSON from R2 and write all keys to target KV namespace
+        // KV Restore â read JSON from R2 and write all keys to target KV namespace
         if (url.pathname === "/api/admin/database/restore-kv" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
@@ -23306,7 +23333,7 @@ const worker = {
             /^\/api\/admin\/batches\/([^/]+)\/students$/,
           );
           if (batchStudentsMatch) {
-            // Pass both GET and POST to handleAdminBatchStudents — course_id is auto-fetched from the batch
+            // Pass both GET and POST to handleAdminBatchStudents â course_id is auto-fetched from the batch
             response = await handleAdminBatchStudents(
               request,
               env,
@@ -23771,7 +23798,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
                   error: "LIVE_SESSION_ID_MISSING",
-                  message: "Live class meeting ID missing hai. कृपया app refresh करके दोबारा join करें।",
+                  message: "Live class meeting ID missing hai. à¤à¥à¤ªà¤¯à¤¾ app refresh à¤à¤°à¤à¥ à¤¦à¥à¤¬à¤¾à¤°à¤¾ join à¤à¤°à¥à¤à¥¤",
                 }), {
                   status: 400,
                   headers: { "Content-Type": "application/json" },
@@ -23781,7 +23808,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               if (!isAI && user?.role === "student" && !sessionResult) {
                 return new Response(JSON.stringify({
                   error: "LIVE_SESSION_NOT_FOUND",
-                  message: "Live class session नहीं मिला। कृपया dashboard refresh करके दोबारा join करें।",
+                  message: "Live class session à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¤¾à¥¤ à¤à¥à¤ªà¤¯à¤¾ dashboard refresh à¤à¤°à¤à¥ à¤¦à¥à¤¬à¤¾à¤°à¤¾ join à¤à¤°à¥à¤à¥¤",
                 }), {
                   status: 404,
                   headers: { "Content-Type": "application/json" },
@@ -23857,7 +23884,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
                       error: "CREDIT_ACCESS_DISABLED",
-                      message: "इस class के लिए credit-based access enable नहीं है। Batch में Per Class Charge (₹) सेट करें।",
+                      message: "à¤à¤¸ class à¤à¥ à¤²à¤¿à¤ credit-based access enable à¤¨à¤¹à¥à¤ à¤¹à¥à¥¤ Batch à¤®à¥à¤ Per Class Charge (â¹) à¤¸à¥à¤ à¤à¤°à¥à¤à¥¤",
                     }), {
                       status: 403,
                       headers: { "Content-Type": "application/json" },
@@ -23968,7 +23995,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 );
                 response = new Response(
                   JSON.stringify({
-                    error: "लाइव क्लास शुरू नहीं हो सकी। Administrator को notify kar diya gaya hai.",
+                    error: "à¤²à¤¾à¤à¤µ à¤à¥à¤²à¤¾à¤¸ à¤¶à¥à¤°à¥ à¤¨à¤¹à¥à¤ à¤¹à¥ à¤¸à¤à¥à¥¤ Administrator à¤à¥ notify kar diya gaya hai.",
                   }),
                   { status: 500, headers: { "Content-Type": "application/json" } },
                 );
@@ -24004,7 +24031,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                     .bind(sessionResult.id, payload.sub)
                     .run();
                   if ((result as any)?.meta?.changes === 0) {
-                    console.log(`[Live.Leave] No open attendance — possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
+                    console.log(`[Live.Leave] No open attendance â possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
                     response = new Response(JSON.stringify({ success: true, message: "Already left" }), {
                       status: 200,
                       headers: { "Content-Type": "application/json" },
@@ -24622,7 +24649,7 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
         extractKey(row.audio_url);
       }
 
-      // 2. Fetch all objects stored in R2 bucket (max 100 pages × 1000 = 100K objects)
+      // 2. Fetch all objects stored in R2 bucket (max 100 pages Ã 1000 = 100K objects)
       const r2Objects: any[] = [];
       let truncated = true;
       let cursor: string | undefined = undefined;
@@ -24787,7 +24814,7 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
   }
 }
 
-// Stub DO class — required by previously deployed Durable Object binding
+// Stub DO class â required by previously deployed Durable Object binding
 export class LiveClassCreditManager { }
 
 async function handleAdminBadges(request: Request, env: Env): Promise<Response> {
@@ -24951,7 +24978,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
     // Get Service Account Credentials from KV or Secret
     const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
     if (!googleServiceAccountStr) {
-      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured — session-based auth will be used");
+      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured â session-based auth will be used");
       return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -25029,7 +25056,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 
         // Step 3: Validate the response
         // If Play Integrity fails (e.g. debug build, unrecognized app version),
-        // don't block — fall back to session-based auth gracefully.
+        // don't block â fall back to session-based auth gracefully.
         // Proper Play Integrity verification is enforced only for production
         // builds published on Google Play Store.
         if (playRes.error || !playRes.tokenPayloadExternal || playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict !== 'PLAY_RECOGNIZED') {
@@ -25061,7 +25088,7 @@ export { DataSyncDO } from './data-sync-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
 // Register admin command handlers for AdminCommandProcessor DO.
-// Called synchronously at module init — function declarations are hoisted.
+// Called synchronously at module init â function declarations are hoisted.
 registerAdminCommandHandler("/api/notifications/send", handleSendPush);
 registerAdminCommandHandler("/api/admin/broadcast", handleAdminBroadcast);
 
