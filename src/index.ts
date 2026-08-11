@@ -14589,13 +14589,13 @@ function roundToTwo(n: number): number {
 
 const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
-function normalizeGroupClassCreditUnit(value: any): string {
+export function normalizeGroupClassCreditUnit(value: any): string {
   const unit = String(value || "fifteen_minute");
   const valid = ["fifteen_minute", "per_class", "monthly", "per_minute"];
   return valid.includes(unit) ? unit : "fifteen_minute";
 }
 
-function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
+export function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return 0;
   const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
@@ -14604,7 +14604,7 @@ function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   return roundToTwo(costPaise / 100);
 }
 
-function calculateMaxAttendMinutes(balance: number, rate: any): number {
+export function calculateMaxAttendMinutes(balance: number, rate: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return -1;
   if (balance <= 0) return 0;
