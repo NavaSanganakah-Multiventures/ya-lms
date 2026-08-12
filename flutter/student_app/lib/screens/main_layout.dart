@@ -74,8 +74,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
   final action = event['action'];
   final entity = event['entity'];
   if (action == 'course_published') {
+    final publishedTitle = (event['data'] is Map)
+        ? (event['data']['title'] ?? 'New Course').toString()
+        : 'New Course';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+      SnackBar(content: Text('🚀 New Course Published: $publishedTitle')),
     );
   } else if (entity == 'wallet' && action == 'wallet_updated') {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -226,7 +229,12 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  children: [
  IconButton(
  icon: Icon(Icons.notifications_outlined),
- onPressed: () {},
+ onPressed: () {
+ _fetchUnreadCount();
+ ScaffoldMessenger.of(context).showSnackBar(
+ SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ हैं')),
+ );
+ },
  color: AppTheme.textPrimaryOf(context),
  ),
  if (_unreadCount > 0)
