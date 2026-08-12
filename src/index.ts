@@ -14765,20 +14765,33 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
 }
 
 async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
-  await env.DB.prepare(
-    `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ? AND locked_at < datetime('now', ?)`
-  ).bind(sessionId, userId, `-${staleMinutes} minutes`).run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, CURRENT_TIMESTAMP)`
+    ).bind(sessionId, userId).run();
+    return true;
+  } catch (err: any) {
+    // Another request may have inserted the same lock concurrently.
+    if (err?.message?.includes('UNIQUE constraint') || err?.message?.toLowerCase().includes('primary key')) {
+      const existing = await env.DB.prepare(
+        `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+      ).bind(sessionId, userId).first() as any;
 
-  const existing = await env.DB.prepare(
-    `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
-  ).bind(sessionId, userId).first() as any;
-  if (existing) return false;
-
-  await env.DB.prepare(
-    `INSERT INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, CURRENT_TIMESTAMP)`
-  ).bind(sessionId, userId).run();
-  return true;
-}
+      // If the existing lock is stale, take it over so dead locks don't block us forever.
+      if (existing && existing.locked_at) {
+        const lockAgeMinutes = (Date.now() - new Date(existing.locked_at + 'Z').getTime()) / 60000;
+        if (lockAgeMinutes > staleMinutes) {
+          await env.DB.prepare(
+            `UPDATE CreditChargeLocks SET locked_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ?`
+          ).bind(sessionId, userId).run();
+          return true;
+        }
+      }
+      return false;
+    }
+    throw err;
+  }
+}}
 
 async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
   await env.DB.prepare(
