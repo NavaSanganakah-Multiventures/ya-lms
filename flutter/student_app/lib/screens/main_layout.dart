@@ -229,13 +229,14 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  children: [
  IconButton(
  icon: Icon(Icons.notifications_outlined),
- onPressed: () {
- _fetchUnreadCount();
+ onPressed: () async {
+ await _fetchUnreadCount();
+ if (mounted) {
  ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ हैं')),
+ SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ है)),
  );
- },
- color: AppTheme.textPrimaryOf(context),
+ }
+ },color: AppTheme.textPrimaryOf(context),
  ),
  if (_unreadCount > 0)
  Positioned(
