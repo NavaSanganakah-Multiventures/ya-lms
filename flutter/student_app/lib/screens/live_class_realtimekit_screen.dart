@@ -59,6 +59,29 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  }
 
  Future<void> _prepareLiveClass() async {
+ // If a live class is already active in the PiP manager (e.g. re-opening
+ // from the in-app mini player), reuse the existing meeting widget instead
+ // of requesting a fresh token — this prevents a duplicate live-class join
+ // and double credit consumption.
+ if (_pip.isActive &&
+ _pip.meetingWidget != null &&
+ ((widget.meetingId != null && widget.meetingId == _pip.meetingId) ||
+ (widget.sessionId != null && widget.sessionId == _pip.sessionId))) {
+ final pipSupported = await PictureInPictureService.isSupported();
+ if (!mounted) return;
+ setState(() {
+ _isPipSupported = pipSupported;
+ _meetingUi = _pip.meetingWidget;
+ _isLoading = false;
+ });
+ final mm = _pip.maxMinutes > 0 ? _pip.maxMinutes : widget.requiredCredits;
+ if (mm > 0) {
+ _startTimer(mm);
+ }
+ _pip.enterFullScreen();
+ return;
+ }
+
  await [Permission.camera, Permission.microphone].request();
  final pipSupported = await PictureInPictureService.isSupported();
  if (mounted) setState(() => _isPipSupported = pipSupported);
