@@ -27,6 +27,7 @@ class MainLayoutScreen extends StatefulWidget {
 class _MainLayoutScreenState extends State<MainLayoutScreen>
  with WidgetsBindingObserver {
  int _currentIndex = 0;
+ final Set<int> _visitedTabs = {0};
  int _refreshCounter = 0;
  int _unreadCount = 0;
  Timer? _notificationTimer;
@@ -74,8 +75,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
   final action = event['action'];
   final entity = event['entity'];
   if (action == 'course_published') {
+    final publishedTitle = (event['data'] is Map)
+        ? (event['data']['title'] ?? 'New Course').toString()
+        : 'New Course';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+      SnackBar(content: Text('🚀 New Course Published: $publishedTitle')),
     );
   } else if (entity == 'wallet' && action == 'wallet_updated') {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -165,6 +169,26 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     });
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _currentIndex = index;
+      _visitedTabs.add(index);
+    });
+  }
+
+  Widget _tabOrPlaceholder(int index) {
+    if (!_visitedTabs.contains(index)) {
+      return Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+        ),
+      );
+    }
+    return _screens[index];
+  }
+
  // ── Tap mini player → back to full screen ───────────────────
  void _openFullScreen() {
  _pip.enterFullScreen();
@@ -226,7 +250,12 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  children: [
  IconButton(
  icon: Icon(Icons.notifications_outlined),
- onPressed: () {},
+ onPressed: () {
+ _fetchUnreadCount();
+ ScaffoldMessenger.of(context).showSnackBar(
+ SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ हैं')),
+ );
+ },
  color: AppTheme.textPrimaryOf(context),
  ),
  if (_unreadCount > 0)
@@ -268,7 +297,13 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  // Layer 1: Normal tab content
  IndexedStack(
  index: _currentIndex,
- children: _screens,
+ children: [
+ _tabOrPlaceholder(0),
+ _tabOrPlaceholder(1),
+ _tabOrPlaceholder(2),
+ _tabOrPlaceholder(3),
+ _tabOrPlaceholder(4),
+ ],
  ),
 
  // Layer 2: Mini player overlay (when live class is in mini mode)
@@ -296,7 +331,7 @@ $st');
  ),
       bottomNavigationBar: CustomBottomNav(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: _selectTab,
       ),
  );
   }
