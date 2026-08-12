@@ -433,9 +433,9 @@ class _PlanCard extends StatelessWidget {
  final interval = plan['interval'] ?? 'monthly';
  final courseAccess = plan['course_access_type'] ?? 'none';
  final batchAccess = plan['batch_access_type'] ?? 'none';
-  final walletTopup = (plan['wallet_amount_rupees'] as num?)?.toDouble() ?? 0;
-  final liveSessionAccess = plan['live_session_access'] == 1;
- final isLifetime = plan['is_lifetime'] == 1;
+  final walletTopup = num.tryParse(plan['wallet_amount_rupees']?.toString() ?? '') ?? 0;
+  final liveSessionAccess = plan['live_session_access'] == 1 || plan['live_session_access'] == true;
+ final isLifetime = plan['is_lifetime'] == 1 || plan['is_lifetime'] == true;
 
  final features = <String>[];
  if (courseAccess == 'all') features.add('All courses access');
@@ -447,9 +447,9 @@ class _PlanCard extends StatelessWidget {
  }
   if (walletTopup > 0) features.add('₹${walletTopup.toStringAsFixed(2)} wallet topup');
  if (liveSessionAccess) features.add('Live session access');
- if (plan['live_class_amount_rupees'] != null &&
- (plan['live_class_amount_rupees'] as num) > 0) {
- features.add('₹${((plan['live_class_amount_rupees'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} Live Class Wallet');
+ final liveClassAmount = num.tryParse(plan['live_class_amount_rupees']?.toString() ?? '') ?? 0;
+ if (liveClassAmount > 0) {
+ features.add('₹${liveClassAmount.toStringAsFixed(2)} Live Class Wallet');
  }
 
  return Container(
