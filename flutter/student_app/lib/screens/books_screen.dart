@@ -182,9 +182,19 @@ class _BookCard extends StatelessWidget {
  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
  ),
  onPressed: () {
- // If book has a PDF/content URL, open in PDF viewer
- final fileUrl = (book['content_url'] ?? book['file_url'] ?? '').toString();
- if (fileUrl.isNotEmpty && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+ // Resolve relative PDF/content URLs and open in the PDF viewer.
+ var fileUrl = (book['content_url'] ?? book['file_url'] ?? '').toString().trim();
+ if (fileUrl.isEmpty) {
+ ScaffoldMessenger.of(context).showSnackBar(
+ SnackBar(content: Text('इस Book के लिए अभी content उपलब्ध नहीं है')),
+ );
+ return;
+ }
+ if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+ fileUrl = fileUrl.startsWith('/')
+ ? '${ApiService.baseUrl}$fileUrl'
+ : '${ApiService.baseUrl}/$fileUrl';
+ }
  Navigator.push(
  context,
  MaterialPageRoute(
@@ -194,11 +204,6 @@ class _BookCard extends StatelessWidget {
  ),
  ),
  );
- } else {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('Book details coming soon')),
- );
- }
  },
  child: Text('View'),
  ),
