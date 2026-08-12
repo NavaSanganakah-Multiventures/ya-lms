@@ -14791,7 +14791,7 @@ async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string
     }
     throw err;
   }
-}}
+}
 
 async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
   await env.DB.prepare(
