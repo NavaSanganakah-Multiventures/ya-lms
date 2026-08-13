@@ -17736,7 +17736,7 @@ async function checkHourlyLimit(
 
   const windowStart = limit?.window_start ? new Date(limit.window_start) : new Date(0);
   const windowUsed = Number(limit?.window_used || 0);
-  const rateLimit = Number(limit?.rate_limit || 0);
+  const rateLimit = limit?.rate_limit != null ? Number(limit.rate_limit) : 60;
   const now = new Date();
   const diffMs = now.getTime() - windowStart.getTime();
 
@@ -19898,73 +19898,77 @@ export async function generateAIContent(
   const models = await getAiModelConfig(env, modelId);
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
 
-  const universalPayload = models.map(m => {
-    let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
-    const reqQuery: any = {
-      model: m.id,
-      messages: applySystemPrompt(messages, m.system_prompt),
-      max_tokens: 4000,
-    };
-    if (forceJson) reqQuery.response_format = { type: "json_object" };
+  let lastError: Error | null = null;
 
-    return {
-      provider: m.provider,
-      endpoint: m.endpoint,
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
-      query: reqQuery
-    };
-  });
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
-    const gRes = await fetch(gatewayUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(universalPayload),
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
-
-    let resText = await gRes.text();
-
-    if (!gRes.ok) {
-      throw new Error(`AI Gateway universal request failed: ${resText}`);
-    }
-
-    if (!resText || resText.trim() === "") {
-      throw new Error(`Gateway returned EMPTY response`);
-    }
-
+  for (const m of models) {
     try {
-      const aiResponse = JSON.parse(resText);
-      // Handle standard OpenAI-like response
-      if (aiResponse.choices?.[0]?.message?.content) {
-        let content = aiResponse.choices[0].message.content;
-        return forceJson ? sanitizeJson(content) : content;
-      }
-      // Handle direct string responses if gateway simplifies it
-      if (typeof aiResponse === "string")
-        return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
 
-      throw new Error("JSON parsed but structure unknown");
-    } catch (parseError) {
-      // If parsing fails but we have text, and we're not forced into JSON, return as is
-      if (!forceJson && resText) return resText;
-      throw new Error(
-        `Gateway returned non-JSON structure: ${resText.substring(0, 100)}`,
-      );
+      const reqQuery: any = {
+        model: m.id,
+        messages: applySystemPrompt(messages, m.system_prompt),
+        max_tokens: 4000,
+      };
+      if (forceJson) reqQuery.response_format = { type: "json_object" };
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: reqQuery,
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const gRes = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      const resText = await gRes.text();
+
+      if (!gRes.ok) {
+        throw new Error(
+          `Gateway request failed (${gRes.status}): ${resText.substring(0, 200)}`,
+        );
+      }
+
+      if (!resText || resText.trim() === "") {
+        throw new Error("Gateway returned EMPTY response");
+      }
+
+      try {
+        const aiResponse = JSON.parse(resText);
+        if (aiResponse.choices?.[0]?.message?.content) {
+          const c = aiResponse.choices[0].message.content;
+          return forceJson ? sanitizeJson(c) : c;
+        }
+        if (typeof aiResponse === "string")
+          return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+        throw new Error("JSON parsed but structure unknown");
+      } catch (parseError) {
+        if (!forceJson && resText) return resText;
+        throw new Error(
+          `Gateway returned non-JSON structure: ${resText.substring(0, 100)}`,
+        );
+      }
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Gateway] Model ${m.id} failed:`, lastError.message);
     }
-  } catch (e: any) {
-    throw new Error(`AI Gateway Request Failed: ${e.message}`);
   }
+
+  throw new Error(`AI Gateway Request Failed: ${lastError?.message || "All models failed"}`);
 }
 
 async function fetchAIStream(messages: any[], env: Env, modelId?: string | null): Promise<Response> {
@@ -19981,50 +19985,60 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   const models = await getAiModelConfig(env, modelId);
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
 
-  const universalPayload = models.map(m => {
-    let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
-    return {
-      provider: m.provider,
-      endpoint: m.endpoint,
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
-      query: {
-        model: m.id,
-        messages: applySystemPrompt(messages, m.system_prompt),
-        max_tokens: 4000,
-        stream: true
-      }
-    };
-  });
+  let lastError: Error | null = null;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
-  try {
-    const response = await fetch(gatewayUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(universalPayload),
-      signal: controller.signal,
-    });
-    return new Response(response.body, {
-      headers: { "Content-Type": "text/event-stream" },
-    });
-  } finally {
-    clearTimeout(timeoutId);
+  for (const m of models) {
+    try {
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: {
+          model: m.id,
+          messages: applySystemPrompt(messages, m.system_prompt),
+          max_tokens: 4000,
+          stream: true,
+        },
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(
+          `Gateway stream failed (${response.status}): ${errText.substring(0, 200)}`,
+        );
+      }
+
+      return new Response(response.body, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Stream] Model ${m.id} failed:`, lastError.message);
+    }
   }
+
+  throw new Error(`AI Stream Request Failed: ${lastError?.message || "All models failed"}`);
 }
 
-// Converts Workers AI's native streaming chunks ({"response":"..."}) into
-// OpenAI-compatible SSE (data: {"choices":[{"delta":{"content":"..."}}]})
-// so the frontend can use a single parser for both the Gateway stream
-// (admin/teacher) and the direct Workers AI stream (students).
 function transformWorkersAIStreamToOpenAI(
   input: ReadableStream<Uint8Array>,
 ): ReadableStream<Uint8Array> {
@@ -21814,7 +21828,17 @@ async function handleAIContentHelper(
   env: Env,
 ): Promise<Response> {
   try {
-    await requireAdminOrTeacher(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
+    const aiHourlyCheck = await checkHourlyLimit(env, auth.id, "ai-content-helper");
+    if (!aiHourlyCheck.allowed) {
+      return new Response(JSON.stringify({ error: aiHourlyCheck.reason }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "3600",
+        },
+      });
+    }
     const { context, type, data } = (await request.json()) as any;
 
     let systemPrompt = "";
@@ -21918,6 +21942,44 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       return new Response(JSON.stringify({ error: "Prompt is required" }), {
         status: 400,
       });
+    }
+
+    if (typeof userPrompt !== "string") {
+      return new Response(JSON.stringify({ error: "Prompt must be a string" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const AI_MAX_PROMPT_LENGTH = 4000;
+    if (userPrompt.length > AI_MAX_PROMPT_LENGTH) {
+      return new Response(
+        JSON.stringify({
+          error: `Prompt is too long. Maximum ${AI_MAX_PROMPT_LENGTH} characters allowed.`,
+        }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Resolve requested model against active whitelist
+    const resolvedAiModels = await getAiModelConfig(env, modelId);
+    const resolvedModelId = resolvedAiModels[0]?.id || "@cf/meta/llama-3.1-8b-instruct";
+
+    // Hourly rate limit for AI chat
+    if (userId) {
+      const aiHourlyCheck = await checkHourlyLimit(env, userId, "ai");
+      if (!aiHourlyCheck.allowed) {
+        return new Response(JSON.stringify({ error: aiHourlyCheck.reason }), {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": "3600",
+          },
+        });
+      }
     }
 
     // Save User Prompt to History
@@ -22146,7 +22208,7 @@ Example JSON structure:
       } else {
         // Workers AI has its own chunk format; convert to OpenAI-compatible SSE
         // so the frontend stream parser works identically for both paths.
-        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+        const aiStream = await env.AI.run(resolvedModelId, {
           messages,
           stream: true,
         });
@@ -22165,7 +22227,7 @@ Example JSON structure:
         aiContent = await generateAIContent(messages, env, true, modelId);
       } else {
         // Direct Workers AI call for students (Bypass Gateway)
-        const aiResult = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+        const aiResult = await env.AI.run(resolvedModelId, {
           messages: messages,
           max_tokens: 4000
         });
