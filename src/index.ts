@@ -15213,48 +15213,48 @@ async function chargeAttendanceGroupClassCredits(
 
   if (requiredAmount <= 0) return;
 
-    const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
+  const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
   if (!lockAcquired) {
     console.log(`[Live.Charge] Charge already in progress for user ${userId} session ${sessionId}; skipping.`);
     return;
   }
 
   try {
-const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
+    const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
+    const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
 
-  let finalChargedAmount = alreadyCharged;
+    let finalChargedAmount = alreadyCharged;
 
-  if (extraAmountNeeded > 0) {
-    const deduction = await deductFromWallet(
-      env,
-      userId,
-      extraAmountNeeded,
-      "live_class_duration",
-      "live_session",
-      sessionId,
-    );
-    if (!deduction.ok) {
-      console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
-      await env.DB.prepare(
-        "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
-      ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
-    } else {
-      finalChargedAmount += extraAmountNeeded;
+    if (extraAmountNeeded > 0) {
+      const deduction = await deductFromWallet(
+        env,
+        userId,
+        extraAmountNeeded,
+        "live_class_duration",
+        "live_session",
+        sessionId,
+      );
+      if (!deduction.ok) {
+        console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+        await env.DB.prepare(
+          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
+      } else {
+        finalChargedAmount += extraAmountNeeded;
+      }
+    } else if (extraAmountNeeded < 0) {
+      const refundAmount = Math.abs(extraAmountNeeded);
+      const roundedRefund = roundToTwo(refundAmount);
+      if (roundedRefund > 0) {
+        await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
+        finalChargedAmount -= roundedRefund;
+      }
     }
-  } else if (extraAmountNeeded < 0) {
-    const refundAmount = Math.abs(extraAmountNeeded);
-    const roundedRefund = roundToTwo(refundAmount);
-    if (roundedRefund > 0) {
-      await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
-      finalChargedAmount -= roundedRefund;
-    }
-  }
 
-  const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
-  const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
-  await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+    const unitSeconds = getUnitSeconds();
+    const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
+    const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
+    await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
   } finally {
     await releaseLiveChargeLock(env, sessionId, userId);
   }
