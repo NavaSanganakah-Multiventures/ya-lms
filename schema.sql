@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS Batches (
       class_days TEXT,
       self_study_group_enabled INTEGER DEFAULT 1,
       cost_per_class_rupees REAL DEFAULT 0,
+      live_class_cost_per_minute_rupees REAL DEFAULT 0,
       live_class_credit_unit TEXT DEFAULT 'class',
       credit_deduction_timing TEXT DEFAULT 'on_join',
       no_show_charge_rupees REAL DEFAULT 2,
