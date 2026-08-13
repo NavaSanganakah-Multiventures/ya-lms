@@ -14762,6 +14762,58 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
   )
     .bind(userId, sessionId)
     .run();
+
+
+async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
+  const nowIso = new Date().toISOString();
+
+  try {
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, ?)`
+    ).bind(sessionId, userId, nowIso).run();
+
+    if (inserted.meta?.changes === 1) {
+      return true;
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).first() as any;
+
+    if (!existing || !existing.locked_at) {
+      return false;
+    }
+
+    const rawTs = existing.locked_at;
+    const normalizedTs = rawTs.endsWith('Z') ? rawTs : `${rawTs}Z`;
+    const lockAgeMinutes = (Date.now() - new Date(normalizedTs).getTime()) / 60000;
+
+    if (lockAgeMinutes <= staleMinutes) {
+      return false;
+    }
+
+    const takeover = await env.DB.prepare(
+      `UPDATE CreditChargeLocks
+       SET locked_at = ?
+       WHERE session_id = ? AND user_id = ? AND locked_at = ?`
+    ).bind(nowIso, sessionId, userId, rawTs).run();
+
+    return takeover.meta?.changes === 1;
+  } catch (err: any) {
+    console.error('[Live.Charge] acquireLiveChargeLock failed', err);
+    throw err;
+  }
+}
+
+async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).run();
+  } catch (err) {
+    console.error('[Live.Charge] releaseLiveChargeLock failed', err);
+  }
+}
 }
 
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
@@ -15161,41 +15213,51 @@ async function chargeAttendanceGroupClassCredits(
 
   if (requiredAmount <= 0) return;
 
-  const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
-
-  let finalChargedAmount = alreadyCharged;
-
-  if (extraAmountNeeded > 0) {
-    const deduction = await deductFromWallet(
-      env,
-      userId,
-      extraAmountNeeded,
-      "live_class_duration",
-      "live_session",
-      sessionId,
-    );
-    if (!deduction.ok) {
-      console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
-      await env.DB.prepare(
-        "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
-      ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
-    } else {
-      finalChargedAmount += extraAmountNeeded;
-    }
-  } else if (extraAmountNeeded < 0) {
-    const refundAmount = Math.abs(extraAmountNeeded);
-    const roundedRefund = roundToTwo(refundAmount);
-    if (roundedRefund > 0) {
-      await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
-      finalChargedAmount -= roundedRefund;
-    }
+  const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
+  if (!lockAcquired) {
+    console.log(`[Live.Charge] Charge already in progress for user ${userId} session ${sessionId}; skipping.`);
+    return;
   }
 
-  const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
-  const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
-  await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  try {
+    const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
+    const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
+
+    let finalChargedAmount = alreadyCharged;
+
+    if (extraAmountNeeded > 0) {
+      const deduction = await deductFromWallet(
+        env,
+        userId,
+        extraAmountNeeded,
+        "live_class_duration",
+        "live_session",
+        sessionId,
+      );
+      if (!deduction.ok) {
+        console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+        await env.DB.prepare(
+          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
+      } else {
+        finalChargedAmount += extraAmountNeeded;
+      }
+    } else if (extraAmountNeeded < 0) {
+      const refundAmount = Math.abs(extraAmountNeeded);
+      const roundedRefund = roundToTwo(refundAmount);
+      if (roundedRefund > 0) {
+        await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
+        finalChargedAmount -= roundedRefund;
+      }
+    }
+
+    const unitSeconds = getUnitSeconds();
+    const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
+    const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
+    await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  } finally {
+    await releaseLiveChargeLock(env, sessionId, userId);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
