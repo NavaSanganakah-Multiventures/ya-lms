@@ -24,6 +24,7 @@ interface Batch {
   class_days: string | null;
   self_study_group_enabled: number | null;
   cost_per_class_rupees: number;
+  live_class_cost_per_minute_rupees: number;
   no_show_charge_rupees: number;
   live_class_credit_unit: string | null;
   status: 'upcoming' | 'ongoing' | 'completed';
@@ -82,6 +83,7 @@ export default function BatchesPage() {
     class_days: '',
     self_study_group_enabled: true,
     cost_per_class_rupees: 0,
+    live_class_cost_per_minute_rupees: 0,
     no_show_charge_rupees: 2,
     live_class_credit_unit: 'fifteen_minute',
     seo_json: '',
@@ -174,6 +176,7 @@ export default function BatchesPage() {
           class_days: '',
           self_study_group_enabled: true,
           cost_per_class_rupees: 0,
+          live_class_cost_per_minute_rupees: 0,
           no_show_charge_rupees: 2,
           live_class_credit_unit: 'fifteen_minute',
           seo_json: '',
@@ -269,6 +272,7 @@ export default function BatchesPage() {
       class_days: batch.class_days || '',
       self_study_group_enabled: batch.self_study_group_enabled !== 0,
       cost_per_class_rupees: batch.cost_per_class_rupees || 0,
+      live_class_cost_per_minute_rupees: batch.live_class_cost_per_minute_rupees || 0,
       no_show_charge_rupees: batch.no_show_charge_rupees ?? 2,
       live_class_credit_unit: batch.live_class_credit_unit || 'fifteen_minute',
       seo_json: batch.seo_json || '',
@@ -311,7 +315,7 @@ export default function BatchesPage() {
             setFormData({ 
               course_id: '', book_id: '', name: '', name_hi: '', description_en: '', description_hi: '', 
               start_date: '', end_date: '', status: 'upcoming', class_start_time: '', 
-              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, no_show_charge_rupees: 2, live_class_credit_unit: 'fifteen_minute', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
+              class_end_time: '', class_days: '', self_study_group_enabled: true, cost_per_class_rupees: 0, live_class_cost_per_minute_rupees: 0, no_show_charge_rupees: 2, live_class_credit_unit: 'fifteen_minute', seo_json: '', send_update_email: false, send_announcement_email: false, announcement_audience: 'both', auto_post_social: false, social_platforms: ['facebook', 'instagram']
             }); 
             setIsModalOpen(true); 
           }}
@@ -406,7 +410,7 @@ export default function BatchesPage() {
                        )}
                           {batch.self_study_group_enabled !== 0 && Number(batch.cost_per_class_rupees || 0) > 0 && (
                               <span className="text-xs text-neutral-400">
-                                  {'₹'}{batch.cost_per_class_rupees}{' '}{batch.live_class_credit_unit === 'per_class' ? 'per class' : 'per 15 min'}
+                                  {'₹'}{batch.cost_per_class_rupees}{' '}{batch.live_class_credit_unit === 'per_class' ? 'per class' : batch.live_class_credit_unit === 'per_minute' ? 'per minute' : 'per 15 min'}
                                </span>
                           )}
                     </div>
@@ -681,13 +685,30 @@ export default function BatchesPage() {
                         className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
                       >
                         <option value="fifteen_minute">Per 15 minutes (pro-rata)</option>
+                        <option value="per_minute">Per minute (pro-rata)</option>
                         <option value="per_class">Flat per class</option>
                       </select>
                       <p className="mt-1 text-[11px] text-neutral-500">
                         {formData.live_class_credit_unit === 'per_class'
                           ? 'Poori class ka ek fixed charge. Duration ke hisaab se extra charge nahi hoga.'
-                          : 'Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.'}
+                          : formData.live_class_credit_unit === 'per_minute'
+                            ? 'Har minute ke hisaab se charge hoga.'
+                            : 'Join karte hi itne paise wallet se kattenge. Baad mein duration ke hisaab se reconcile hoga.'}
                       </p>
+                      {formData.live_class_credit_unit === 'per_minute' && (
+                        <div className="mt-4">
+                          <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Per Minute Charge (₹)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={formData.live_class_cost_per_minute_rupees || 0}
+                            onChange={(e) => setFormData({ ...formData, live_class_cost_per_minute_rupees: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-violet-500/50"
+                          />
+                          <p className="mt-1 text-[11px] text-neutral-500">Per minute rate jo live class duration ke hisaab se charge hoga.</p>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">No-Show Charge (₹)</label>
