@@ -31,7 +31,11 @@ export default function AdminCreditsPage() {
 
   useEffect(() => {
     let mounted = true;
-    loadPacks().then(() => { if (mounted) setLoading(false); });
+    const init = async () => {
+      await loadPacks();
+      if (mounted) setLoading(false);
+    };
+    init();
     return () => { mounted = false; };
   }, []);
 

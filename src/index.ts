@@ -14768,6 +14768,7 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
   )
     .bind(userId, sessionId)
     .run();
+}
 
 
 async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
@@ -14819,7 +14820,6 @@ async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string
   } catch (err) {
     console.error('[Live.Charge] releaseLiveChargeLock failed', err);
   }
-}
 }
 
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
