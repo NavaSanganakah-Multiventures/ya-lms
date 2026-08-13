@@ -5980,6 +5980,7 @@ async function handleAdminBatches(
         self_study_group_enabled,
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
         live_class_credit_unit,
         seo_json,
         send_announcement_email,
@@ -6034,8 +6035,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_cost_per_minute_rupees, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -6054,6 +6055,7 @@ async function handleAdminBatches(
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           normalizeNonNegativeInt(resolvedCostPerClassRupees),
+          normalizeNonNegativeInt(live_class_cost_per_minute_rupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -6185,6 +6187,7 @@ async function handleAdminBatches(
         self_study_group_enabled,
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
         live_class_credit_unit,
         seo_json,
         send_update_email,
@@ -6192,6 +6195,7 @@ async function handleAdminBatches(
       // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
       const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeNonNegativeInt(resolvedCostPerClassRupees);
+      const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeNonNegativeInt(live_class_cost_per_minute_rupees);
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -6207,6 +6211,7 @@ async function handleAdminBatches(
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
+          live_class_cost_per_minute_rupees = COALESCE(?, live_class_cost_per_minute_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -6225,6 +6230,7 @@ async function handleAdminBatches(
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           updateBatchCost,
+          updateBatchMinuteCost,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json,
           id,
@@ -15052,6 +15058,7 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
             COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees,
+            COALESCE(b.live_class_cost_per_minute_rupees, 0) as live_class_cost_per_minute_rupees,
             b.live_class_credit_unit
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
@@ -15204,7 +15211,8 @@ async function chargeAttendanceGroupClassCredits(
   let requiredAmount = 0;
 
   if (creditUnit === "per_minute") {
-    requiredAmount = roundToTwo(rate * totalSeconds / FIFTEEN_MIN_SECONDS);
+    const perMinuteRate = normalizeNonNegativeInt(session.live_class_cost_per_minute_rupees) || rate;
+    requiredAmount = roundToTwo(perMinuteRate * totalSeconds / 60);
   } else {
     // fifteen_minute / monthly legacy behaviour: round up to next full minute
     const totalMinutes = Math.ceil(totalSeconds / 60);
