@@ -94,18 +94,33 @@ class _WalletScreenState extends State<WalletScreen> {
  Map<String, dynamic> settingsData = {};
  List<dynamic> ledgerData = [];
 
+ // Run all 4 wallet API calls in parallel for faster load.
+ Future<dynamic> safeCall(String label, Future<dynamic> Function() call) async {
  try {
- final balanceResponse = await ApiService.getWalletBalance();
- if (balanceResponse.statusCode == 200) {
- balanceData = balanceResponse.data;
- }
+ return await call();
  } catch (e) {
- debugPrint('Wallet: balance fetch failed: $e');
+ debugPrint('Wallet: $label fetch failed: $e');
+ return null;
+ }
  }
 
- try {
- final packsResponse = await ApiService.getCreditPacks();
- if (packsResponse.statusCode == 200) {
+ final results = await Future.wait([
+ safeCall('balance', () => ApiService.getWalletBalance()),
+ safeCall('packs', () => ApiService.getCreditPacks()),
+ safeCall('settings', () => ApiService.getSettings()),
+ safeCall('ledger', () => ApiService.getWalletLedger()),
+ ]);
+
+ final balanceResponse = results[0];
+ final packsResponse = results[1];
+ final settingsResponse = results[2];
+ final ledgerResponse = results[3];
+
+ if (balanceResponse != null && balanceResponse.statusCode == 200) {
+ balanceData = balanceResponse.data;
+ }
+
+ if (packsResponse != null && packsResponse.statusCode == 200) {
  final packsData = packsResponse.data;
  creditPacks = ApiUtils.extractList(packsData, 'packs')
  .where((pack) =>
@@ -115,28 +130,15 @@ class _WalletScreenState extends State<WalletScreen> {
  pack['is_active'] == true))
  .toList();
  }
- } catch (e) {
- debugPrint('Wallet: packs fetch failed: $e');
- }
 
- try {
- final settingsResponse = await ApiService.getSettings();
- if (settingsResponse.statusCode == 200) {
+ if (settingsResponse != null && settingsResponse.statusCode == 200) {
  final settingsDataJson = settingsResponse.data;
  settingsData = settingsDataJson['settings'] ?? {};
  }
- } catch (e) {
- debugPrint('Wallet: settings fetch failed: $e');
- }
 
- try {
- final ledgerResponse = await ApiService.getWalletLedger();
- if (ledgerResponse.statusCode == 200) {
+ if (ledgerResponse != null && ledgerResponse.statusCode == 200) {
  final lData = ledgerResponse.data;
  ledgerData = lData['ledger'] ?? [];
- }
- } catch (e) {
- debugPrint('Wallet: ledger fetch failed: $e');
  }
 
  if (!mounted) return;
