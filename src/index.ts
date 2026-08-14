@@ -3839,6 +3839,17996 @@ async function handleAdminSendActionOTP(
 ): Promise<Response> {
   try {
     const auth = await requireAdminOrTeacher(request, env);
+    if (request.method !== "POST")
+      return new Response("Method not allowed", { status: 405 });
+
+    const user: any = await env.DB.prepare(
+      "SELECT email, full_name FROM Users WHERE id = ?",
+    )
+      .bind(auth.id)
+      .first();
+    if (!user)
+      return new Response(JSON.stringify({ error: "User not found" }), {
+        status: 404,
+      });
+
+    const otp = generateSecureOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    try {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)",
+      )
+        .bind(user.email, otp, expiresAt)
+        .run();
+    } catch (e: any) {
+      if (e.message && e.message.includes("no column named attempts")) {
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO OTPs (email, otp, expires_at) VALUES (?, ?, ?)",
+        )
+          .bind(user.email, otp, expiresAt)
+          .run();
+      } else {
+        throw e;
+      }
+    }
+
+    const title = "Ã°ÂÂÂ Action Verification";
+    const body = `
+      <p style="font-size:16px;color:#334155;">Namaste <strong>${user.full_name || "User"}</strong>,</p>
+      <p style="color:#475569;">You have requested an OTP to perform a sensitive action.</p>
+      <div style="background:#ede9fe;padding:16px;border-radius:12px;text-align:center;margin:24px 0;">
+        <span style="font-size:32px;font-weight:900;color:#4f46e5;letter-spacing:4px;">${otp}</span>
+      </div>
+      <p style="color:#64748b;font-size:14px;">This OTP is valid for 10 minutes. If you did not request this, please secure your account immediately.</p>
+    `;
+    const textContent = `Namaste,\n\nYour Action OTP is: ${otp}\n\nValid for 10 mins.`;
+
+    await safeSendEmail(
+      env,
+      user.email,
+      "Action Verification OTP",
+      title,
+      body,
+      textContent,
+    );
+
+    return new Response(JSON.stringify({ message: "OTP sent successfully" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.SendActionOTP", env, request);
+  }
+}
+
+
+async function verifyAdminActionOTP(
+  request: Request,
+  env: Env,
+  otp: unknown,
+): Promise<string | Response> {
+  const auth = await requireAdminOrTeacher(request, env);
+  const normalizedOtp = String(otp || "").trim();
+
+  if (!normalizedOtp) {
+    return new Response(JSON.stringify({ error: "Action OTP is required." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const user: any = await env.DB.prepare(
+    "SELECT email FROM Users WHERE id = ?",
+  )
+    .bind(auth.id)
+    .first();
+
+  if (!user?.email) {
+    return new Response(JSON.stringify({ error: "User not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const otpResponse = await consumeOtp(env, user.email, normalizedOtp);
+  if (otpResponse) return otpResponse;
+
+  return auth.id;
+}
+
+async function handleGetSettings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const settings = await getSiteSettings(env);
+    return new Response(JSON.stringify({ settings }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ settings: {} }), { status: 200 });
+  }
+}
+
+async function handleContactForm(request: Request, env: Env): Promise<Response> {
+  try {
+    // Basic rate limiting: max 3 submissions per IP per hour
+    const clientIp = getClientIP(request);
+    const existing: any = await env.DB.prepare(
+      "SELECT window_used, window_start FROM RateLimits WHERE user_id = ? AND service = 'contact_form'"
+    ).bind(clientIp).first();
+    if (existing) {
+      const windowAge = Date.now() - new Date(existing.window_start).getTime();
+      if (windowAge < 3600 * 1000 && existing.window_used >= 3) {
+        return new Response(JSON.stringify({ error: "Ã Â¤Â¬Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â¤ Ã Â¤ÂÃ Â¤Â§Ã Â¤Â¿Ã Â¤Â Ã Â¤ÂÃ Â¤Â¨Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â§Ã Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â Ã Â¤ÂÃ Â¤ÂÃ Â¤ÂÃ Â¥Â Ã Â¤Â¬Ã Â¤Â¾Ã Â¤Â¦ Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¨Ã Â¤Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¯Ã Â¤Â¾Ã Â¤Â¸ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      await env.DB.prepare(
+        "UPDATE RateLimits SET window_used = CASE WHEN ? < 3600000 THEN window_used + 1 ELSE 1 END, window_start = CURRENT_TIMESTAMP WHERE user_id = ? AND service = 'contact_form'"
+      ).bind(windowAge, clientIp).run();
+    } else {
+      await env.DB.prepare(
+        "INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'contact_form', CURRENT_TIMESTAMP, 1, 3)"
+      ).bind(clientIp).run();
+    }
+
+    const body = (await request.json()) as any;
+    const { name, email, message } = body;
+
+    if (!name || !email || !message) {
+      return new Response(JSON.stringify({ error: "Name, email, aur message sabhi fields required hain" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const settings = await getSiteSettings(env);
+    const adminEmail = settings?.lms_email || "om@lms.yagyaashram.com";
+
+    const emailBody = `
+      <p><strong>Navaya Contact Form Submission</strong></p>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">Name</td><td style="padding:8px;border:1px solid #ddd;">${escapeHtml(name)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">Email</td><td style="padding:8px;border:1px solid #ddd;">${escapeHtml(email)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd;font-weight:700;">Message</td><td style="padding:8px;border:1px solid #ddd;">${escapeHtml(message)}</td></tr>
+      </table>
+    `;
+    const textBody = `New Contact Form Submission\n\nName: ${name}\nEmail: ${email}\nMessage: ${message}`;
+
+    await safeSendEmail(env, adminEmail, `Contact Form: ${name}`, "Ã°ÂÂÂ¬ New Contact Message", emailBody, textBody);
+
+    return new Response(JSON.stringify({ success: true, message: "Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¦Ã Â¥ÂÃ Â¤Â¶ Ã Â¤Â­Ã Â¥ÂÃ Â¤Â Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "ContactForm", env, request);
+  }
+}
+
+async function handleAdminAccounting(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") || "100", 10)));
+    const offset = (page - 1) * limit;
+
+    const { results } = await env.DB.prepare(
+      `
+      SELECT t.id,
+             t.amount_rupees,
+             t.status, t.payment_source, t.created_at, t.type,
+             u.full_name as user_name, u.email as user_email,
+             c.title as course_title
+      FROM Transactions t
+      LEFT JOIN Users u ON t.user_id = u.id
+      LEFT JOIN Courses c ON t.related_id = c.id AND t.type = 'course_purchase'
+      WHERE t.status = 'successful'
+      ORDER BY t.created_at DESC
+      LIMIT ? OFFSET ?
+    `,
+    ).bind(limit, offset).all();
+
+    const countRes: any = await env.DB.prepare(
+      `SELECT COUNT(*) as total FROM Transactions WHERE status = 'successful'`,
+    ).first();
+    const total = Number(countRes?.total ?? 0);
+
+    const stats = await env.DB.prepare(
+      `
+      SELECT
+        SUM(amount_rupees) as total_revenue,
+        COUNT(*) as total_transactions,
+        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_rupees ELSE 0 END) as monthly_revenue
+      FROM Transactions
+      WHERE status = 'successful'
+    `,
+    ).first();
+
+    return new Response(
+      JSON.stringify({
+        transactions: results,
+        total,
+        page,
+        limit,
+        stats: {
+          totalRevenue: Number((stats as any)?.total_revenue ?? 0),
+          totalTransactions: Number((stats as any)?.total_transactions ?? 0),
+          monthlyRevenue: Number((stats as any)?.monthly_revenue ?? 0),
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Admin.Accounting", env, request);
+  }
+}
+
+async function handleAdminSubscribers(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT email, subscribed_at, status FROM Subscribers ORDER BY subscribed_at DESC",
+      ).all();
+      return new Response(JSON.stringify({ subscribers: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST") {
+      if (url.pathname.endsWith("/email")) {
+        const { email, subject, body } = (await request.json()) as any;
+        if (!email || !subject || !body)
+          return new Response(JSON.stringify({ error: "Missing fields" }), {
+            status: 400,
+          });
+
+        const textBody = body.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        const sent = await safeSendEmail(
+          env,
+          email,
+          subject,
+          "Update from Adityanveshan",
+          body,
+          textBody,
+        );
+        if (sent) {
+          return new Response(
+            JSON.stringify({ message: "Email sent successfully" }),
+            { status: 200 },
+          );
+        } else {
+          return new Response(
+            JSON.stringify({ error: "Failed to send email" }),
+            { status: 500 },
+          );
+        }
+      }
+    }
+
+    if (request.method === "DELETE") {
+      const { email } = (await request.json()) as any;
+      if (!email)
+        return new Response(JSON.stringify({ error: "Email required" }), {
+          status: 400,
+        });
+      await env.DB.prepare("DELETE FROM Subscribers WHERE email = ?")
+        .bind(email)
+        .run();
+      return new Response(JSON.stringify({ message: "Subscriber removed" }), {
+        status: 200,
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.Subscribers", env, request);
+  }
+}
+
+const MASKED_KEYS_SENTINEL = "__MASKED_KEYS__";
+
+/** Validate KV key (max 512 bytes) and value (max 25 MB). Returns error response or null. */
+function validateKvKey(key: string): Response | null {
+  if (!key || key.trim() === "") {
+    return new Response(JSON.stringify({ error: "Key must not be empty" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  const keyBytes = new TextEncoder().encode(key).length;
+  if (keyBytes > 512) {
+    return new Response(JSON.stringify({ error: `Key too long (${keyBytes} bytes, max 512)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
+function validateKvValue(value: string): Response | null {
+  const valBytes = new TextEncoder().encode(value).length;
+  if (valBytes > 25 * 1024 * 1024) {
+    return new Response(JSON.stringify({ error: `Value too large (${(valBytes / 1024 / 1024).toFixed(1)} MB, max 25 MB)` }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+  return null;
+}
+
+async function handleAdminSecrets(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const pathname = new URL(request.url).pathname;
+
+    if (request.method === "GET") {
+      const secrets: Record<string, string> = {};
+      let cursor: string | undefined;
+      do {
+        const keyList = await env.PLATFORM_SECRETS.list(cursor ? { cursor } : {});
+        // Batch KV get() calls in chunks of 10 for better throughput
+        const chunks: { name: string }[][] = [];
+        const keys = keyList.keys.filter(k => k.name !== MASKED_KEYS_SENTINEL);
+        for (let i = 0; i < keys.length; i += 10) chunks.push(keys.slice(i, i + 10));
+        for (const chunk of chunks) {
+          const results = await Promise.all(chunk.map(k => env.PLATFORM_SECRETS.get(k.name)));
+          for (let j = 0; j < chunk.length; j++) {
+            if (results[j] !== null) {
+              secrets[chunk[j].name] = results[j]!;
+            }
+          }
+        }
+        cursor = keyList.list_complete ? undefined : keyList.cursor;
+      } while (cursor);
+      return new Response(JSON.stringify({ secrets }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+
+    if (request.method === "POST") {
+      const body = await parseRequestBody(request);
+
+      // POST /api/admin/secrets/delete Ã¢ÂÂ delete a key
+      if (pathname === "/api/admin/secrets/delete") {
+        const { key } = body;
+        if (!key || typeof key !== "string") {
+          return new Response(JSON.stringify({ error: "Key is required" }), { status: 400 });
+        }
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot delete internal meta key" }), { status: 403 });
+        }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
+        await env.PLATFORM_SECRETS.delete(key);
+        broadcastToAll(env, "secret", { key });
+        return new Response(JSON.stringify({ success: true, key, deleted: true }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /api/admin/secrets/{key} Ã¢ÂÂ create/update single key
+      const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
+      if (singleKeyMatch) {
+        let key: string;
+        try {
+          key = decodeURIComponent(singleKeyMatch[1]);
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid key encoding" }), { status: 400 });
+        }
+        if (key === MASKED_KEYS_SENTINEL) {
+          return new Response(JSON.stringify({ error: "Cannot modify internal meta key" }), { status: 403 });
+        }
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
+        const value = body.value;
+        if (value === undefined || value === null) {
+          return new Response(JSON.stringify({ error: "Value is required" }), { status: 400 });
+        }
+        const strValue = String(value);
+        const valErr = validateKvValue(strValue);
+        if (valErr) return valErr;
+        let action = "updated";
+        if (strValue === "") {
+          await env.PLATFORM_SECRETS.delete(key);
+          action = "deleted";
+        } else {
+          await env.PLATFORM_SECRETS.put(key, strValue);
+        }
+        broadcastToAll(env, "secret", { key });
+        return new Response(JSON.stringify({ success: true, key }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /api/admin/secrets Ã¢ÂÂ bulk update
+      const { secrets } = body;
+      if (!secrets || typeof secrets !== "object") {
+        return new Response(JSON.stringify({ error: "Invalid format Ã¢ÂÂ expected { secrets: { ... } }" }), {
+          status: 400,
+        });
+      }
+      const entries = Object.entries(secrets).filter(([k]) => k !== MASKED_KEYS_SENTINEL) as [string, string][];
+      const changedKeys: string[] = [];
+      for (const [key, value] of entries) {
+        // Validate all keys and values before writing anything
+        const keyErr = validateKvKey(key);
+        if (keyErr) return keyErr;
+        if (value !== "") {
+          const valErr = validateKvValue(value);
+          if (valErr) return valErr;
+        }
+        changedKeys.push(key);
+      }
+      // Batch operations in chunks of 10 for better throughput
+      const chunks: { key: string; value: string }[][] = [];
+      for (let i = 0; i < entries.length; i += 10) {
+        chunks.push(entries.slice(i, i + 10).map(([k, v]) => ({ key: k, value: v })));
+      }
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(({ key, value }) =>
+          value === "" ? env.PLATFORM_SECRETS.delete(key) : env.PLATFORM_SECRETS.put(key, value)
+        ));
+      }
+      broadcastToAll(env, "secret", { keys: changedKeys });
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+    });
+  } catch (error: any) {
+    console.error("Admin Secrets error:", error);
+    // Preserve HTTP status from requireAdmin/requireAuth errors (401/403)
+    const status = error.status || error.statusCode || 500;
+    return new Response(JSON.stringify({ error: error.message || error.error || "An error occurred" }), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
+async function handleAdminSettings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT key, value, description, updated_at FROM SiteSettings",
+      ).all();
+      return new Response(JSON.stringify({ settings: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const adminId = await requireAdmin(request, env);
+      const { settings, otp } = (await request.json()) as any;
+      if (!settings || typeof settings !== "object")
+        return new Response(JSON.stringify({ error: "Invalid format" }), {
+          status: 400,
+        });
+
+      // Require OTP confirmation for sensitive settings change.
+      if (!otp || typeof otp !== "string" || otp.length < 4) {
+        return new Response(JSON.stringify({ error: "OTP is required to change settings" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+      if (!admin?.email) {
+        return new Response(JSON.stringify({ error: "Admin email not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
+      const statements = Object.entries(settings).map(([key, value]) =>
+        env.DB.prepare(
+          "INSERT OR REPLACE INTO SiteSettings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ).bind(key, String(value)),
+      );
+
+      if (statements.length > 0) {
+        await env.DB.batch(statements);
+      }
+      return new Response(JSON.stringify({ message: "Settings updated" }), {
+        status: 200,
+      });
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.Settings", env, request);
+  }
+}
+
+async function handleAdminAddBalance(
+  request: Request,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const body = (await request.json()) as any;
+    const { amount, otp } = body;
+
+    const MAX_AMOUNT = 100000;
+    if (!amount || amount <= 0) {
+      return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
+    }
+    if (amount > MAX_AMOUNT) {
+      return new Response(JSON.stringify({ error: `Amount exceeds maximum of Ã¢ÂÂ¹${MAX_AMOUNT}` }), { status: 400 });
+    }
+    if (!otp) {
+      return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
+    }
+
+    const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!admin) {
+      return new Response(JSON.stringify({ error: "Admin not found" }), { status: 404 });
+    }
+
+    const otpResponse = await consumeOtp(env, admin.email, otp);
+    if (otpResponse) return otpResponse;
+
+    const targetUser: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(userId).first();
+    if (!targetUser) {
+      return new Response(JSON.stringify({ error: "Target user not found" }), { status: 404 });
+    }
+
+    const wallet = await addToWallet(
+      env,
+      userId,
+      Number(amount),
+      "admin_granted",
+      "admin_action",
+      adminId,
+    );
+
+    const emailBody = `
+      <p style="font-size:16px;color:#334155;">Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${targetUser.full_name || "Student"}</strong>,</p>
+      <p style="color:#475569;">Ã Â¤ÂµÃ Â¥ÂÃ Â¤Â¯Ã Â¤ÂµÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¥Ã Â¤Â¾Ã Â¤ÂªÃ Â¤Â (Admin) Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â <strong>Ã¢ÂÂ¹${amount}</strong> Ã Â¤ÂÃ Â¥ÂÃ Â¤Â¡Ã Â¤Â¼Ã Â¥Â Ã Â¤ÂÃ Â¤Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+      <p style="color:#475569;">Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â²Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¸: <strong>Ã¢ÂÂ¹${wallet.balance_rupees}</strong></p>
+    `;
+    await safeSendEmail(
+      env,
+      targetUser.email,
+      "Balance Added - Adityanveshan LMS",
+      "Ã°ÂÂÂ° Balance Added",
+      emailBody,
+      `Namaste,\nYour account has been credited with Ã¢ÂÂ¹${amount}. Your new balance is Ã¢ÂÂ¹${wallet.balance_rupees}.`
+    ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
+
+    await logAdminActivity(
+      env,
+      admin.email || "Unknown Admin",
+      "Give Credits",
+      `Added Ã¢ÂÂ¹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
+      getClientIP(request),
+    ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
+
+    // Ã°ÂÂÂ¯ [NEW] DataSyncDO ke through broadcast karo Ã¢ÂÂ full balance data
+    try {
+      const dataDoId = env.DATA_SYNC_DO.idFromName("data-sync");
+      const dataStub = env.DATA_SYNC_DO.get(dataDoId);
+      await dataStub.fetch("http://do/broadcast", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "wallet",
+          action: "broadcast",
+          userId: userId,
+          data: { balance_rupees: wallet.balance_rupees }
+        }),
+      }).catch(e => console.error("[GiveCredits] DataSyncDO broadcast failed:", e));
+    } catch (e) {
+      console.error("[GiveCredits] DataSyncDO error:", e);
+    }
+
+    return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Forbidden" ? 403 : 401 });
+    return handleGlobalError(error, "Admin.GiveCredits", env, request);
+  }
+}
+
+async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    if (request.method === "GET") {
+      const url = new URL(request.url);
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+      const offset = (page - 1) * limit;
+
+      const { results } = await env.DB.prepare(
+        "SELECT id, email, role, full_name, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      ).bind(limit, offset).all();
+
+      const countRes: any = await env.DB.prepare(
+        "SELECT COUNT(*) as total FROM Users",
+      ).first();
+      const total = Number(countRes?.total ?? 0);
+
+      return new Response(JSON.stringify({ users: results, total, page, limit }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/users\/([^/]+)$/)?.[1];
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required in URL path" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const body = (await request.json()) as any;
+      let {
+        role,
+        full_name,
+        email,
+        bio,
+        phone,
+        district,
+        state,
+        country,
+        birth_date,
+        father_name,
+        mother_name,
+        grand_father_name,
+        pincode,
+      } = body;
+
+      if (email) email = email.toLowerCase();
+      const finalPincode = pincode || null;
+
+      const targetUser: any = await env.DB.prepare(
+        "SELECT role FROM Users WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (targetUser?.role === "admin") {
+        return new Response(
+          JSON.stringify({ error: "Cannot edit an admin user" }),
+          { status: 403 },
+        );
+      }
+
+      if (role === "admin") {
+        return new Response(
+          JSON.stringify({ error: "Cannot assign admin role" }),
+          { status: 403 },
+        );
+      }
+
+      await env.DB.prepare(
+        "UPDATE Users SET role = COALESCE(?, role), full_name = COALESCE(?, full_name), email = COALESCE(?, email), bio = COALESCE(?, bio), phone = COALESCE(?, phone), district = COALESCE(?, district), state = COALESCE(?, state), country = COALESCE(?, country), birth_date = COALESCE(?, birth_date), father_name = COALESCE(?, father_name), mother_name = COALESCE(?, mother_name), grand_father_name = COALESCE(?, grand_father_name), pincode = COALESCE(?, pincode) WHERE id = ?",
+      )
+        .bind(
+          role ?? null,
+          full_name ?? null,
+          email ?? null,
+          bio ?? null,
+          phone ?? null,
+          district ?? null,
+          state ?? null,
+          country ?? null,
+          birth_date ?? null,
+          father_name ?? null,
+          mother_name ?? null,
+          grand_father_name ?? null,
+          finalPincode,
+          id,
+        )
+        .run();
+
+      return new Response(
+        JSON.stringify({ success: true, message: "User updated successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/users\/([^/]+)$/)?.[1];
+      if (!id || id.trim() === "") {
+        return new Response(
+          JSON.stringify({ error: "User ID is required in URL path" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const body = (await request.json()) as any;
+      const { otp } = body;
+      if (!otp)
+        return new Response(
+          JSON.stringify({ error: "OTP is required for deletion" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+
+      const admin: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE id = ?",
+      )
+        .bind(adminId)
+        .first();
+      if (!admin)
+        return new Response(JSON.stringify({ error: "Admin not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
+      const targetUser: any = await env.DB.prepare(
+        "SELECT email, full_name, role FROM Users WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (!targetUser)
+        return new Response(JSON.stringify({ error: "User not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (targetUser.role === "admin")
+        return new Response(
+          JSON.stringify({ error: "Cannot delete an admin user" }),
+          { status: 403 },
+        );
+
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM Attendance WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM ExamAttempts WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CompletedLessons WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM ChatHistory WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM PrepaidTimeBank WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM IndividualBookings WHERE student_id = ? OR teacher_id = ?").bind(id, id),
+        env.DB.prepare("DELETE FROM Enrollments WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM PushSubscriptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Notifications WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM LeaveRequests WHERE student_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Certificates WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CreditWallets WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CreditLedger WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM CouponRedemptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM BillingAddresses WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM UserBadges WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Subscriptions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM UserSubscriptionSelections WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Transactions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM EmailDrafts WHERE admin_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM AnonymousUsers WHERE converted_to_user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM FormSubmissions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM LiveSignaling WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
+      ]);
+
+      const title = "Ã Â¤ÂÃ Â¤Â²Ã Â¤ÂµÃ Â¤Â¿Ã Â¤Â¦Ã Â¤Â¾! Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¤Â¾ Ã Â¤Â¹Ã Â¤ÂÃ Â¤Â¾ Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â";
+      const emailBody = `
+        <p style="font-size:16px;color:#334155;">Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${targetUser.full_name || "User"}</strong>,</p>
+        <p style="color:#475569;">Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ <strong>Adityanveshan LMS</strong> Ã Â¤ÂÃ Â¤Â¾ Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¤Â¾ Ã Â¤ÂµÃ Â¥ÂÃ Â¤Â¯Ã Â¤ÂµÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¥Ã Â¤Â¾Ã Â¤ÂªÃ Â¤Â (Admin) Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¤Â¾ Ã Â¤Â¹Ã Â¤ÂÃ Â¤Â¾ Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+        <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
+          <p style="margin:0;color:#991b1b;font-weight:600;">Ã Â¤Â¯Ã Â¤Â¦Ã Â¤Â¿ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤ÂÃ Â¤Â¤Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¿ Ã Â¤Â¯Ã Â¤Â¹ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â²Ã Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥Â, Ã Â¤Â¤Ã Â¥Â Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¸Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¥ÂÃ Â¤Â® Ã Â¤Â¸Ã Â¥Â Ã Â¤Â¸Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+        </div>
+      `;
+      await safeSendEmail(
+        env,
+        targetUser.email,
+        "Account Deleted - Adityanveshan LMS",
+        title,
+        emailBody,
+        `Namaste ${targetUser.full_name || "User"},\nYour account has been deleted by an administrator.`,
+      );
+
+      return new Response(
+        JSON.stringify({ message: "User deleted successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "POST") {
+      const body = (await request.json()) as any;
+      let {
+        email,
+        full_name,
+        role,
+        phone,
+        district,
+        state,
+        country,
+        birth_date,
+        father_name,
+        mother_name,
+        grand_father_name,
+        pincode,
+        gender,
+        bio,
+        birth_place,
+      } = body;
+      const { otp } = body;
+
+      if (!email)
+        return new Response(JSON.stringify({ error: "Email is required" }), {
+          status: 400,
+        });
+      email = email.toLowerCase();
+
+      // Prevent privilege escalation: only student/teacher roles may be created via admin panel.
+      if (role && role !== "student" && role !== "teacher") {
+        return new Response(
+          JSON.stringify({ error: "Invalid role. Only 'student' or 'teacher' can be created." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      const adminId = await requireAdmin(request, env);
+
+      if (!otp)
+        return new Response(
+          JSON.stringify({ error: "OTP is required for creating a user" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+
+      const admin: any = await env.DB.prepare(
+        "SELECT email FROM Users WHERE id = ?",
+      )
+        .bind(adminId)
+        .first();
+      if (!admin)
+        return new Response(JSON.stringify({ error: "Admin not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      const otpResponse = await consumeOtp(env, admin.email, otp);
+      if (otpResponse) return otpResponse;
+
+      const adminInfo: any = await env.DB.prepare(
+        "SELECT full_name FROM Users WHERE id = ?",
+      )
+        .bind(adminId)
+        .first();
+      const adminName = adminInfo?.full_name || "Admin";
+
+      const check = await env.DB.prepare("SELECT id FROM Users WHERE email = ?")
+        .bind(email)
+        .first();
+      if (check)
+        return new Response(JSON.stringify({ error: "Email already exists" }), {
+          status: 400,
+        });
+
+      const userId = await generateStudentId(
+        env.DB,
+        country,
+        district,
+        full_name,
+      );
+
+      await env.DB.prepare(
+        "INSERT INTO Users (id, student_id, email, full_name, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(
+          userId,
+          userId,
+          email,
+          full_name || "",
+          role || "student",
+          phone || null,
+          district || null,
+          state || null,
+          country || null,
+          birth_date || null,
+          father_name || null,
+          mother_name || null,
+          grand_father_name || null,
+          pincode || null,
+          gender || null,
+          bio || null,
+          birth_place || null,
+        )
+        .run();
+
+      // Send Welcome Email
+      const welcomeTitle = "Ã°ÂÂÂ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Adityanveshan LMS Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â¤ Ã Â¤Â¹Ã Â¥Â!";
+      const appUrl = await getPublicAppUrl(env);
+      const welcomeBody = `
+        <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+        <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¤Â¾ <strong>Ã Â¤ÂÃ Â¤ÂÃ Â¤Â¾Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¯ ${adminName}</strong> Ã Â¤ÂÃ Â¥Â Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¤Â¾ Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â Ã Â¤Â¬Ã Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+        <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
+          <p style="margin:0;font-weight:600;">Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¿Ã Â¤Â¨ Ã Â¤ÂµÃ Â¤Â¿Ã Â¤ÂµÃ Â¤Â°Ã Â¤Â£:</p>
+          <p style="margin:8px 0;">Ã Â¤ÂÃ Â¤Â®Ã Â¥ÂÃ Â¤Â²: <strong>${email}</strong></p>
+          <p style="margin:0;">Ã Â¤ÂÃ Â¤Âª OTP Ã Â¤ÂÃ Â¥Â Ã Â¤Â®Ã Â¤Â¾Ã Â¤Â§Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â® Ã Â¤Â¸Ã Â¥Â Ã Â¤Â²Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¿Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+        </div>
+        <p>Ã Â¤ÂÃ Â¤Âª Ã Â¤Â¯Ã Â¤Â¹Ã Â¤Â¾Ã Â¤Â Ã Â¤Â¸Ã Â¥Â Ã Â¤Â²Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¿Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+      `;
+      await safeSendEmail(
+        env,
+        email,
+        "Welcome to Adityanveshan LMS",
+        welcomeTitle,
+        welcomeBody,
+        `Namaste, Your account has been created by Acharya ${adminName} Ji. Email: ${email}. You can login using OTP.`,
+      );
+
+      return new Response(
+        JSON.stringify({ message: "User created successfully", userId }),
+        { status: 201 },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.Users", env, request);
+  }
+}
+
+async function handleAdminAiModels(request: Request, env: Env): Promise<Response> {
+  try {
+    const userAuth = await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/');
+    const id = pathParts[4] ? decodeURIComponent(pathParts[4]) : null;
+
+    if (request.method === "GET") {
+      if (id) {
+        const model = await env.DB.prepare("SELECT * FROM AiModels WHERE id = ?").bind(id).first();
+        if (!model) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+        return new Response(JSON.stringify(model), { headers: { "Content-Type": "application/json" } });
+      }
+      const models = await env.DB.prepare("SELECT * FROM AiModels ORDER BY created_at DESC").all();
+      return new Response(JSON.stringify({ models: models.results }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const data: any = await request.json();
+      
+      if (data.is_default == 1) {
+        await env.DB.prepare("UPDATE AiModels SET is_default = 0").run();
+      }
+      
+      await env.DB.prepare(
+        "INSERT INTO AiModels (id, name, provider, endpoint, system_prompt, fallback_model_ids, is_active, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        data.id, 
+        data.name, 
+        data.provider, 
+        data.endpoint, 
+        data.system_prompt || null, 
+        data.fallback_model_ids || '[]', 
+        data.is_active !== undefined ? data.is_active : 1, 
+        data.is_default || 0
+      ).run();
+      return new Response(JSON.stringify({ success: true, id: data.id }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "PUT" && id) {
+      const data: any = await request.json();
+      
+      if (data.is_default == 1) {
+        await env.DB.prepare("UPDATE AiModels SET is_default = 0").run();
+      }
+      
+      await env.DB.prepare(
+        "UPDATE AiModels SET name = ?, provider = ?, endpoint = ?, system_prompt = ?, fallback_model_ids = ?, is_active = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(
+        data.name, 
+        data.provider, 
+        data.endpoint, 
+        data.system_prompt || null, 
+        data.fallback_model_ids || '[]', 
+        data.is_active !== undefined ? data.is_active : 1, 
+        data.is_default || 0, 
+        id
+      ).run();
+      return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "DELETE" && id) {
+      await env.DB.prepare("DELETE FROM AiModels WHERE id = ?").bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), { status: 401 });
+
+    if (error.message && error.message.includes("no such table: AiModels")) {
+      return new Response(
+        JSON.stringify({ error: "Database table 'AiModels' is missing. Please run database migrations in the Admin panel to initialize the AI Models feature." }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    return handleGlobalError(error, "Admin.AiModels", env, request);
+  }
+}
+
+async function handleGetPublicAiModels(request: Request, env: Env): Promise<Response> {
+  try {
+    const models = await env.DB.prepare(
+      "SELECT id, name, is_default FROM AiModels WHERE is_active = 1 ORDER BY is_default DESC, name ASC"
+    ).all();
+    return new Response(JSON.stringify({ models: models.results }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "GetPublicAiModels", env, request);
+  }
+}
+
+async function handleAdminCourses(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const userAuth = await requireAdminOrTeacher(request, env);
+    if (request.method === "GET") {
+      const url = new URL(request.url);
+
+      // Single-course GET: /api/admin/courses/{id}
+      const singleCourseMatch = url.pathname.match(/^\/api\/admin\/courses\/([^/]+)$/);
+      if (singleCourseMatch && url.pathname !== "/api/admin/courses") {
+        const courseId = decodeURIComponent(singleCourseMatch[1]);
+        const course = await env.DB.prepare(
+          "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
+        ).bind(courseId).first();
+        if (!course) {
+          return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ course }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
+      const offset = (page - 1) * limit;
+
+      let query =
+        "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
+      let countQuery = "SELECT COUNT(*) as total FROM Courses c";
+
+      let results;
+      let total = 0;
+
+      if (userAuth.role === "teacher") {
+        query += " WHERE c.teacher_id = ? ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(userAuth.id, limit, offset).all()).results;
+
+        countQuery += " WHERE c.teacher_id = ?";
+        const countRes: any = await env.DB.prepare(countQuery).bind(userAuth.id).first();
+        total = Number(countRes?.total ?? 0);
+      } else {
+        query += " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
+        results = (await env.DB.prepare(query).bind(limit, offset).all()).results;
+
+        const countRes: any = await env.DB.prepare(countQuery).first();
+        total = Number(countRes?.total ?? 0);
+      }
+      return new Response(JSON.stringify({ courses: results, total, page, limit }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const {
+        title,
+        title_hi,
+        description,
+        description_hi,
+        price_rupees,
+        price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
+        teacher_id,
+        category_id,
+        self_study_enabled,
+        wallet_rupees,
+        self_study_only,
+        individual_class_booking_enabled,
+        individual_class_duration_minutes,
+        individual_class_cost_rupees,
+        seo_title_en,
+        seo_title_hi,
+        seo_description_en,
+        seo_description_hi,
+        seo_keywords_en,
+        seo_keywords_hi,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
+        send_announcement_push,
+      } = (await request.json()) as any;
+      const courseId = generateCustomId("YA-CRS");
+
+      const finalTeacherId =
+        userAuth.role === "teacher" ? userAuth.id : teacher_id || userAuth.id;
+
+      if (!finalTeacherId) {
+        return new Response(
+          JSON.stringify({ error: "Teacher ID is required" }),
+          { status: 400 },
+        );
+      }
+
+      const costInr = normalizeNonNegativeInt(wallet_rupees);
+      const individualClassCostInr = normalizeNonNegativeInt(individual_class_cost_rupees);
+
+      await env.DB.prepare(
+        `
+        INSERT INTO Courses (
+          id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
+          wallet_rupees, individual_class_cost_rupees,
+          seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      )
+        .bind(
+          courseId,
+          title || "Untitled Course",
+          title_hi || null,
+          description || "",
+          description_hi || null,
+          finalTeacherId,
+          price_rupees ?? 0,
+          price_usd ?? 0,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
+          category_id || null,
+          self_study_enabled ? 1 : 0,
+          self_study_only ? 1 : 0,
+          individual_class_booking_enabled ? 1 : 0,
+          normalizeNonNegativeInt(individual_class_duration_minutes, 30),
+          costInr,
+          individualClassCostInr,
+          seo_title_en || null,
+          seo_title_hi || null,
+          seo_description_en || null,
+          seo_description_hi || null,
+          seo_keywords_en || null,
+          seo_keywords_hi || null,
+        )
+        .run();
+
+      // Global Broadcast: Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¸ Ã Â¤ÂªÃ Â¤Â¬Ã Â¥ÂÃ Â¤Â²Ã Â¤Â¿Ã Â¤Â¶ Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â¨Ã Â¥Â Ã Â¤ÂªÃ Â¤Â° Ã Â¤Â¸Ã Â¤Â­Ã Â¥Â Ã Â¤Â¯Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¼Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¸ Ã Â¤ÂÃ Â¥Â Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°Ã Â¤ÂÃ Â¤Â¤ Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¡Ã Â¥ÂÃ Â¤Â Ã Â¤Â¦Ã Â¥ÂÃ Â¤Â
+      broadcastToAll(env, "course", { courseId, title: title || "Untitled Course" });
+
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+        const appUrl = await getPublicAppUrl(env);
+        announcementResult = await runCreationAnnouncement(
+          env,
+          {
+            sendEmail: send_announcement_email,
+            audience: announcement_audience || "both",
+            postSocial: auto_post_social,
+            platforms: Array.isArray(social_platforms) ? social_platforms : [],
+          },
+          {
+            kind: "course",
+            title: title || "Untitled Course",
+            titleHi: title_hi || null,
+            description: description || "",
+            descriptionHi: description_hi || null,
+            url: `${appUrl}/courses?course=${encodeURIComponent(courseId)}`,
+            priceRupees: price_rupees ?? 0,
+          },
+        );
+      }
+
+      if (normalizeBoolean(send_announcement_push)) {
+        try {
+          const pushResult = await sendPush(env, {
+            all: true,
+            title: `Ã°ÂÂÂ Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¸: ${title || "Untitled Course"}`,
+            body: "Ã Â¤ÂÃ Â¤Â­Ã Â¥Â enroll Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤",
+            data: {
+              url: `/course/${courseId}`,
+              clickUrl: `/course/${courseId}`,
+              courseId,
+            },
+          });
+          const pushBroadcastId = generateCustomId("YA-BRC");
+          await env.DB.prepare(
+            `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+          ).bind(
+            pushBroadcastId,
+            (userAuth as any).sub || null,
+            "all",
+            `Ã°ÂÂÂ Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¸: ${title || "Untitled Course"}`,
+            "Ã Â¤ÂÃ Â¤Â­Ã Â¥Â enroll Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤",
+            JSON.stringify({ courseId, type: "new_course_announcement" }),
+            pushResult.sent,
+            pushResult.failed,
+          ).run();
+          (announcementResult as any).push = { sent: pushResult.sent, failed: pushResult.failed };
+        } catch (pushErr) {
+          console.error("Course push trigger failed:", pushErr);
+        }
+      }
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Create Course",
+        `New course "${title}" (ID: ${courseId}) created.`,
+        getClientIP(request),
+      );
+
+      return new Response(
+        JSON.stringify({
+          message: "Course created successfully",
+          id: courseId,
+          announcement: announcementResult,
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/courses\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Course ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const {
+        title,
+        title_hi,
+        description,
+        description_hi,
+        price_rupees,
+        price_usd,
+        thumbnail_url,
+        merchant_default_image_url,
+        teacher_id,
+        category_id,
+        course_type,
+        status,
+        self_study_enabled,
+        wallet_rupees,
+        self_study_only,
+        individual_class_booking_enabled,
+        individual_class_duration_minutes,
+        individual_class_cost_rupees,
+        send_announcement_push,
+        seo_title_en,
+        seo_title_hi,
+        seo_description_en,
+        seo_description_hi,
+        seo_keywords_en,
+        seo_keywords_hi,
+      } = (await request.json()) as any;
+
+      if (userAuth.role === "teacher") {
+        const courseCheck = await env.DB.prepare(
+          "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+        )
+          .bind(id, userAuth.id)
+          .first();
+        if (!courseCheck)
+          return new Response(
+            JSON.stringify({ error: "Forbidden or not found" }),
+            { status: 403 },
+          );
+      }
+
+      const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
+
+      const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
+      const updateIndividualClassCostInr = individual_class_cost_rupees == null ? null : normalizeNonNegativeInt(individual_class_cost_rupees);
+
+      const existingCourse: any = await env.DB.prepare(
+        "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
+      ).bind(id).first();
+
+      await env.DB.prepare(
+        `
+        UPDATE Courses SET
+          title = COALESCE(?, title),
+          title_hi = COALESCE(?, title_hi),
+          description = COALESCE(?, description),
+          description_hi = COALESCE(?, description_hi),
+          price_rupees = COALESCE(?, price_rupees),
+          price_usd = COALESCE(?, price_usd),
+          thumbnail_url = COALESCE(?, thumbnail_url),
+          merchant_default_image_url = COALESCE(?, merchant_default_image_url),
+          teacher_id = COALESCE(?, teacher_id),
+          category_id = COALESCE(?, category_id),
+          self_study_enabled = COALESCE(?, self_study_enabled),
+          self_study_only = COALESCE(?, self_study_only),
+          individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
+          individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
+          wallet_rupees = COALESCE(?, wallet_rupees),
+          individual_class_cost_rupees = COALESCE(?, individual_class_cost_rupees),
+          seo_title_en = COALESCE(?, seo_title_en),
+          seo_title_hi = COALESCE(?, seo_title_hi),
+          seo_description_en = COALESCE(?, seo_description_en),
+          seo_description_hi = COALESCE(?, seo_description_hi),
+          seo_keywords_en = COALESCE(?, seo_keywords_en),
+          seo_keywords_hi = COALESCE(?, seo_keywords_hi)
+        WHERE id = ?
+      `,
+      )
+        .bind(
+          title || null,
+          title_hi || null,
+          description || null,
+          description_hi || null,
+          price_rupees ?? null,
+          price_usd ?? null,
+          thumbnail_url || null,
+          merchant_default_image_url || null,
+          newTeacherId || null,
+          category_id || null,
+          self_study_enabled == null ? null : self_study_enabled ? 1 : 0,
+          self_study_only == null ? null : self_study_only ? 1 : 0,
+          individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
+          individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
+          updateCostInr,
+          updateIndividualClassCostInr,
+          seo_title_en || null,
+          seo_title_hi || null,
+          seo_description_en || null,
+          seo_description_hi || null,
+          seo_keywords_en || null,
+          seo_keywords_hi || null,
+          id,
+        )
+        .run();
+
+      // If the thumbnail changed, delete the previous R2 object to avoid orphans.
+      if (thumbnail_url != null && existingCourse?.thumbnail_url && existingCourse.thumbnail_url !== thumbnail_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.thumbnail_url);
+      }
+      if (merchant_default_image_url != null && existingCourse?.merchant_default_image_url && existingCourse.merchant_default_image_url !== merchant_default_image_url) {
+        await deleteR2ObjectFromUrl(env, existingCourse.merchant_default_image_url);
+      }
+
+      // Cascade teacher update to LiveSessions
+      if (newTeacherId) {
+        await env.DB.prepare(
+          "UPDATE LiveSessions SET teacher_id = ? WHERE course_id = ?",
+        )
+          .bind(newTeacherId, id)
+          .run();
+      }
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Update Course",
+        `Course ID: ${id} updated.`,
+        getClientIP(request),
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Course updated successfully",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/courses\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Course ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (userAuth.role === "teacher") {
+        const courseCheck = await env.DB.prepare(
+          "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+        )
+          .bind(id, userAuth.id)
+          .first();
+        if (!courseCheck)
+          return new Response(
+            JSON.stringify({ error: "Forbidden or not found" }),
+            { status: 403 },
+          );
+      }
+
+      const result: any = await env.DB.prepare("DELETE FROM Courses WHERE id = ?").bind(id).run();
+      if (result.meta?.changes === 0) {
+        return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Delete Course",
+        `Course ID: ${id} deleted.`,
+        getClientIP(request),
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Course deleted successfully",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), { status: 401 });
+    if (error.message === "Forbidden")
+      return new Response(JSON.stringify({ error: error.message }), { status: 403 });
+    return handleGlobalError(error, "Admin.Courses", env, request);
+  }
+}
+
+async function handleAdminCategories(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM Categories ORDER BY name ASC",
+      ).all();
+      return new Response(JSON.stringify({ categories: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const { name, description } = (await request.json()) as any;
+      const id = generateCustomId("YA-CAT");
+      await env.DB.prepare(
+        "INSERT INTO Categories (id, name, description) VALUES (?, ?, ?)",
+      )
+        .bind(id, name, description || "")
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Category created successfully", id }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/categories\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Category ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Categories WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (!existing)
+        return new Response(
+          JSON.stringify({ error: "Category not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        );
+      const { name, description } = (await request.json()) as any;
+      await env.DB.prepare(
+        "UPDATE Categories SET name = ?, description = ? WHERE id = ?",
+      )
+        .bind(name, description || "", id)
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Category updated successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/categories\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Category ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Categories WHERE id = ?",
+      )
+        .bind(id)
+        .first();
+      if (!existing)
+        return new Response(
+          JSON.stringify({ error: "Category not found" }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        );
+      await env.DB.prepare("DELETE FROM Categories WHERE id = ?")
+        .bind(id)
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Category deleted successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.Categories", env, request);
+  }
+}
+
+
+type EnrollmentWriteInput = {
+  userId: string;
+  courseId?: string | null;
+  batchId?: string | null;
+  status?: string | null;
+  paymentStatus?: string | null;
+  amountPaid?: number | string | null;
+  paymentSource?: string | null;
+  paymentId?: string | null;
+  preservePaidStatus?: boolean;
+  updateExisting?: boolean;
+};
+
+type EnrollmentWriteResult = {
+  id: string;
+  courseId: string;
+  batchId: string | null;
+  created: boolean;
+  updated: boolean;
+  alreadyInSameBatch: boolean;
+  previousPaymentStatus: string | null;
+};
+
+function normalizeOptionalId(value: any): string | null {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeEnrollmentStatus(value: any): string {
+  const normalized = String(value ?? "active").trim().toLowerCase();
+  return ["active", "revoked", "completed", "pending", "cancelled"].includes(normalized)
+    ? normalized
+    : "active";
+}
+
+function normalizeEnrollmentPaymentStatus(value: any): string {
+  const normalized = String(value ?? "pending").trim().toLowerCase();
+  return ["paid", "pending", "unpaid", "failed", "refunded"].includes(normalized)
+    ? normalized
+    : "pending";
+}
+
+function normalizeAmountPaid(value: any): number {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount < 0) return 0;
+  return roundToTwo(amount);
+}
+
+
+function isEnrollmentInputError(error: any): boolean {
+  const message = String(error?.message || "");
+  return [
+    "User ID is required for enrollment.",
+    "User not found for enrollment.",
+    "Batch not found for enrollment.",
+    "Selected batch does not belong to the selected course.",
+    "Course ID is required for enrollment.",
+    "Course not found for enrollment.",
+  ].includes(message);
+}
+async function ensureEnrollment(
+  env: Env,
+  input: EnrollmentWriteInput,
+): Promise<EnrollmentWriteResult> {
+  const userId = normalizeOptionalId(input.userId);
+  const requestedCourseId = normalizeOptionalId(input.courseId);
+  const batchId = normalizeOptionalId(input.batchId);
+  const paymentStatus = normalizeEnrollmentPaymentStatus(input.paymentStatus);
+  const status = normalizeEnrollmentStatus(input.status);
+  const hasAmountPaid =
+    input.amountPaid !== undefined &&
+    input.amountPaid !== null &&
+    input.amountPaid !== "";
+  const amountPaid = normalizeAmountPaid(input.amountPaid);
+  const paymentSource = normalizeOptionalId(input.paymentSource);
+  const paymentId = normalizeOptionalId(input.paymentId);
+
+  if (!userId) throw new Error("User ID is required for enrollment.");
+
+  const user = await env.DB.prepare("SELECT id FROM Users WHERE id = ?")
+    .bind(userId)
+    .first();
+  if (!user) throw new Error("User not found for enrollment.");
+
+  let courseId = requestedCourseId;
+  if (batchId) {
+    const batch: any = await env.DB.prepare(
+      "SELECT id, course_id FROM Batches WHERE id = ?",
+    )
+      .bind(batchId)
+      .first();
+    if (!batch) throw new Error("Batch not found for enrollment.");
+    if (courseId && batch.course_id !== courseId) {
+      throw new Error("Selected batch does not belong to the selected course.");
+    }
+    courseId = batch.course_id;
+  }
+
+  if (!courseId) throw new Error("Course ID is required for enrollment.");
+
+  const course = await env.DB.prepare("SELECT id FROM Courses WHERE id = ?")
+    .bind(courseId)
+    .first();
+  if (!course) throw new Error("Course not found for enrollment.");
+
+  const id = generateCustomId("YA-ENR");
+
+  // Atomic INSERT Ã¢ÂÂ ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
+  // If another request already inserted the same (user_id, course_id), the INSERT
+  // is silently ignored and we fall through to the UPDATE path below.
+  const insertResult = await env.DB.prepare(
+    `INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source, payment_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, course_id) WHERE course_id IS NOT NULL DO NOTHING`,
+  )
+    .bind(id, userId, courseId, batchId, status, paymentStatus, amountPaid, paymentSource, paymentId)
+    .run() as any;
+
+  const wasInserted = Number(insertResult?.meta?.changes || 0) === 1;
+
+  if (wasInserted) {
+    return {
+      id,
+      courseId,
+      batchId,
+      created: true,
+      updated: false,
+      alreadyInSameBatch: false,
+      previousPaymentStatus: null,
+    };
+  }
+
+  // Row already existed Ã¢ÂÂ do UPDATE with preservePaidStatus logic
+  const existing: any = await env.DB.prepare(
+    "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+  )
+    .bind(userId, courseId)
+    .first();
+
+  if (!existing) throw new Error("Enrollment not found after conflict");
+
+  if (input.updateExisting === false) {
+    return {
+      id: existing.id,
+      courseId,
+      batchId: existing.batch_id || null,
+      created: false,
+      updated: false,
+      alreadyInSameBatch: (existing.batch_id || null) === batchId,
+      previousPaymentStatus: existing.payment_status || null,
+    };
+  }
+
+  const alreadyInSameBatch = (existing.batch_id || null) === batchId;
+  const nextPaymentStatus =
+    input.preservePaidStatus &&
+      existing.payment_status === "paid" &&
+      paymentStatus !== "paid"
+      ? "paid"
+      : paymentStatus;
+  try {
+    await env.DB.prepare(
+      `UPDATE Enrollments
+       SET batch_id = ?, status = ?, payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+       WHERE id = ?`,
+    )
+      .bind(
+        batchId,
+        status,
+        nextPaymentStatus,
+        hasAmountPaid ? 1 : 0,
+        amountPaid,
+        paymentSource,
+        paymentId,
+        existing.id,
+      )
+      .run();
+  } catch (e: any) {
+    if (
+      String(e?.message || "").includes("CHECK constraint failed") &&
+      (status === "pending" || status === "cancelled")
+    ) {
+      await env.DB.prepare(
+        `UPDATE Enrollments
+         SET batch_id = ?, status = 'revoked', payment_status = ?, amount_paid = CASE WHEN ? THEN ? ELSE amount_paid END, payment_source = COALESCE(?, payment_source), payment_id = COALESCE(?, payment_id)
+         WHERE id = ?`,
+      )
+        .bind(
+          batchId,
+          nextPaymentStatus,
+          hasAmountPaid ? 1 : 0,
+          amountPaid,
+          paymentSource,
+          paymentId,
+          existing.id,
+        )
+        .run();
+    } else {
+      throw e;
+    }
+  }
+  return {
+    id: existing.id,
+    courseId,
+    batchId,
+    created: false,
+    updated: !alreadyInSameBatch,
+    alreadyInSameBatch,
+    previousPaymentStatus: existing.payment_status || null,
+  };
+}
+
+async function handleAdminEnrollments(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        `
+        SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title, b.name as batch_name
+        FROM Enrollments e
+        JOIN Users u ON e.user_id = u.id
+        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Batches b ON e.batch_id = b.id
+        ORDER BY e.purchased_at DESC
+        LIMIT 1000
+      `,
+      ).all();
+      return new Response(JSON.stringify({ enrollments: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const {
+        user_id,
+        course_id,
+        batch_id,
+        status,
+        payment_status,
+        otp,
+        amount_paid,
+        payment_source,
+      } = (await request.json()) as any;
+
+      let adminId = await requireAdmin(request, env);
+
+      if (payment_status === "paid") {
+        const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+        if (verifiedAdmin instanceof Response) return verifiedAdmin;
+        adminId = verifiedAdmin;
+      }
+
+      let warnings: string[] = [];
+
+      if (payment_status === "paid" && (!amount_paid || amount_paid === 0)) {
+        const course: any = await env.DB.prepare("SELECT price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
+        if (course && course.price_rupees > 0) {
+          warnings.push("amount_paid is 0 but course has a price. Student may not have premium access.");
+        }
+      }
+
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: user_id,
+        courseId: course_id,
+        batchId: batch_id,
+        status,
+        paymentStatus: payment_status || "pending",
+        amountPaid: amount_paid,
+        paymentSource: payment_source,
+        preservePaidStatus: true,
+      });
+      const id = enrollmentResult.id;
+
+      if (payment_status === "paid") {
+        await env.DB.prepare(
+          "UPDATE Enrollments SET certificate_eligible = CASE WHEN progress >= 100 THEN 1 ELSE certificate_eligible END WHERE id = ?",
+        )
+          .bind(id)
+          .run();
+      }
+
+      // If payment is paid via admin panel, log it in Transactions too
+      if (
+        payment_status === "paid" &&
+        amount_paid > 0 &&
+        (enrollmentResult.created || enrollmentResult.previousPaymentStatus !== "paid")
+      ) {
+        const txId = generateCustomId("YA-TXN");
+        await env.DB.prepare(
+          `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(
+            txId,
+            user_id,
+            amount_paid,
+            "INR",
+            "course_purchase",
+            "successful",
+            payment_source || "manual",
+            course_id,
+          )
+          .run();
+      }
+
+      // Fetch user and course info for email notification
+      const user: any = await env.DB.prepare(
+        "SELECT email, full_name FROM Users WHERE id = ?",
+      )
+        .bind(user_id)
+        .first();
+      const course: any = await env.DB.prepare(
+        "SELECT title FROM Courses WHERE id = ?",
+      )
+        .bind(course_id)
+        .first();
+
+      if (user?.email && course?.title) {
+        const welcomeHtml = `
+            <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+            <p>Admin Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â <strong>${course.title}</strong> Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â enroll Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤ ${payment_status === "paid" ? "Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â®Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â® Ã Â¤ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¸ Ã Â¤Â¦Ã Â¥Â Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤" : ""}</p>
+            <p>Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤Â­Ã Â¥Â Ã Â¤Â¸Ã Â¥Â Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+         `;
+        const welcomeText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"},\n\nAdmin Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â ${course.title} Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â enroll Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤\nÃ Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤Â­Ã Â¥Â Ã Â¤Â¸Ã Â¥Â Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`;
+        await safeSendEmail(
+          env,
+          user.email,
+          `Welcome to ${course.title}`,
+          "Ã°ÂÂÂ Course Enrollment Successful!",
+          welcomeHtml,
+          welcomeText,
+        );
+      }
+      const responseBody: any = { message: "Student enrolled successfully", id };
+      if (warnings.length > 0) responseBody.warnings = warnings;
+      return new Response(
+        JSON.stringify(responseBody),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/enrollments\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Enrollment ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const result: any = await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+        .bind(id)
+        .run();
+      if (result.meta?.changes === 0) {
+        return new Response(JSON.stringify({ error: "Enrollment not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(
+        JSON.stringify({ message: "Enrollment removed successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    if (isEnrollmentInputError(error))
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    return handleGlobalError(error, "Admin.Enrollments", env, request);
+  }
+}
+
+
+async function handleAdminIssueCertificate(
+  request: Request,
+  env: Env,
+  enrollmentId: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const parsedBody = await parseRequestBody(request);
+    const { otp, notes } = parsedBody;
+    const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+    if (verifiedAdmin instanceof Response) return verifiedAdmin;
+    const adminId = verifiedAdmin;
+
+    const enrollment: any = await env.DB.prepare(
+      `SELECT e.*, u.email as user_email, u.full_name as user_name, c.title as course_title
+       FROM Enrollments e
+       JOIN Users u ON e.user_id = u.id
+       JOIN Courses c ON e.course_id = c.id
+       WHERE e.id = ?`,
+    )
+      .bind(enrollmentId)
+      .first();
+
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Enrollment not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (enrollment.payment_status !== "paid") {
+      return new Response(
+        JSON.stringify({ error: "Certificate can only be issued for paid enrollments." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (Number(enrollment.progress || 0) < 100) {
+      return new Response(
+        JSON.stringify({ error: "Certificate can only be issued after 100% course progress." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const existingCertificate: any = await env.DB.prepare(
+      "SELECT id, issued_at FROM Certificates WHERE enrollment_id = ?",
+    )
+      .bind(enrollmentId)
+      .first();
+
+    if (existingCertificate) {
+      return new Response(
+        JSON.stringify({
+          message: "Certificate was already issued.",
+          certificate_id: existingCertificate.id,
+          issued_at: existingCertificate.issued_at,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const certificateId = generateCustomId("YA-CERT");
+    const issuedAt = getUTCNow();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO Certificates (id, enrollment_id, user_id, course_id, issued_by, issued_at, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        certificateId,
+        enrollmentId,
+        enrollment.user_id,
+        enrollment.course_id,
+        adminId,
+        issuedAt,
+        String(notes || "").trim() || null,
+      ),
+      env.DB.prepare(
+        `UPDATE Enrollments
+         SET certificate_eligible = 1, certificate_issued = 1, certificate_id = ?, certificate_issued_at = ?, certificate_issued_by = ?
+         WHERE id = ?`,
+      ).bind(certificateId, issuedAt, adminId, enrollmentId),
+    ]);
+
+    await createNotification(
+      env,
+      enrollment.user_id,
+      "Certificate issued Ã°ÂÂÂ",
+      `Your certificate for "${enrollment.course_title}" has been issued by admin.`,
+      "success",
+    );
+
+    if (enrollment.user_email) {
+      const html = `
+        <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${enrollment.user_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+        <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ <strong>${enrollment.course_title}</strong> course certificate issue Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+        <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:16px 0;">
+          <p style="margin:0;color:#166534;font-weight:700;">Certificate ID: ${certificateId}</p>
+          <p style="margin:8px 0 0;color:#166534;">Issued at: ${getISTTime(issuedAt)}</p>
+        </div>
+      `;
+      const text = `Namaste ${enrollment.user_name || "Student"},\n\nYour certificate for ${enrollment.course_title} has been issued.\nCertificate ID: ${certificateId}\nIssued at: ${getISTTime(issuedAt)}`;
+      await safeSendEmail(
+        env,
+        enrollment.user_email,
+        `Certificate issued: ${enrollment.course_title}`,
+        "Ã°ÂÂÂ Certificate Issued",
+        html,
+        text,
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        message: "Certificate issued successfully",
+        certificate_id: certificateId,
+        issued_at: issuedAt,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return handleGlobalError(error, "Admin.IssueCertificate", env, request);
+  }
+}
+
+async function handleAdminBatches(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const userAuth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+      const offset = (page - 1) * limit;
+      const courseIdFilter = url.searchParams.get("course_id");
+      // If path includes a batch ID (e.g. /api/admin/batches/123), extract it for single-batch fetch
+      const batchIdMatch = url.pathname.match(/^\/api\/admin\/batches\/([^/]+)$/);
+      const batchIdFilter = batchIdMatch ? batchIdMatch[1] : null;
+
+      let query = `
+        SELECT b.*, 
+               c.title as course_title,
+               bo.title as book_title
+        FROM Batches b
+        LEFT JOIN Courses c ON b.course_id = c.id
+        LEFT JOIN Books bo ON b.book_id = bo.id
+      `;
+      let countQuery = "SELECT COUNT(*) as total FROM Batches b LEFT JOIN Courses c ON b.course_id = c.id";
+
+      const conditions: string[] = [];
+      const bindParams: any[] = [];
+
+      if (courseIdFilter) {
+        conditions.push("b.course_id = ?");
+        bindParams.push(courseIdFilter);
+      }
+      if (batchIdFilter) {
+        conditions.push("b.id = ?");
+        bindParams.push(batchIdFilter);
+      }
+      if (userAuth.role === "teacher") {
+        conditions.push("c.teacher_id = ?");
+        bindParams.push(userAuth.id);
+      }
+
+      if (conditions.length > 0) {
+        query += " WHERE " + conditions.join(" AND ");
+        countQuery += " WHERE " + conditions.join(" AND ");
+      }
+      query += " ORDER BY b.created_at DESC LIMIT ? OFFSET ?";
+      bindParams.push(limit, offset);
+
+      const results = (await env.DB.prepare(query).bind(...bindParams).all()).results;
+
+      const countBindParams = bindParams.slice(0, -2);
+      const countRes: any = await env.DB.prepare(countQuery).bind(...countBindParams).first();
+      const total = Number(countRes?.total ?? 0);
+      return new Response(JSON.stringify({ batches: results, total, page, limit }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const {
+        course_id,
+        book_id,
+        name,
+        name_hi,
+        description_en,
+        description_hi,
+        start_date,
+        end_date,
+        status,
+        class_start_time,
+        class_end_time,
+        class_days,
+        self_study_group_enabled,
+        cost_per_class_rupees,
+        cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
+        live_class_credit_unit,
+        seo_json,
+        send_announcement_email,
+        announcement_audience,
+        auto_post_social,
+        social_platforms,
+        send_announcement_push,
+      } = (await request.json()) as any;
+      // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
+      const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
+      if (!course_id && !book_id)
+        return new Response(
+          JSON.stringify({
+            error: "Ã Â¤ÂÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¸ Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¤Â Ã Â¤ÂÃ Â¤ÂÃ Â¤Â¡Ã Â¥Â Ã Â¤ÂÃ Â¤Â¨Ã Â¤Â¿Ã Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¯ Ã Â¤Â¹Ã Â¥Â (Course or Book ID is required)",
+          }),
+          { status: 400 },
+        );
+      if (course_id && book_id) {
+        return new Response(
+          JSON.stringify({
+            error: "Cannot link batch to both course and book",
+          }),
+          { status: 400 },
+        );
+      }
+      if (!name)
+        return new Response(
+          JSON.stringify({
+            error: "Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â¾ Ã Â¤Â¨Ã Â¤Â¾Ã Â¤Â® Ã Â¤ÂÃ Â¤Â¨Ã Â¤Â¿Ã Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¯ Ã Â¤Â¹Ã Â¥Â (Batch name is required)",
+          }),
+          { status: 400 },
+        );
+
+      if (userAuth.role === "teacher") {
+        if (book_id) {
+          return new Response(JSON.stringify({ error: "Teachers cannot create book batches" }), {
+            status: 403,
+          });
+        }
+        const check = await env.DB.prepare(
+          "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+        )
+          .bind(course_id, userAuth.id)
+          .first();
+        if (!check)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+      }
+      const id = generateBatchId(course_id || book_id);
+      await env.DB.prepare(
+        `
+        INSERT INTO Batches (
+          id, course_id, book_id, name, name_hi, description_en, description_hi,
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_cost_per_minute_rupees, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      )
+        .bind(
+          id,
+          course_id || null,
+          book_id || null,
+          name,
+          name_hi || null,
+          description_en || null,
+          description_hi || null,
+          start_date || null,
+          end_date || null,
+          status || "upcoming",
+          class_start_time || null,
+          class_end_time || null,
+          class_days || null,
+          self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
+          normalizeNonNegativeInt(resolvedCostPerClassRupees),
+          normalizeNonNegativeInt(live_class_cost_per_minute_rupees),
+          normalizeGroupClassCreditUnit(live_class_credit_unit),
+          seo_json || null,
+        )
+        .run();
+
+      let announcementResult = {};
+      if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social) || normalizeBoolean(send_announcement_push)) {
+        const appUrl = await getPublicAppUrl(env);
+        let courseOrBookTitle: string = course_id || book_id || "";
+        let urlPath = "";
+
+        if (course_id) {
+          const course: any = await env.DB.prepare("SELECT title FROM Courses WHERE id = ?").bind(course_id).first();
+          courseOrBookTitle = course?.title || course_id;
+          urlPath = `${appUrl}/courses?course=${encodeURIComponent(course_id)}`;
+        } else if (book_id) {
+          const book: any = await env.DB.prepare("SELECT title FROM Books WHERE id = ?").bind(book_id).first();
+          courseOrBookTitle = book?.title || book_id;
+          urlPath = `${appUrl}/books?book=${encodeURIComponent(book_id)}`;
+        }
+
+        if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
+          announcementResult = await runCreationAnnouncement(
+            env,
+            {
+              sendEmail: send_announcement_email,
+              audience: announcement_audience || "both",
+              postSocial: auto_post_social,
+              platforms: Array.isArray(social_platforms) ? social_platforms : [],
+            },
+            {
+              kind: "batch",
+              title: name,
+              titleHi: name_hi || null,
+              description: description_en || "",
+              descriptionHi: description_hi || null,
+              url: urlPath,
+              courseTitle: courseOrBookTitle,
+              startDate: start_date || null,
+              classDays: class_days || null,
+              classStartTime: class_start_time || null,
+            },
+          );
+        }
+
+        if (normalizeBoolean(send_announcement_push)) {
+          try {
+            const pushResult = await sendPush(env, {
+              all: true,
+              title: `Ã°ÂÂÂ Ã Â¤Â¨Ã Â¤Â Ã Â¤ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â·Ã Â¤Â¾: ${name}`,
+              body: `${courseOrBookTitle} Ã¢ÂÂ Ã Â¤ÂÃ Â¤Â­Ã Â¥Â join Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+              data: {
+                url: urlPath,
+                clickUrl: urlPath,
+                batchId: id,
+                courseId: course_id || undefined,
+                bookId: book_id || undefined,
+              },
+            });
+            const pushBroadcastId = generateCustomId("YA-BRC");
+            await env.DB.prepare(
+              `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            ).bind(
+              pushBroadcastId,
+              (userAuth as any).sub || null,
+              "all",
+              `Ã°ÂÂÂ Ã Â¤Â¨Ã Â¤Â Ã Â¤ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â·Ã Â¤Â¾: ${name}`,
+              `${courseOrBookTitle} Ã¢ÂÂ Ã Â¤ÂÃ Â¤Â­Ã Â¥Â join Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+              JSON.stringify({ batchId: id, courseId: course_id || null, bookId: book_id || null, type: "new_batch_announcement" }),
+              pushResult.sent,
+              pushResult.failed,
+            ).run();
+            (announcementResult as any).push = { sent: pushResult.sent, failed: pushResult.failed };
+          } catch (pushErr) {
+            console.error("Batch push trigger failed:", pushErr);
+          }
+        }
+      }
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Create Batch",
+        `New batch "${name}" (ID: ${id}) created for Course ID: ${course_id}`,
+        getClientIP(request),
+      );
+
+      if (start_date) {
+        const batchStart = new Date(start_date).toISOString();
+        const resolvedEndDate = end_date ? new Date(end_date) : null;
+        const batchEnd = resolvedEndDate && !isNaN(resolvedEndDate.getTime()) ? resolvedEndDate.toISOString() : new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        await syncEventToGoogle(env, "Batches", id, `Batch: ${name}`, `Batch ${name} for course ${course_id}`, batchStart, batchEnd).catch((e) => console.error("[GC] Batch create sync failed", e));
+      }
+
+      return new Response(
+        JSON.stringify({ message: "Batch created successfully", id, announcement: announcementResult }),
+        { status: 201 },
+      );
+    }
+    if (request.method === "PUT") {
+      const id = url.pathname.match(/\/api\/admin\/batches\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Batch ID is required in URL path" }), { status: 400 });
+      }
+      if (userAuth.role === "teacher") {
+        const check = await env.DB.prepare(
+          "SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?",
+        )
+          .bind(id, userAuth.id)
+          .first();
+        if (!check)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+      }
+      const {
+        name,
+        name_hi,
+        description_en,
+        description_hi,
+        start_date,
+        end_date,
+        status,
+        class_start_time,
+        class_end_time,
+        class_days,
+        self_study_group_enabled,
+        cost_per_class_rupees,
+        cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
+        live_class_credit_unit,
+        seo_json,
+        send_update_email,
+      } = (await request.json()) as any;
+      // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
+      const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
+      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeNonNegativeInt(resolvedCostPerClassRupees);
+      const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeNonNegativeInt(live_class_cost_per_minute_rupees);
+      await env.DB.prepare(
+        `
+        UPDATE Batches SET
+          name = COALESCE(?, name),
+          name_hi = COALESCE(?, name_hi),
+          description_en = COALESCE(?, description_en),
+          description_hi = COALESCE(?, description_hi),
+          start_date = COALESCE(?, start_date),
+          end_date = COALESCE(?, end_date),
+          status = COALESCE(?, status),
+          class_start_time = COALESCE(?, class_start_time),
+          class_end_time = COALESCE(?, class_end_time),
+          class_days = COALESCE(?, class_days),
+          self_study_group_enabled = COALESCE(?, self_study_group_enabled),
+          cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
+          live_class_cost_per_minute_rupees = COALESCE(?, live_class_cost_per_minute_rupees),
+          live_class_credit_unit = COALESCE(?, live_class_credit_unit),
+          seo_json = COALESCE(?, seo_json)
+        WHERE id = ?
+      `,
+      )
+        .bind(
+          name,
+          name_hi,
+          description_en,
+          description_hi,
+          start_date,
+          end_date,
+          status,
+          class_start_time,
+          class_end_time,
+          class_days,
+          self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
+          updateBatchCost,
+          updateBatchMinuteCost,
+          live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
+          seo_json,
+          id,
+        )
+        .run();
+
+      // Send Email Notification to enrolled students about the batch update
+      if (send_update_email) {
+        try {
+          const batchDetails = (await env.DB.prepare(
+            "SELECT name FROM Batches WHERE id = ?",
+          )
+            .bind(id)
+            .first()) as any;
+          const students = (await env.DB.prepare(
+            `
+            SELECT u.email, u.full_name
+            FROM Users u
+            JOIN Enrollments e ON u.id = e.user_id
+            WHERE e.batch_id = ? AND e.status = 'active'
+          `,
+          )
+            .bind(id)
+            .all()) as any;
+
+          if (students && students.results && students.results.length > 0) {
+            const batchName = batchDetails?.name || "Your Batch";
+            for (const student of students.results) {
+              if (student.email) {
+                const htmlContent = `<p>Namaste ${student.full_name || "Student"},</p><p>We have updated the details/schedule for <strong>${batchName}</strong>.</p><p>The new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.</p><p>Please check your dashboard for full details.</p><p>Om!</p>`;
+                const textContent = `Namaste ${student.full_name || "Student"},\n\nWe have updated the details for ${batchName}.\nThe new class times are set to start at ${class_start_time || "the usual time"} on ${class_days || "the scheduled days"}.\n\nPlease check your dashboard for full details.\n\nOm!`;
+                await safeSendEmail(
+                  env,
+                  student.email,
+                  `Schedule Update: ${batchName}`,
+                  "Batch Update",
+                  htmlContent,
+                  textContent,
+                );
+              }
+            }
+          }
+        } catch (emailErr) {
+          console.error("Failed to send batch update emails", emailErr);
+        }
+      }
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Update Batch",
+        `Batch ID: ${id} updated with new parameters.`,
+        getClientIP(request),
+      );
+
+      if (start_date) {
+        const batchStart = new Date(start_date).toISOString();
+        const resolvedEndDate = end_date ? new Date(end_date) : null;
+        const batchEnd = resolvedEndDate && !isNaN(resolvedEndDate.getTime()) ? resolvedEndDate.toISOString() : undefined;
+        syncEventToGoogle(env, "Batches", id, `Batch: ${name || id}`, `Batch updated`, batchStart, batchEnd ?? new Date(new Date(start_date).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString()).catch((e) => console.error("[GC] Batch update sync failed", e));
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    if (request.method === "DELETE") {
+      const id = url.pathname.match(/\/api\/admin\/batches\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Batch ID is required in URL path" }), { status: 400 });
+      }
+      if (userAuth.role === "teacher") {
+        const check = await env.DB.prepare(
+          "SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?",
+        )
+          .bind(id, userAuth.id)
+          .first();
+        if (!check)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+      }
+      await removeEventFromGoogle(env, "Batches", id);
+      await env.DB.prepare("DELETE FROM Batches WHERE id = ?").bind(id).run();
+
+      // Activity Alert
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Delete Batch",
+        `Batch ID: ${id} was permanently deleted.`,
+        getClientIP(request),
+      );
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.Batches", env, request);
+  }
+}
+
+async function handleAdminBatchStudents(
+  request: Request,
+  env: Env,
+  batchId: string,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+
+    // Ownership check for teachers
+    if (auth.role === "teacher") {
+      const check = await env.DB.prepare(
+        "SELECT b.id FROM Batches b JOIN Courses c ON b.course_id = c.id WHERE b.id = ? AND c.teacher_id = ?",
+      )
+        .bind(batchId, auth.id)
+        .first();
+      if (!check)
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+        });
+    }
+
+    if (request.method === "GET") {
+      const url = new URL(request.url);
+      const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+      const [rows, countRes] = await Promise.all([
+        env.DB.prepare(`
+          SELECT u.id, u.full_name, u.email, u.phone, e.purchased_at, e.progress
+          FROM Users u
+          JOIN Enrollments e ON u.id = e.user_id
+          WHERE e.batch_id = ? AND e.status = 'active'
+          ORDER BY e.purchased_at DESC
+          LIMIT ? OFFSET ?
+        `).bind(batchId, limit, offset).all(),
+        env.DB.prepare("SELECT COUNT(*) as total FROM Enrollments WHERE batch_id = ? AND status = 'active'")
+          .bind(batchId).first(),
+      ]);
+
+      return new Response(JSON.stringify({
+        students: rows.results,
+        total: Number((countRes as any)?.total || 0),
+        page,
+        limit,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST") {
+      const { userEmail, userId, otp } = (await request.json()) as any;
+      let targetUserId = userId;
+
+      const verifiedAdmin = await verifyAdminActionOTP(request, env, otp);
+      if (verifiedAdmin instanceof Response) return verifiedAdmin;
+
+      if (userEmail && !targetUserId) {
+        const lowerUserEmail = userEmail.toLowerCase();
+        const user: any = await env.DB.prepare(
+          "SELECT id FROM Users WHERE email = ?",
+        )
+          .bind(lowerUserEmail)
+          .first();
+        if (!user)
+          return new Response(
+            JSON.stringify({ error: "User not found with this email" }),
+            { status: 404 },
+          );
+        targetUserId = user.id;
+      }
+
+      if (!targetUserId)
+        return new Response(
+          JSON.stringify({ error: "User ID or Email is required" }),
+          { status: 400 },
+        );
+
+      // Get Batch and Course Info
+      const batch: any = await env.DB.prepare(
+        "SELECT name, course_id FROM Batches WHERE id = ?",
+      )
+        .bind(batchId)
+        .first();
+      if (!batch)
+        return new Response(JSON.stringify({ error: "Batch not found" }), {
+          status: 404,
+        });
+
+      const enrollmentResult = await ensureEnrollment(env, {
+        userId: targetUserId,
+        courseId: batch.course_id,
+        batchId,
+        status: "active",
+        paymentStatus: "paid",
+        paymentSource: "manual_batch_assignment",
+        preservePaidStatus: true,
+      });
+      if (enrollmentResult.alreadyInSameBatch && !enrollmentResult.created) {
+        return new Response(
+          JSON.stringify({ error: "Student is already in this batch" }),
+          { status: 400 },
+        );
+      }
+
+      // Notify Student
+      const student: any = await env.DB.prepare(
+        "SELECT email, full_name FROM Users WHERE id = ?",
+      )
+        .bind(targetUserId)
+        .first();
+      const course: any = await env.DB.prepare(
+        "SELECT title FROM Courses WHERE id = ?",
+      )
+        .bind(batch.course_id)
+        .first();
+
+      if (student?.email) {
+        const title = "Ã°ÂÂÂ Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¨Ã Â¤Â¾Ã Â¤Â®Ã Â¤Â¾Ã Â¤ÂÃ Â¤ÂÃ Â¤Â¨ Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²!";
+        const body = `
+          <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${student.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+          <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â <strong>${batch.name}</strong> (${course.title}) Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¥ÂÃ Â¥Â Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+          <p>Ã Â¤ÂÃ Â¤Â¬ Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¾Ã Â¤Â Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+        `;
+        await safeSendEmail(
+          env,
+          student.email,
+          `Batch Enrollment: ${batch.name}`,
+          title,
+          body,
+          `Namaste, You have been added to batch ${batch.name}.`,
+        );
+        await createNotification(
+          env,
+          targetUserId,
+          "Batch Enrollment Success",
+          `You have been added to "${batch.name}" batch.`,
+          "success",
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Student added to batch successfully",
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (isEnrollmentInputError(error))
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    return handleGlobalError(error, "Admin.BatchStudents", env, request);
+  }
+}
+
+// --- Notifications Handlers ---
+
+export async function createNotification(
+  env: Env,
+  userId: string,
+  title: string,
+  message: string,
+  type: "info" | "alert" | "success" | "warning" = "info",
+  skipPush = false, // When true, skip browser push (used when sendPush handled separately)
+) {
+  try {
+    const id = generateCustomId("YA-NTF");
+    await env.DB.prepare(
+      "INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(id, userId, title, message, type)
+      .run();
+
+    broadcastToUser(env, userId, "notification", { id, title, message, type });
+
+    if (skipPush) return;
+
+    // Get user role for click URL
+    const userRecord: any = await env.DB.prepare(
+      "SELECT role FROM Users WHERE id = ?"
+    ).bind(userId).first();
+    const clickUrl = (userRecord?.role === 'admin' || userRecord?.role === 'teacher') ? '/admin' : '/dashboard';
+
+    // Primary: Send via FCM
+    await sendPush(env, {
+      userId,
+      title,
+      body: message,
+      data: { clickUrl, type, notificationId: id },
+    });
+  } catch (error) {
+    console.error("Failed to create notification:", error);
+  }
+}
+
+// --- Leave Management Handlers ---
+
+async function handleLeaveApply(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can apply for leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const { start_date, end_date, reason, type, course_id, batch_id } = await request.json() as any;
+    if (!start_date || !end_date || !reason) {
+      return new Response(JSON.stringify({ error: "start_date, end_date, and reason are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const startIST = new Date(start_date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (startIST < todayIST) {
+      return new Response(JSON.stringify({ error: "start_date cannot be in the past" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const endIST = new Date(end_date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (startIST > endIST) {
+      return new Response(JSON.stringify({ error: "start_date cannot be after end_date" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const id = generateCustomId("YA-LVE");
+    const now = getUTCNow();
+    await env.DB.prepare(
+      `INSERT INTO LeaveRequests (id, student_id, course_id, batch_id, start_date, end_date, reason, type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, payload.sub, course_id || null, batch_id || null, start_date, end_date, reason, type || 'other', now, now).run();
+
+    // Notify all admins
+    const admins: any = await env.DB.prepare("SELECT id FROM Users WHERE role = 'admin'").all();
+    for (const admin of admins.results || []) {
+      await createNotification(env, admin.id, "New Leave Application", `A student applied for leave from ${start_date} to ${end_date}`, "info");
+    }
+    // Notify course teacher if course_id provided
+    if (course_id) {
+      const course: any = await env.DB.prepare("SELECT teacher_id FROM Courses WHERE id = ?").bind(course_id).first();
+      if (course?.teacher_id) {
+        await createNotification(env, course.teacher_id, "New Leave Application", `A student applied for leave in your course from ${start_date} to ${end_date}`, "info");
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, id }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Apply", env, request);
+  }
+}
+
+async function handleMyLeaves(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+    const courseFilter = url.searchParams.get("course_id");
+
+    let query = `SELECT lr.*, c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name,
+                 ru.full_name as reviewer_name, lr.admin_notes
+                 FROM LeaveRequests lr
+                 LEFT JOIN Courses c ON lr.course_id = c.id
+                 LEFT JOIN Batches b ON lr.batch_id = b.id
+                 LEFT JOIN Users ru ON lr.reviewed_by = ru.id
+                 WHERE lr.student_id = ?`;
+    const params: any[] = [payload.sub];
+
+    if (statusFilter) {
+      query += ` AND lr.status = ?`;
+      params.push(statusFilter);
+    }
+    if (courseFilter) {
+      query += ` AND lr.course_id = ?`;
+      params.push(courseFilter);
+    }
+    query += ` ORDER BY lr.created_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.MyLeaves", env, request);
+  }
+}
+
+async function handleLeaveStats(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()), 10) || new Date().getFullYear();
+
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT strftime('%m', start_date) as month, COUNT(*) as total,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+         FROM LeaveRequests
+         WHERE student_id = ? AND strftime('%Y', start_date) = ?
+         GROUP BY strftime('%m', start_date)
+         ORDER BY month ASC`
+      ).bind(payload.sub, String(year)),
+      env.DB.prepare(
+        `SELECT COUNT(*) as total, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved
+         FROM LeaveRequests
+         WHERE student_id = ? AND strftime('%Y', start_date) = ?`
+      ).bind(payload.sub, String(year)),
+      env.DB.prepare(
+        `SELECT COUNT(*) as total FROM LeaveRequests WHERE student_id = ?`
+      ).bind(payload.sub),
+    ]);
+
+    const r0 = results[0] as any || {};
+    const r1 = results[1] as any || {};
+    const r2 = results[2] as any || {};
+
+    return new Response(JSON.stringify({
+      monthlyBreakdown: r0.results || [],
+      yearTotal: r1.results?.[0] || { total: 0, approved: 0 },
+      lifetimeTotal: Number(r2.results?.[0]?.total ?? 0),
+      year,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Stats", env, request);
+  }
+}
+
+async function handleAdminListLeaveRequests(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+    const studentIdFilter = url.searchParams.get("student_id");
+    const courseFilter = url.searchParams.get("course_id");
+    const fromDate = url.searchParams.get("from");
+    const toDate = url.searchParams.get("to");
+
+    let query = `SELECT lr.*, u.full_name as student_name, u.email as student_email,
+                 c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name,
+                 ru.full_name as reviewer_name
+                 FROM LeaveRequests lr
+                 JOIN Users u ON lr.student_id = u.id
+                 LEFT JOIN Courses c ON lr.course_id = c.id
+                 LEFT JOIN Batches b ON lr.batch_id = b.id
+                 LEFT JOIN Users ru ON lr.reviewed_by = ru.id
+                 WHERE 1=1`;
+    const params: any[] = [];
+
+    // Teachers can only see leaves for courses they teach
+    if (auth.role === 'teacher') {
+      query += ` AND (lr.course_id IN (SELECT id FROM Courses WHERE teacher_id = ?) OR lr.course_id IS NULL)`;
+      params.push(auth.id);
+    }
+
+    if (statusFilter) { query += ` AND lr.status = ?`; params.push(statusFilter); }
+    if (studentIdFilter) { query += ` AND lr.student_id = ?`; params.push(studentIdFilter); }
+    if (courseFilter) { query += ` AND lr.course_id = ?`; params.push(courseFilter); }
+    if (fromDate) { query += ` AND lr.start_date >= ?`; params.push(fromDate); }
+    if (toDate) { query += ` AND lr.end_date <= ?`; params.push(toDate); }
+
+    query += ` ORDER BY lr.created_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.AdminList", env, request);
+  }
+}
+
+async function handleAdminUpdateLeaveStatus(request: Request, env: Env, leaveId: string, newStatus: string): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { admin_notes } = await request.json() as any;
+    if (newStatus === 'rejected' && !admin_notes) {
+      return new Response(JSON.stringify({ error: "admin_notes is required when rejecting a leave" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const leave: any = await env.DB.prepare("SELECT * FROM LeaveRequests WHERE id = ?").bind(leaveId).first();
+    if (!leave) {
+      return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = getUTCNow();
+    await env.DB.prepare(
+      "UPDATE LeaveRequests SET status = ?, reviewed_by = ?, reviewed_at = ?, admin_notes = ?, updated_at = ? WHERE id = ?"
+    ).bind(newStatus, auth.id, now, admin_notes || null, now, leaveId).run();
+
+    if (newStatus === "approved") {
+      const leaveStartUTC = new Date(leave.start_date + "T00:00:00+05:30").toISOString();
+      const leaveEndUTC = new Date(leave.end_date + "T23:59:59+05:30").toISOString();
+      syncEventToGoogle(env, "LeaveRequests", leaveId, `Leave: ${leave.start_date} to ${leave.end_date}`, leave.reason || "Leave", leaveStartUTC, leaveEndUTC).catch((e) => console.error("[GC] Leave sync failed", e));
+    } else {
+      removeEventFromGoogle(env, "LeaveRequests", leaveId).catch((e) => console.error("[GC] Leave remove failed", e));
+    }
+
+    const statusText = newStatus === 'approved' ? 'approved' : 'rejected';
+    await createNotification(env, leave.student_id, `Leave ${statusText}`,
+      `Your leave request from ${leave.start_date} to ${leave.end_date} has been ${statusText}.${admin_notes ? ` Notes: ${admin_notes}` : ''}`,
+      newStatus === 'approved' ? 'success' : 'warning'
+    );
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, `Leave.${newStatus === 'approved' ? 'Approve' : 'Reject'}`, env, request);
+  }
+}
+
+async function handleAdminDeleteLeave(request: Request, env: Env, leaveId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    await removeEventFromGoogle(env, "LeaveRequests", leaveId);
+    const result: any = await env.DB.prepare("DELETE FROM LeaveRequests WHERE id = ?").bind(leaveId).run();
+    if (result.meta?.changes === 0) {
+      return new Response(JSON.stringify({ error: "Leave request not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.Delete", env, request);
+  }
+}
+
+async function handleAdminLeaveStats(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const results = await env.DB.batch([
+      env.DB.prepare("SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'pending'"),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'approved' AND created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE status = 'rejected' AND created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`SELECT COUNT(*) as count FROM LeaveRequests WHERE created_at >= date('now', '-30 days')`),
+      env.DB.prepare(`
+        SELECT u.id, u.full_name, COUNT(lr.id) as leave_count
+        FROM LeaveRequests lr
+        JOIN Users u ON lr.student_id = u.id
+        WHERE lr.created_at >= date('now', '-30 days')
+        GROUP BY u.id
+        ORDER BY leave_count DESC
+        LIMIT 5
+      `),
+    ]);
+
+    const r0 = results[0] as any || {};
+    const r1 = results[1] as any || {};
+    const r2 = results[2] as any || {};
+    const r3 = results[3] as any || {};
+    const r4 = results[4] as any || {};
+
+    return new Response(JSON.stringify({
+      pending: Number(r0.results?.[0]?.count ?? 0),
+      approvedLast30Days: Number(r1.results?.[0]?.count ?? 0),
+      rejectedLast30Days: Number(r2.results?.[0]?.count ?? 0),
+      totalLast30Days: Number(r3.results?.[0]?.count ?? 0),
+      topStudents: r4.results || [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Leave.AdminStats", env, request);
+  }
+}
+
+
+// ==========================================================
+// --- Session-Level Leave System ---
+// ==========================================================
+
+async function handleSessionLeaveApply(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can apply for leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const { session_id } = (await request.json()) as any;
+    if (!session_id) {
+      return new Response(JSON.stringify({ error: "session_id is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const session: any = await env.DB.prepare(
+      "SELECT id, course_id, batch_id, start_time, status FROM LiveSessions WHERE id = ?"
+    ).bind(session_id).first();
+
+    if (!session) {
+      return new Response(JSON.stringify({ error: "Session not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (session.status === 'ended') {
+      return new Response(JSON.stringify({ error: "Cannot apply leave for an ended session" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = new Date();
+    const startTime = new Date(session.start_time);
+    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+
+    if (diffMinutes < 15) {
+      return new Response(JSON.stringify({ error: "Leave can only be applied at least 15 minutes before class starts", error_hi: "Leave sirf class start hone se kam se kam 15 minute pehle apply ho sakta hai" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const existingLeave: any = await env.DB.prepare(
+      "SELECT id, status FROM SessionLeaves WHERE session_id = ? AND student_id = ?"
+    ).bind(session_id, payload.sub).first();
+
+    if (existingLeave && existingLeave.status === 'active') {
+      return new Response(JSON.stringify({ error: "You already have an active leave for this session" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (existingLeave && existingLeave.status === 'cancelled') {
+      await env.DB.prepare(
+        "UPDATE SessionLeaves SET status = 'active', cancelled_at = NULL WHERE session_id = ? AND student_id = ?"
+      ).bind(session_id, payload.sub).run();
+
+      const monthly: any = await env.DB.prepare(
+        "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+      ).bind(payload.sub, now.toISOString().slice(0, 7)).first();
+
+      const isFree = (!monthly || monthly.used_count < 1) ? 1 : 0;
+      if (isFree) {
+        await env.DB.prepare(
+          "INSERT INTO MonthlyFreeLeaves (student_id, year_month, used_count) VALUES (?, ?, 1) ON CONFLICT(student_id, year_month) DO UPDATE SET used_count = used_count + 1"
+        ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
+      }
+
+      await env.DB.prepare(
+        "UPDATE SessionLeaves SET is_free = ? WHERE session_id = ? AND student_id = ?"
+      ).bind(isFree, session_id, payload.sub).run();
+
+      return new Response(JSON.stringify({ success: true, is_free: isFree === 1, message: "Leave re-applied" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    const monthly: any = await env.DB.prepare(
+      "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+    ).bind(payload.sub, now.toISOString().slice(0, 7)).first();
+
+    const isFree = (!monthly || monthly.used_count < 1) ? 1 : 0;
+
+    if (isFree) {
+      await env.DB.prepare(
+        "INSERT INTO MonthlyFreeLeaves (student_id, year_month, used_count) VALUES (?, ?, 1) ON CONFLICT(student_id, year_month) DO UPDATE SET used_count = used_count + 1"
+      ).bind(payload.sub, now.toISOString().slice(0, 7)).run();
+    }
+
+    const id = generateCustomId("YA-SLV");
+    await env.DB.prepare(
+      "INSERT INTO SessionLeaves (id, session_id, student_id, status, is_free) VALUES (?, ?, ?, 'active', ?)"
+    ).bind(id, session_id, payload.sub, isFree).run();
+
+    return new Response(JSON.stringify({ success: true, id, is_free: isFree === 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.Apply", env, request);
+  }
+}
+
+async function handleSessionLeaveCancel(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== 'student') {
+      return new Response(JSON.stringify({ error: "Only students can cancel leave" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const { session_id } = (await request.json()) as any;
+    if (!session_id) {
+      return new Response(JSON.stringify({ error: "session_id is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const session: any = await env.DB.prepare(
+      "SELECT id, start_time, status FROM LiveSessions WHERE id = ?"
+    ).bind(session_id).first();
+
+    if (!session) {
+      return new Response(JSON.stringify({ error: "Session not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    const now = new Date();
+    const startTime = new Date(session.start_time);
+    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+
+    if (diffMinutes < 2) {
+      return new Response(JSON.stringify({ error: "Cannot cancel leave less than 2 minutes before class starts", error_hi: "Leave sirf class start hone se kam se kam 2 minute pehle cancel ho sakta hai" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const leave: any = await env.DB.prepare(
+      "SELECT id, is_free FROM SessionLeaves WHERE session_id = ? AND student_id = ? AND status = 'active'"
+    ).bind(session_id, payload.sub).first();
+
+    if (!leave) {
+      return new Response(JSON.stringify({ error: "No active leave found for this session" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+
+    await env.DB.prepare(
+      "UPDATE SessionLeaves SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE session_id = ? AND student_id = ?"
+    ).bind(session_id, payload.sub).run();
+
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.Cancel", env, request);
+  }
+}
+
+async function handleSessionLeaveMyLeaves(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status");
+
+    let query = `SELECT sl.*, ls.title as session_title, ls.start_time as session_start_time,
+                 c.title as course_title, c.title_hi as course_title_hi, b.name as batch_name
+                 FROM SessionLeaves sl
+                 JOIN LiveSessions ls ON sl.session_id = ls.id
+                 LEFT JOIN Courses c ON ls.course_id = c.id
+                 LEFT JOIN Batches b ON ls.batch_id = b.id
+                 WHERE sl.student_id = ?`;
+    const params: any[] = [payload.sub];
+
+    if (statusFilter) {
+      query += ` AND sl.status = ?`;
+      params.push(statusFilter);
+    }
+    query += ` ORDER BY sl.applied_at DESC`;
+
+    const result: any = await env.DB.prepare(query).bind(...params).all();
+    return new Response(JSON.stringify({ leaves: result.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.MyLeaves", env, request);
+  }
+}
+
+async function handleSessionLeaveFreeStatus(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const now = new Date();
+    const yearMonth = now.toISOString().slice(0, 7);
+
+    const monthly: any = await env.DB.prepare(
+      "SELECT used_count FROM MonthlyFreeLeaves WHERE student_id = ? AND year_month = ?"
+    ).bind(payload.sub, yearMonth).first();
+
+    const used = Number(monthly?.used_count ?? 0);
+    const max = 1;
+    const remaining = Math.max(0, max - used);
+
+    return new Response(JSON.stringify({ used, max, remaining, year_month: yearMonth }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "SessionLeave.FreeStatus", env, request);
+  }
+}
+
+async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> {
+  try {
+    const session: any = await env.DB.prepare(
+      "SELECT id, course_id, batch_id FROM LiveSessions WHERE id = ?"
+    ).bind(sessionId).first();
+
+    if (!session) return;
+
+    const batch: any = await env.DB.prepare(
+      "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
+    ).bind(session.batch_id).first();
+
+    const chargeAmount = batch?.no_show_charge_rupees ?? 2;
+    if (chargeAmount <= 0) return;
+
+    let enrolledStudents: any;
+    if (session.batch_id) {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND (e.batch_id = ? OR e.batch_id IS NULL) AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id, session.batch_id).all();
+    } else {
+      enrolledStudents = await env.DB.prepare(
+        `SELECT DISTINCT e.user_id FROM Enrollments e
+         WHERE e.course_id = ? AND e.batch_id IS NULL AND e.status IN ('active', 'completed')`
+      ).bind(session.course_id).all();
+    }
+
+    if (!enrolledStudents.results?.length) return;
+
+    const attended: any = await env.DB.prepare(
+      "SELECT DISTINCT user_id FROM Attendance WHERE session_id = ?"
+    ).bind(sessionId).all();
+    const attendedSet = new Set((attended.results || []).map((r: any) => r.user_id));
+
+    const onLeave: any = await env.DB.prepare(
+      "SELECT DISTINCT student_id FROM SessionLeaves WHERE session_id = ? AND status = 'active'"
+    ).bind(sessionId).all();
+    const leaveSet = new Set((onLeave.results || []).map((r: any) => r.student_id));
+
+    const noShowStudents = (enrolledStudents.results || []).filter((r: any) => !attendedSet.has(r.user_id) && !leaveSet.has(r.user_id));
+    console.log(`[NoShow] Session ${sessionId}: enrolled=${enrolledStudents.results.length}, attended=${attendedSet.size}, onLeave=${leaveSet.size}, noShows=${noShowStudents.length}`);
+
+    const pendingCharges: { userId: string; sessionId: string }[] = [];
+
+    for (const row of noShowStudents) {
+      const userId = row.user_id;
+      if (attendedSet.has(userId) || leaveSet.has(userId)) continue;
+      pendingCharges.push({ userId, sessionId });
+    }
+
+    if (pendingCharges.length === 0) return;
+
+    // Batch: check existing charges for ALL no-show students Ã¢ÂÂ chunked for D1 parameter limit
+    // Check both PendingCharges AND CreditLedger to prevent double deduction
+    const allNoShowIds = pendingCharges.map((c) => c.userId);
+    const existingSet = new Set<string>();
+    for (const chunk of chunkArray(allNoShowIds, 50)) {
+      const phNS = chunk.map(() => "?").join(",");
+      // Check PendingCharges (for students who had insufficient balance on first attempt)
+      const existingCharges: any = await env.DB.prepare(
+        `SELECT user_id FROM PendingCharges WHERE user_id IN (${phNS}) AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'`,
+      ).bind(...chunk, sessionId).all();
+      for (const r of existingCharges.results || []) existingSet.add(r.user_id);
+
+      // Check CreditLedger (for students whose wallet deduction already succeeded)
+      const existingLedger: any = await env.DB.prepare(
+        `SELECT DISTINCT user_id FROM CreditLedger WHERE user_id IN (${phNS}) AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'`,
+      ).bind(...chunk, sessionId).all();
+      for (const r of existingLedger.results || []) existingSet.add(r.user_id);
+    }
+
+    for (const { userId } of pendingCharges) {
+      const insertResult = await env.DB.prepare(
+        `INSERT OR IGNORE INTO PendingCharges
+         (id, user_id, amount_rupees, reason, reference_type, reference_id, status)
+         VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
+      ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+
+      // changes === 0 means a duplicate was ignored Ã¢ÂÂ another call already inserted
+      if ((insertResult as any)?.meta?.changes === 0) continue;
+
+      const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
+      // Mark as deducted if successful, keep as 'pending' if balance was low
+      // Note: The INSERT OR IGNORE above (changes===0 check) acts as a concurrency guard,
+      // preventing double-charge race conditions across concurrent cron invocations.
+      if (deduction.ok) {
+        await env.DB.prepare(
+          "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ? AND reason = 'no_show_charge'"
+        ).bind(userId, sessionId).run();
+      }
+    }
+  } catch (error) {
+    console.error(`[NoShow] Error charging no-show students for session ${sessionId}:`, error);
+  }
+}
+
+async function deductPendingChargesOnTopup(env: Env, userId: string): Promise<void> {
+  try {
+    const pendingCharges: any = await env.DB.prepare(
+      "SELECT id, amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
+    ).bind(userId).all();
+
+    if (!pendingCharges.results?.length) return;
+
+    for (const charge of pendingCharges.results || []) {
+      const deduction = await deductFromWallet(env, userId, charge.amount_rupees, "pending_charge_deduction", "pending_charge", charge.id);
+      if (deduction.ok) {
+        await env.DB.prepare(
+          "UPDATE PendingCharges SET status = 'deducted', deducted_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).bind(charge.id).run();
+      } else {
+        break;
+      }
+    }
+  } catch (error) {
+    console.error(`[PendingCharges] Error deducting pending charges for user ${userId}:`, error);
+  }
+}
+
+
+async function sendWebPush(env: Env, subscription: any, payload: any) {
+  try {
+    const privateKey = await env.PLATFORM_SECRETS.get("VAPID_PRIVATE_KEY") || "";
+    const subject = await env.PLATFORM_SECRETS.get("VAPID_SUBJECT") || "mailto:admin@yagyaashram.com";
+
+    if (!privateKey || !subject) {
+      console.warn("VAPID keys missing. Aborting sendWebPush.");
+      return;
+    }
+
+    const { endpoint, headers, body } = await buildPushHTTPRequest({
+      privateJWK: privateKey,
+      subscription,
+      message: {
+        payload: payload,
+        adminContact: subject
+      }
+    });
+
+    const req = new Request(endpoint, {
+      method: "POST",
+      headers,
+      body
+    });
+
+    const res = await fetchWithTimeout(req, undefined, 10000);
+    if (res.status === 410 || res.status === 404) {
+      console.warn("Push subscription expired. Deleting from DB.");
+      try {
+
+        const id = env.NOTIFICATION_MANAGER.idFromName("global-push-manager");
+        const stub = env.NOTIFICATION_MANAGER.get(id);
+        await stub.fetch(new Request("http://do/delete-subscription", {
+          method: "POST",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+          headers: { "Content-Type": "application/json" }
+        }));
+
+      } catch (dbErr) {
+        console.error("Failed to delete expired push subscription:", dbErr);
+      }
+    } else if (!res.ok) {
+      console.error("Push failed:", res.status, await res.text());
+    }
+  } catch (error: any) {
+    console.error("sendWebPush error:", error);
+  }
+}
+
+
+
+
+async function handleNotificationUnsubscribe(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { endpoint } = (await request.json()) as any;
+
+    if (!endpoint)
+      return new Response(
+        JSON.stringify({ error: "Endpoint string required" }),
+        { status: 400 },
+      );
+
+    if (typeof endpoint !== "string" || endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400 },
+      );
+    }
+
+    // Remove subscription from the database by endpoint URL match
+    await env.DB.prepare(
+      "DELETE FROM PushSubscriptions WHERE user_id = ? AND endpoint = ?"
+    )
+      .bind(auth.sub, endpoint)
+      .run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.Unsubscribe", env, request);
+  }
+}
+
+async function handleNotificationSubscribe(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { subscription } = (await request.json()) as any;
+    if (!subscription || !subscription.endpoint)
+      return new Response(
+        JSON.stringify({ error: "Valid subscription object required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+
+    if (typeof subscription.endpoint !== "string" || subscription.endpoint.length > 2048) {
+      return new Response(
+        JSON.stringify({ error: "Endpoint string is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const subscriptionJson = JSON.stringify(subscription);
+    const endpoint = subscription.endpoint;
+
+    // Check if endpoint already exists (regardless of user) to avoid UNIQUE constraint violation
+    const existingByEndpoint: any = await env.DB.prepare(
+      "SELECT id FROM PushSubscriptions WHERE endpoint = ?"
+    )
+      .bind(endpoint)
+      .first();
+
+    if (existingByEndpoint) {
+      await env.DB.prepare(
+        "UPDATE PushSubscriptions SET subscription_json = ?, user_id = ? WHERE id = ?"
+      )
+        .bind(subscriptionJson, auth.sub, existingByEndpoint.id)
+        .run();
+    } else {
+      const id = generateCustomId("YA-SUB");
+      await env.DB.prepare(
+        "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json) VALUES (?, ?, ?, ?)"
+      )
+        .bind(id, auth.sub, endpoint, subscriptionJson)
+        .run();
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.Subscribe", env, request);
+  }
+}
+
+
+async function handleGetVapidPublicKey(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const publicKey = await env.PLATFORM_SECRETS.get("VAPID_PUBLIC_KEY");
+    if (!publicKey) {
+      console.log("VAPID keys not configured.");
+      return new Response(JSON.stringify({ error: "VAPID keys not configured on server" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response(JSON.stringify({ publicKey }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    console.error("Failed to retrieve VAPID keys:", error);
+    return new Response(JSON.stringify({ error: "Internal server error retrieving VAPID keys: " + error.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+}
+
+// --- Firebase FCM HTTP v1 API (no SDK) ---
+
+async function getFCMAccessToken(env: Env): Promise<string | null> {
+  try {
+    const cached = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN");
+    const cachedExpiry = await env.PLATFORM_SECRETS.get("FCM_ACCESS_TOKEN_EXPIRY");
+    if (cached && cachedExpiry && Date.now() < (parseInt(cachedExpiry, 10) || 0)) {
+      return cached;
+    }
+
+    const serviceAccountRaw = await env.PLATFORM_SECRETS.get("FCM_SERVICE_ACCOUNT");
+    if (!serviceAccountRaw) return null;
+
+    let serviceAccount: any;
+    try {
+      serviceAccount = JSON.parse(serviceAccountRaw);
+    } catch {
+      console.error("Invalid FCM_SERVICE_ACCOUNT JSON");
+      return null;
+    }
+
+    const { client_email, private_key } = serviceAccount;
+    if (!client_email || !private_key) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: "RS256", typ: "JWT" };
+    const claim = {
+      iss: client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    };
+
+    const encodeBase64Url = (obj: any) =>
+      btoa(JSON.stringify(obj))
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+
+    const headerB64 = encodeBase64Url(header);
+    const claimB64 = encodeBase64Url(claim);
+    const signingInput = `${headerB64}.${claimB64}`;
+
+    const keyData = private_key.includes("\\n")
+      ? private_key.replace(/\\n/g, "\n")
+      : private_key;
+
+    // crypto.subtle.importKey with "pkcs8" expects raw DER bytes, not PEM text
+    const subtleKey = await crypto.subtle.importKey(
+      "pkcs8",
+      pemToArrayBuffer(keyData),
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const sig = await crypto.subtle.sign(
+      { name: "RSASSA-PKCS1-v1_5" },
+      subtleKey,
+      new TextEncoder().encode(signingInput)
+    );
+
+    const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+    const jwt = `${signingInput}.${sigB64}`;
+
+    const tokenRes: any = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }),
+    }, 5000);
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      console.error("FCM OAuth2 token exchange failed:", tokenData);
+      return null;
+    }
+
+    const expiresIn = (tokenData.expires_in || 3600) * 1000;
+    await env.PLATFORM_SECRETS.put("FCM_ACCESS_TOKEN", tokenData.access_token);
+    await env.PLATFORM_SECRETS.put("FCM_ACCESS_TOKEN_EXPIRY", String(Date.now() + expiresIn - 60000));
+
+    return tokenData.access_token;
+  } catch (error) {
+    console.error("getFCMAccessToken error:", error);
+    return null;
+  }
+}
+
+interface FCMResult {
+  ok: boolean;
+  status?: number;
+  errorBody?: string;
+  isPermanentError?: boolean;
+}
+
+async function sendFCM(
+  env: Env,
+  fcmToken: string,
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+  badge?: number,
+): Promise<FCMResult> {
+  try {
+    const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+    if (!projectId) {
+      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets Ã¢ÂÂ add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
+    }
+
+    // FCM v1 API Ã¢ÂÂ OAuth2 via service account
+    const accessToken = await getFCMAccessToken(env);
+    if (!accessToken) {
+      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable Ã¢ÂÂ set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
+    }
+
+    const payload: any = {
+      message: {
+        token: fcmToken,
+        notification: { title, body },
+      },
+    };
+
+    if (data) payload.message.data = data;
+
+    // Platform-specific overrides
+    const android: any = {};
+    const apnsPayload: any = { aps: {} };
+    const webpush: any = {};
+
+    android.priority = "HIGH";
+    android.notification = {
+      channel_id: "lms_default",
+      notification_priority: "PRIORITY_HIGH",
+      sound: "default",
+    };
+
+    apnsPayload.aps.alert = { title, body };
+    apnsPayload.aps.sound = "default";
+    apnsPayload.aps["content-available"] = 1;
+    if (badge !== undefined) apnsPayload.aps.badge = badge;
+
+    webpush.notification = { title, body, icon: "/icon.png", requireInteraction: true };
+    if (data?.clickUrl) webpush.fcm_options = { link: data.clickUrl };
+
+    payload.message.android = android;
+    payload.message.apns = {
+      headers: { "apns-priority": "10" },
+      payload: apnsPayload,
+    };
+    payload.message.webpush = webpush;
+
+    const res = await fetchWithTimeout(
+      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      10000,
+    );
+    if (res.ok) return { ok: true };
+
+    const errBody = await res.text();
+    console.error("FCM v1 send error:", res.status, errBody);
+
+    // On 401, invalidate cached token and retry once Ã¢ÂÂ token may be stale
+    if (res.status === 401) {
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN");
+      await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
+      const freshToken = await getFCMAccessToken(env);
+      if (freshToken) {
+        const retryRes = await fetchWithTimeout(
+          `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${freshToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+          10000,
+        );
+        if (retryRes.ok) return { ok: true };
+        const retryErr = await retryRes.text();
+        console.error("FCM v1 retry error:", retryRes.status, retryErr);
+        const isPermanentRetry =
+          retryRes.status === 404 ||
+          retryErr.includes("UNREGISTERED") ||
+          retryErr.includes("INVALID_REGISTRATION") ||
+          retryErr.includes("NOT_REGISTERED");
+        return { ok: false, status: retryRes.status, errorBody: retryErr, isPermanentError: isPermanentRetry };
+      }
+    }
+
+    const isPermanent =
+      res.status === 404 ||
+      errBody.includes("UNREGISTERED") ||
+      errBody.includes("INVALID_REGISTRATION") ||
+      errBody.includes("NOT_REGISTERED");
+    return { ok: false, status: res.status, errorBody: errBody, isPermanentError: isPermanent };
+  } catch (error) {
+    console.error("sendFCM error:", error);
+    return { ok: false };
+  }
+}
+
+// Split array into chunks for D1 parameter limit safety (max ~50 params per query)
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
+// Batch FCM sender Ã¢ÂÂ sends in parallel chunks to avoid per-device sequential blocking
+async function sendFCMBatch(
+  env: Env,
+  devices: { id: string; fcm_token: string }[],
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<{ sent: number; failed: number }> {
+  if (!devices.length) return { sent: 0, failed: 0 };
+  const CHUNK = 50;
+  let sent = 0;
+  let failed = 0;
+  const invalidIds: string[] = [];
+  for (let i = 0; i < devices.length; i += CHUNK) {
+    const chunk = devices.slice(i, i + CHUNK);
+    const results = await Promise.allSettled(
+      chunk.map((d) => sendFCM(env, d.fcm_token, title, body, data)),
+    );
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled" && r.value.ok) {
+        sent++;
+      } else {
+        failed++;
+        if (r.status === "fulfilled" && r.value.isPermanentError) {
+          invalidIds.push(chunk[idx].id);
+        }
+      }
+    });
+  }
+  if (invalidIds.length > 0) {
+    try {
+      const ph = invalidIds.map(() => "?").join(",");
+      await env.DB.prepare(`DELETE FROM PushSubscriptions WHERE id IN (${ph})`).bind(...invalidIds).run();
+    } catch { /* ignore cleanup errors */ }
+  }
+  return { sent, failed };
+}
+
+// --- FCM Device Registration Handlers ---
+
+async function handleRegisterDevice(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    let { fcm_token, platform, device_id, user_agent, endpoint, subscription_json } = (await request.json()) as any;
+
+    if (subscription_json && typeof subscription_json === "object") {
+      try {
+        subscription_json = JSON.stringify(subscription_json);
+      } catch (e) {
+        subscription_json = String(subscription_json);
+      }
+    }
+
+    if (device_id !== undefined && device_id !== null) device_id = String(device_id);
+    if (fcm_token !== undefined && fcm_token !== null) fcm_token = String(fcm_token);
+    if (endpoint !== undefined && endpoint !== null) endpoint = String(endpoint);
+    if (user_agent !== undefined && user_agent !== null) user_agent = String(user_agent);
+    if (platform !== undefined && platform !== null) platform = String(platform);
+
+    if (!platform || !device_id) {
+      return new Response(
+        JSON.stringify({ error: "platform and device_id are required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!["web", "flutter_android", "flutter_ios", "flutter_web"].includes(platform)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid platform" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (typeof device_id !== "string" || device_id.length > 255) {
+      return new Response(
+        JSON.stringify({ error: "device_id is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (fcm_token && (typeof fcm_token !== "string" || fcm_token.length > 4096)) {
+      return new Response(
+        JSON.stringify({ error: "fcm_token is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (endpoint && (typeof endpoint !== "string" || endpoint.length > 2048)) {
+      return new Response(
+        JSON.stringify({ error: "endpoint is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (user_agent && (typeof user_agent !== "string" || user_agent.length > 2048)) {
+      return new Response(
+        JSON.stringify({ error: "user_agent is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (subscription_json && (typeof subscription_json !== "string" || subscription_json.length > 4096)) {
+      return new Response(
+        JSON.stringify({ error: "subscription_json is invalid or too long" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let userId: string | null = null;
+    try {
+      const auth = await requireAuth(request, env);
+      userId = auth.sub;
+    } catch {
+      // Anonymous Ã¢ÂÂ save token without user_id; associate-user links it on login
+    }
+
+    const ipAddress =
+      request.headers.get("cf-connecting-ip") ||
+      request.headers.get("x-forwarded-for") ||
+      null;
+
+    // Check by device_id first
+    try {
+      const existingByDevice: any = await env.DB.prepare(
+        "SELECT id FROM PushSubscriptions WHERE device_id = ?",
+      ).bind(device_id).first();
+
+      if (existingByDevice) {
+        await env.DB.prepare(
+          "UPDATE PushSubscriptions SET user_id = ?, platform = ?, user_agent = ?, fcm_token = ?, endpoint = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+        ).bind(userId, platform, user_agent || null, fcm_token || null, endpoint || null, subscription_json || null, existingByDevice.id).run();
+      } else if (fcm_token) {
+        const existingByToken: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+        ).bind(fcm_token).first();
+        if (existingByToken) {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, last_active_at = datetime('now') WHERE id = ?",
+          ).bind(userId, platform, device_id, user_agent || null, existingByToken.id).run();
+        } else {
+          const id = generateCustomId("YA-SUB");
+          await env.DB.prepare(
+            "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+          ).bind(id, userId, fcm_token, platform, device_id, user_agent || null).run();
+        }
+      } else if (endpoint) {
+        const existingByEndpoint: any = await env.DB.prepare(
+          "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
+        ).bind(endpoint).first();
+        if (existingByEndpoint) {
+          await env.DB.prepare(
+            "UPDATE PushSubscriptions SET user_id = ?, platform = ?, device_id = ?, user_agent = ?, subscription_json = ?, last_active_at = datetime('now') WHERE id = ?",
+          ).bind(userId, platform, device_id, user_agent || null, subscription_json || null, existingByEndpoint.id).run();
+        } else {
+          const id = generateCustomId("YA-SUB");
+          await env.DB.prepare(
+            "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform, device_id, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          ).bind(id, userId, endpoint, subscription_json || null, platform, device_id, user_agent || null).run();
+        }
+      }
+    } catch (dbError: any) {
+      const msg = dbError.message?.toLowerCase() || "";
+      if (msg.includes("no such column: user_agent") || msg.includes("no such column: device_id") || msg.includes("no such column: last_active_at")) {
+        sendRedAlert(
+          env,
+          "PushSubscription Migration Fallback",
+          `PushSubscriptions table missing columns (${msg}). Device: ${device_id}, Platform: ${platform}. Migration may not have run.`,
+        ).catch(() => { });
+
+        if (fcm_token) {
+          const existingByToken: any = await env.DB.prepare(
+            "SELECT id FROM PushSubscriptions WHERE fcm_token = ?",
+          ).bind(fcm_token).first();
+          if (existingByToken) {
+            await env.DB.prepare(
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ? WHERE id = ?",
+            ).bind(userId, platform, existingByToken.id).run();
+          } else {
+            const id = generateCustomId("YA-SUB");
+            await env.DB.prepare(
+              "INSERT INTO PushSubscriptions (id, user_id, fcm_token, platform) VALUES (?, ?, ?, ?)",
+            ).bind(id, userId, fcm_token, platform).run();
+          }
+        } else if (endpoint) {
+          const existingByEndpoint: any = await env.DB.prepare(
+            "SELECT id FROM PushSubscriptions WHERE endpoint = ?",
+          ).bind(endpoint).first();
+          if (existingByEndpoint) {
+            await env.DB.prepare(
+              "UPDATE PushSubscriptions SET user_id = ?, platform = ?, subscription_json = ? WHERE id = ?",
+            ).bind(userId, platform, subscription_json || null, existingByEndpoint.id).run();
+          } else {
+            const id = generateCustomId("YA-SUB");
+            await env.DB.prepare(
+              "INSERT INTO PushSubscriptions (id, user_id, endpoint, subscription_json, platform) VALUES (?, ?, ?, ?, ?)",
+            ).bind(id, userId, endpoint, subscription_json || null, platform).run();
+          }
+        }
+      } else {
+        throw dbError;
+      }
+    }
+
+    // Track anonymous device for free-limit enforcement + conversion analytics
+    if (!userId) {
+      const anonId = generateCustomId("YA-ANO");
+      try {
+        await env.DB.prepare(
+          `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address, last_active_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(device_id) DO UPDATE SET
+             user_agent = excluded.user_agent,
+             ip_address = excluded.ip_address,
+             last_active_at = datetime('now')`,
+        ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+      } catch (dbError: any) {
+        const msg = dbError.message?.toLowerCase() || "";
+        if (msg.includes("no such column: last_active_at")) {
+          try {
+            await env.DB.prepare(
+              `INSERT INTO AnonymousUsers (id, device_id, user_agent, ip_address)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(device_id) DO UPDATE SET
+                   user_agent = excluded.user_agent,
+                   ip_address = excluded.ip_address`,
+            ).bind(anonId, device_id, user_agent || null, ipAddress).run();
+          } catch (fallbackError: any) {
+            const fallbackMsg = fallbackError.message?.toLowerCase() || "";
+            if (fallbackMsg.includes("no such column: user_agent")) {
+              await env.DB.prepare(
+                `INSERT INTO AnonymousUsers (id, device_id, ip_address)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(device_id) DO UPDATE SET
+                     ip_address = excluded.ip_address`,
+              ).bind(anonId, device_id, ipAddress).run();
+            } else {
+              throw fallbackError;
+            }
+          }
+        } else if (msg.includes("no such column: user_agent")) {
+          await env.DB.prepare(
+            `INSERT INTO AnonymousUsers (id, device_id, ip_address, last_active_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(device_id) DO UPDATE SET
+               ip_address = excluded.ip_address,
+               last_active_at = datetime('now')`,
+          ).bind(anonId, device_id, ipAddress).run();
+        } else {
+          throw dbError;
+        }
+      }
+    } else {
+      // Authenticated device touch: refresh last_active_at (for cleanup)
+      try {
+        await env.DB.prepare(
+          `UPDATE AnonymousUsers
+           SET last_active_at = datetime('now')
+           WHERE device_id = ? AND converted_to_user_id IS NULL`,
+        ).bind(device_id).run();
+      } catch (dbError: any) {
+        if (!dbError.message?.toLowerCase().includes("no such column: last_active_at")) {
+          throw dbError;
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Notification.RegisterDevice", env, request);
+  }
+}
+
+async function handleAssociateUser(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const { device_id } = (await request.json()) as any;
+    if (!device_id) {
+      sendRedAlert(
+        env,
+        "AssociateUser missing device_id",
+        `Authenticated user ${auth.sub} sent associate-user request without device_id. This may indicate a frontend bug.`,
+      ).catch(() => { });
+      return new Response(
+        JSON.stringify({ error: "device_id is required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Idempotent association/re-association. A missing row simply means this
+    // device has never registered a push token (e.g. notifications denied),
+    // which is a normal state, not an error worth paging on-call.
+    const associateResult = await env.DB.prepare(
+      "UPDATE PushSubscriptions SET user_id = ? WHERE device_id = ? AND (user_id IS NULL OR user_id != ?)",
+    ).bind(auth.sub, device_id, auth.sub).run();
+
+    const associated = ((associateResult as any)?.meta?.changes ?? 0) > 0;
+
+    // Conversion tracking: anonymous Ã¢ÂÂ user (analytics + free-limit reset)
+    await env.DB.prepare(
+      `UPDATE AnonymousUsers
+       SET converted_to_user_id = ?, converted_at = datetime('now')
+       WHERE device_id = ? AND converted_to_user_id IS NULL`,
+    ).bind(auth.sub, device_id).run();
+
+    return new Response(JSON.stringify({ success: true, associated }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AssociateUser", env, request);
+  }
+}
+
+async function handleUnregisterDevice(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { fcm_token, device_id } = (await request.json()) as any;
+    if (!fcm_token && !device_id) {
+      return new Response(
+        JSON.stringify({ error: "fcm_token or device_id required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (fcm_token) {
+      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE fcm_token = ?").bind(fcm_token).run();
+    } else {
+      await env.DB.prepare("DELETE FROM PushSubscriptions WHERE device_id = ?").bind(device_id).run();
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.UnregisterDevice", env, request);
+  }
+}
+
+async function handleGetMyDevices(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    let devices: any;
+    try {
+      devices = await env.DB.prepare(
+        "SELECT id, platform, device_id, user_agent, last_active_at, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY last_active_at DESC",
+      ).bind(auth.sub).all();
+    } catch (dbError: any) {
+      const msg = dbError.message?.toLowerCase() || "";
+      if (
+        msg.includes("no such column: device_id") ||
+        msg.includes("no such column: user_agent") ||
+        msg.includes("no such column: last_active_at")
+      ) {
+        // Fallback for zero-downtime deployment if migration hasn't run yet
+        devices = await env.DB.prepare(
+          "SELECT id, platform, created_at FROM PushSubscriptions WHERE user_id = ? ORDER BY created_at DESC",
+        ).bind(auth.sub).all();
+      } else {
+        throw dbError;
+      }
+    }
+
+    return new Response(JSON.stringify({ devices: devices.results || [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.MyDevices", env, request);
+  }
+}
+
+type AudienceFilter =
+  | "all"
+  | "logged_in"
+  | "anonymous"
+  | "students"
+  | "teachers"
+  | "admin";
+
+const FREE_LIMIT_MONTHLY_DEFAULT = 5;
+
+async function getAnonymousFreeLimit(env: Env, key: string): Promise<number> {
+  try {
+    const v = await env.PLATFORM_SECRETS.get(key);
+    const n = v ? parseInt(v, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : FREE_LIMIT_MONTHLY_DEFAULT;
+  } catch {
+    return FREE_LIMIT_MONTHLY_DEFAULT;
+  }
+}
+
+async function audienceToSQL(audience: AudienceFilter): Promise<{ sql: string; joins: string }> {
+  switch (audience) {
+    case "all":
+      return {
+        sql: "PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "logged_in":
+      return {
+        sql: "PushSubscriptions.user_id IS NOT NULL AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "anonymous":
+      return {
+        sql: "PushSubscriptions.user_id IS NULL AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "",
+      };
+    case "students":
+    case "teachers":
+    case "admin": {
+      const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+      return {
+        sql: "Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL",
+        joins: "INNER JOIN Users ON Users.id = PushSubscriptions.user_id",
+      };
+    }
+  }
+}
+
+async function handleSendPush(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const {
+      userId,
+      title,
+      body,
+      data,
+      all,
+      excludeUserIds,
+      audience,
+    } = (await request.json()) as any;
+
+    if (!title || !body) {
+      return new Response(
+        JSON.stringify({ error: "title and body are required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    try {
+      const broadcastResult = await executePushBroadcast(env, {
+        title,
+        body,
+        data,
+        audience,
+        all,
+        userId,
+        excludeUserIds
+      });
+
+      // Insert broadcast log
+      const broadcastId = generateCustomId("YA-BRC");
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, audience, title, body, data_json, sent_count, failed_count, skip_count, sent_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        broadcastId,
+        broadcastResult.resolvedAudience,
+        title,
+        body,
+        JSON.stringify(data || {}),
+        broadcastResult.sent,
+        broadcastResult.failed,
+        broadcastResult.skipped,
+        adminId
+      ).run();
+
+      return new Response(
+        JSON.stringify({
+          broadcastId,
+          audience: broadcastResult.resolvedAudience,
+          sent: broadcastResult.sent,
+          failed: broadcastResult.failed,
+          skipped: broadcastResult.skipped,
+          total: broadcastResult.devicesCount,
+          errors: broadcastResult.errors
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e.message || "Broadcast failed" }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.SendPush", env, request);
+  }
+}
+
+// Unified send push function Ã¢ÂÂ sends to all devices of a user (or all users)
+
+// Helper: unified push broadcast executor handling audiences, exclusions, and limits
+async function executePushBroadcast(
+  env: Env,
+  options: {
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    audience?: string;
+    all?: boolean;
+    userId?: string;
+    excludeUserIds?: string[];
+  }
+): Promise<{ sent: number; failed: number; skipped: number; errors: { status?: number; error: string }[], devicesCount: number, resolvedAudience: string }> {
+  try {
+    let devices: any[] = [];
+    let resolvedAudience: string = "individual";
+
+    const { title, body, data, audience, all, excludeUserIds, userId } = options;
+
+    if (audience && typeof audience === "string") {
+      if (!["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)) {
+        throw new Error("Invalid audience. Use: all | logged_in | anonymous | students | teachers | admin");
+      }
+      resolvedAudience = audience;
+      const filter = await audienceToSQL(audience as any);
+
+      let query: string;
+      let bindings: any[] = [];
+      if (audience === "students" || audience === "teachers" || audience === "admin") {
+        const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+        query = `SELECT PushSubscriptions.id, PushSubscriptions.fcm_token, PushSubscriptions.platform, PushSubscriptions.user_id, PushSubscriptions.device_id
+                 FROM PushSubscriptions
+                 INNER JOIN Users ON Users.id = PushSubscriptions.user_id
+                 WHERE ${filter.sql}`;
+        bindings = [role];
+      } else {
+        query = `SELECT id, fcm_token, platform, user_id, device_id
+                 FROM PushSubscriptions
+                 WHERE ${filter.sql}`;
+      }
+
+      if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
+        const placeholders = excludeUserIds.map(() => "?").join(",");
+        query += ` AND (PushSubscriptions.user_id IS NULL OR PushSubscriptions.user_id NOT IN (${placeholders}))`;
+        bindings.push(...excludeUserIds);
+      }
+
+      const result = await env.DB.prepare(query).bind(...bindings).all();
+      devices = result.results || [];
+    } else if (all) {
+      resolvedAudience = "all";
+      if (excludeUserIds && Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
+        const placeholders = excludeUserIds.map(() => "?").join(",");
+        const filtered: any = await env.DB.prepare(
+          `SELECT id, fcm_token, platform, user_id, device_id
+           FROM PushSubscriptions
+           WHERE fcm_token IS NOT NULL AND (user_id IS NULL OR user_id NOT IN (${placeholders}))`
+        ).bind(...excludeUserIds).all();
+        devices = filtered.results || [];
+      } else {
+        const result = await env.DB.prepare(
+          "SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+        ).all();
+        devices = result.results || [];
+      }
+    } else if (userId) {
+      resolvedAudience = "user:" + userId;
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform, user_id, device_id FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
+      ).bind(userId).all();
+      devices = result.results || [];
+    } else {
+        throw new Error("Provide 'audience', 'userId', or 'all=true'");
+    }
+
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+    const errors: { status?: number; error: string }[] = [];
+    const initialDevicesCount = devices.length;
+
+    const isAnonymousAudience = resolvedAudience === "anonymous" || resolvedAudience === "all";
+    if (isAnonymousAudience && devices.length > 0) {
+      const monthlyLimit = await getAnonymousFreeLimit(env, "ANON_BROADCAST_LIMIT_PER_MONTH");
+      const now = new Date();
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const anonDeviceIds = devices.filter((d) => !d.user_id).map((d) => d.device_id);
+      const anonMap = new Map<string, { broadcast_count: number; broadcast_reset_at: string | null }>();
+      if (anonDeviceIds.length > 0) {
+        for (const chunk of chunkArray(anonDeviceIds, 50)) {
+          const ph = chunk.map(() => "?").join(",");
+          const rows: any = await env.DB.prepare(
+            `SELECT device_id, broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id IN (${ph})`,
+          ).bind(...chunk).all();
+          for (const r of rows.results || []) anonMap.set(r.device_id, r);
+        }
+      }
+      const filtered: any[] = [];
+      const missingDeviceIds: string[] = [];
+      for (const device of devices) {
+        if (device.user_id) { filtered.push(device); continue; }
+        let anon = anonMap.get(device.device_id);
+        if (!anon) {
+          missingDeviceIds.push(device.device_id);
+          anon = { broadcast_count: 0, broadcast_reset_at: new Date().toISOString() };
+        }
+        const resetAt = anon.broadcast_reset_at ? new Date(anon.broadcast_reset_at + (anon.broadcast_reset_at.includes("T") ? "" : "T") + (anon.broadcast_reset_at.endsWith("Z") || anon.broadcast_reset_at.includes("+") ? "" : "Z")) : null;
+        const resetMonth = resetAt ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}` : null;
+        const count = resetMonth === currentMonth ? (anon.broadcast_count || 0) : 0;
+        if (count >= monthlyLimit) { skipped++; continue; }
+        filtered.push(device);
+      }
+      if (missingDeviceIds.length > 0) {
+        try {
+          for (const chunk of chunkArray(missingDeviceIds, 50)) {
+            const insertStmts = chunk.map((did) =>
+              env.DB.prepare("INSERT OR IGNORE INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 0, datetime('now'))").bind(did),
+            );
+            await env.DB.batch(insertStmts);
+          }
+        } catch (e) {
+          console.error("Failed to batch-insert missing AnonymousUsers:", e);
+        }
+      }
+      devices = filtered;
+    }
+
+    const sentTokensByDevice: any[] = [];
+
+    const { sent: batchSent, failed: batchFailed } = await sendFCMBatch(env, devices, title, body, data);
+    sent += batchSent;
+    failed += batchFailed;
+    if (batchFailed > 0 && errors.length < 5) {
+      errors.push({ error: `${batchFailed} devices failed FCM delivery` });
+    }
+    for (const device of devices) {
+      if (!device.user_id && device.device_id) sentTokensByDevice.push(device);
+    }
+
+    if (sentTokensByDevice.length > 0) {
+      const now = new Date();
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const toIncrement: string[] = [];
+      const toReset: string[] = [];
+      const toInsert: string[] = [];
+      const sentDeviceIds = sentTokensByDevice.map((d) => d.device_id);
+      const existMap = new Map<string, any>();
+      for (const chunk of chunkArray(sentDeviceIds, 50)) {
+        const ph = chunk.map(() => "?").join(",");
+        const existingRows: any = await env.DB.prepare(
+          `SELECT device_id, broadcast_count, broadcast_reset_at FROM AnonymousUsers WHERE device_id IN (${ph})`,
+        ).bind(...chunk).all();
+        for (const r of existingRows.results || []) existMap.set(r.device_id, r);
+      }
+
+      for (const device of sentTokensByDevice) {
+        const existing = existMap.get(device.device_id);
+        if (!existing) { toInsert.push(device.device_id); continue; }
+        const resetAt = existing.broadcast_reset_at ? new Date(existing.broadcast_reset_at + "Z") : null;
+        const resetMonth = resetAt
+          ? `${resetAt.getUTCFullYear()}-${String(resetAt.getUTCMonth() + 1).padStart(2, "0")}`
+          : null;
+        if (resetMonth === currentMonth) { toIncrement.push(device.device_id); }
+        else { toReset.push(device.device_id); }
+      }
+      try {
+        const updateStmts: any[] = [];
+        for (const chunk of chunkArray(toIncrement, 50)) {
+          const phInc = chunk.map(() => "?").join(",");
+          updateStmts.push(env.DB.prepare(`UPDATE AnonymousUsers SET broadcast_count = broadcast_count + 1 WHERE device_id IN (${phInc})`).bind(...chunk));
+        }
+        for (const chunk of chunkArray(toReset, 50)) {
+          const phRst = chunk.map(() => "?").join(",");
+          updateStmts.push(env.DB.prepare(`UPDATE AnonymousUsers SET broadcast_count = 1, broadcast_reset_at = datetime('now') WHERE device_id IN (${phRst})`).bind(...chunk));
+        }
+        for (const chunk of chunkArray(toInsert, 50)) {
+          for (const did of chunk) {
+            updateStmts.push(env.DB.prepare("INSERT INTO AnonymousUsers (device_id, broadcast_count, broadcast_reset_at) VALUES (?, 1, datetime('now'))").bind(did));
+          }
+        }
+        if (updateStmts.length > 0) {
+          await env.DB.batch(updateStmts);
+        }
+      } catch (e) {
+        console.error("Failed to batch-update broadcast counts:", e);
+      }
+    }
+
+    return { sent, failed, skipped, errors, devicesCount: initialDevicesCount, resolvedAudience };
+  } catch (error: any) {
+    console.error("executePushBroadcast error:", error);
+    throw error;
+  }
+}
+
+
+// Unified send push function Ã¢ÂÂ sends to all devices of a user (or all users)
+async function sendPush(
+  env: Env,
+  options: {
+    userId?: string;
+    all?: boolean;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+  },
+): Promise<{ sent: number; failed: number }> {
+  try {
+    let devices: any[];
+    if (options.userId) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE user_id = ? AND fcm_token IS NOT NULL",
+      ).bind(options.userId).all();
+      devices = result.results || [];
+    } else if (options.all) {
+      const result = await env.DB.prepare(
+        "SELECT id, fcm_token, platform FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+      ).all();
+      devices = result.results || [];
+    } else {
+      return { sent: 0, failed: 0 };
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    if (devices.length > 0) {
+      const batchResult = await sendFCMBatch(env, devices, options.title, options.body, options.data);
+      sent = batchResult.sent;
+      failed = batchResult.failed;
+    }
+
+    return { sent, failed };
+  } catch {
+    return { sent: 0, failed: 0 };
+  }
+}
+
+// --- Admin: Audience Count (for broadcast UI preview) ---
+
+async function handleAudienceCount(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const audience = url.searchParams.get("audience") || "all";
+
+    if (
+      !["all", "logged_in", "anonymous", "students", "teachers", "admin"].includes(audience)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid audience" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let count = 0;
+    if (audience === "all") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE fcm_token IS NOT NULL",
+      ).first();
+      count = Number(r?.c ?? 0);
+    } else if (audience === "logged_in") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NOT NULL AND fcm_token IS NOT NULL",
+      ).first();
+      count = Number(r?.c ?? 0);
+    } else if (audience === "anonymous") {
+      const r: any = await env.DB.prepare(
+        "SELECT COUNT(*) as c FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
+      ).first();
+      count = Number(r?.c ?? 0);
+    } else {
+      const role = audience === "admin" ? "admin" : audience === "teachers" ? "teacher" : "student";
+      const r: any = await env.DB.prepare(
+        `SELECT COUNT(*) as c
+         FROM PushSubscriptions
+         INNER JOIN Users ON Users.id = PushSubscriptions.user_id
+         WHERE Users.role = ? AND PushSubscriptions.fcm_token IS NOT NULL`,
+      ).bind(role).first();
+      count = Number(r?.c ?? 0);
+    }
+
+    return new Response(
+      JSON.stringify({ audience, count }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AudienceCount", env, request);
+  }
+}
+
+// --- Admin: Broadcast History ---
+
+async function handleAdminBroadcasts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10)));
+    const offset = (page - 1) * limit;
+
+    const total: any = await env.DB.prepare(
+      "SELECT COUNT(*) as c FROM BroadcastLog",
+    ).first();
+
+    const items: any = await env.DB.prepare(
+      `SELECT b.id, b.sent_by, u.full_name as sent_by_name, u.email as sent_by_email,
+              b.audience, b.title, b.body, b.data_json, b.sent_count, b.failed_count,
+              b.skip_count, b.created_at
+       FROM BroadcastLog b
+       LEFT JOIN Users u ON u.id = b.sent_by
+       ORDER BY b.created_at DESC
+       LIMIT ? OFFSET ?`,
+    ).bind(limit, offset).all();
+
+    return new Response(
+      JSON.stringify({
+        broadcasts: items.results || [],
+        total: total?.c || 0,
+        page,
+        limit,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.AdminBroadcasts", env, request);
+  }
+}
+
+// --- Cron: Cleanup Anonymous (90-day inactive) ---
+
+async function handleCleanupAnonymous(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const INACTIVE_DAYS = 90;
+    const deletedAnon: any = await env.DB.prepare(
+      `DELETE FROM AnonymousUsers
+       WHERE last_active_at < datetime('now', ?)
+         AND (converted_to_user_id IS NULL OR converted_at < datetime('now', ?))`,
+    ).bind(`-${INACTIVE_DAYS} days`, `-${INACTIVE_DAYS} days`).run();
+
+    const deletedSubs: any = await env.DB.prepare(
+      `DELETE FROM PushSubscriptions
+       WHERE user_id IS NULL
+         AND last_active_at < datetime('now', ?)`,
+    ).bind(`-${INACTIVE_DAYS} days`).run();
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        deletedAnonymous: deletedAnon.meta?.changes || 0,
+        deletedSubscriptions: deletedSubs.meta?.changes || 0,
+        inactiveDays: INACTIVE_DAYS,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.CleanupAnonymous", env, request);
+  }
+}
+
+// --- Cron: Live Class Reminders (15 min before batch start) ---
+
+async function handleLiveClassReminders(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Reminder window: 14-16 minutes from now (15-min lead time, ÃÂ±1 min tolerance)
+    const upcoming: any = await env.DB.prepare(
+      `SELECT b.id, b.name, b.name_hi, l.start_time as start_date, b.course_id, b.book_id,
+              c.title as course_title, c.title_hi as course_title_hi,
+              bk.title as book_title, bk.title_hi as book_title_hi
+       FROM Batches b
+       JOIN LiveSessions l ON l.batch_id = b.id
+       LEFT JOIN Courses c ON c.id = b.course_id
+       LEFT JOIN Books bk ON bk.id = b.book_id
+       WHERE l.start_time BETWEEN datetime('now', '+14 minutes') AND datetime('now', '+16 minutes')
+         AND l.status = 'scheduled'`,
+    ).all();
+
+    const batches = upcoming.results || [];
+    if (batches.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, message: "No batches starting in window", reminded: 0, batches: 0 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const summary: any[] = [];
+    let totalReminded = 0;
+
+    // Batch: get ALL enrollments for ALL upcoming batches in ONE query
+    const batchIds = batches.map((b: any) => b.id);
+    const phBatches = batchIds.map(() => "?").join(",");
+    const allEnrollments: any = await env.DB.prepare(
+      `SELECT DISTINCT batch_id, user_id FROM Enrollments
+       WHERE batch_id IN (${phBatches}) AND status = 'active' AND user_id IS NOT NULL`,
+    ).bind(...batchIds).all();
+
+    // Group user_ids by batch_id in memory
+    const batchUserMap = new Map<string, Set<string>>();
+    for (const row of allEnrollments.results || []) {
+      const uid = (row as any).user_id;
+      if (!uid) continue;
+      if (!batchUserMap.has(row.batch_id)) batchUserMap.set(row.batch_id, new Set());
+      batchUserMap.get(row.batch_id)!.add(uid);
+    }
+
+    // Batch: get ALL devices for ALL enrolled users Ã¢ÂÂ chunked for D1 parameter limit
+    const allUserIds = [...new Set([...batchUserMap.values()].flatMap((s) => [...s]))];
+    if (allUserIds.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, message: "No users to remind", reminded: 0, batches: batches.length }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const allDevices: any[] = [];
+    for (const chunk of chunkArray(allUserIds, 50)) {
+      const phUsers = chunk.map(() => "?").join(",");
+      const result: any = await env.DB.prepare(
+        `SELECT id, fcm_token, user_id FROM PushSubscriptions
+         WHERE user_id IN (${phUsers}) AND fcm_token IS NOT NULL`,
+      ).bind(...chunk).all();
+      allDevices.push(...(result.results || []));
+    }
+
+    // Map user_id Ã¢ÂÂ devices[] in memory
+    const userDeviceMap = new Map<string, { id: string; fcm_token: string }[]>();
+    for (const dev of allDevices) {
+      const uid = (dev as any).user_id;
+      if (!uid) continue;
+      if (!userDeviceMap.has(uid)) userDeviceMap.set(uid, []);
+      userDeviceMap.get(uid)!.push({ id: (dev as any).id, fcm_token: (dev as any).fcm_token });
+    }
+
+    // Now process each batch Ã¢ÂÂ no more DB queries, just memory lookups + parallel FCM
+    for (const batch of batches) {
+      const userIds = [...(batchUserMap.get(batch.id) || [])];
+      if (userIds.length === 0) continue;
+
+      const title = batch.course_title || batch.book_title || batch.name;
+      const reminderTitle = `Ã°ÂÂÂ ${title} Ã¢ÂÂ Ã Â¤ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â·Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â²Ã Â¥ÂÃ Â¤Â¦ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â`;
+      const reminderBody = `15 Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â¨Ã Â¤Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â²Ã Â¤Â¾Ã Â¤ÂÃ Â¤Âµ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â²Ã Â¤Â¾Ã Â¤Â¸ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤Â¹Ã Â¥Â Ã Â¤Â°Ã Â¤Â¹Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤ Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â¾Ã Â¤Â° Ã Â¤Â°Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â!`;
+      const pushData = {
+        url: `/dashboard/course/learn?batch=${batch.id}`,
+        clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
+        batchId: batch.id,
+      };
+
+      const batchDevices = userIds.flatMap((uid) => userDeviceMap.get(uid) || []);
+      const { sent, failed } = await sendFCMBatch(env, batchDevices, reminderTitle, reminderBody, pushData);
+
+      // Persist broadcast log entry so admins can audit reminders
+      const reminderBroadcastId = generateCustomId("YA-BRC");
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(
+        reminderBroadcastId,
+        `batch:${batch.id}`,
+        reminderTitle,
+        reminderBody,
+        JSON.stringify({ batchId: batch.id, type: "live_class_reminder" }),
+        sent,
+        failed,
+      ).run();
+
+      totalReminded += sent;
+      summary.push({ batchId: batch.id, batchName: batch.name, sent, failed, totalUsers: userIds.length });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, reminded: totalReminded, batches: batches.length, summary }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.LiveClassReminders", env, request);
+  }
+}
+
+// --- Trigger: New Course Announcement ---
+
+async function handleNewCourseAnnouncement(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const body = await parseRequestBody(request);
+    const { course_id, course_title, audience } = body;
+    if (!course_id || !course_title) {
+      return new Response(
+        JSON.stringify({ error: "course_id and course_title required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const target = audience === "anonymous" ? "anonymous" : "all";
+
+    const title = `Ã°ÂÂÂ Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¸: ${course_title}`;
+    const bodyText = "Ã Â¤ÂÃ Â¤Â­Ã Â¥Â enroll Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¨Ã Â¤Â¾ Ã Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¥Â Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤";
+    const result = await sendPush(env, {
+      all: target === "all",
+      title,
+      body: bodyText,
+      data: { url: `/course/${course_id}`, clickUrl: `/course/${course_id}`, courseId: course_id },
+    });
+
+    // Persist BroadcastLog
+    const broadcastId = generateCustomId("YA-BRC");
+    await env.DB.prepare(
+      `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, 0, 0)`,
+    ).bind(
+      broadcastId,
+      `course:${course_id}`,
+      title,
+      bodyText,
+      JSON.stringify({ courseId: course_id, type: "new_course_announcement" }),
+      result.sent,
+    ).run();
+
+    return new Response(
+      JSON.stringify({ success: true, sent: result.sent, failed: result.failed, broadcastId }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.NewCourseAnnouncement", env, request);
+  }
+}
+
+// --- Scheduled Notifications (admin-scheduled cron jobs) ---
+
+// Validate that a string is a known IANA timezone.
+function isValidTimezone(timezone: string): boolean {
+  try {
+    new Date().toLocaleString("en", { timeZone: timezone, hour12: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Get the UTC offset (in minutes) for a given timezone at a given date.
+// Positive = ahead of UTC (e.g. IST = +330)
+function getTimezoneOffsetMinutes(date: Date, timezone: string): number {
+  try {
+    const utcStr = date.toLocaleString("en", { timeZone: "UTC", hour12: false });
+    const tzStr = date.toLocaleString("en", { timeZone: timezone, hour12: false });
+    return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+  } catch (e) {
+    console.error("[Timezone] Invalid timezone, falling back to Asia/Kolkata:", timezone, e);
+    return getTimezoneOffsetMinutes(date, "Asia/Kolkata");
+  }
+}
+
+// Interpret an ISO-like local datetime (YYYY-MM-DDTHH:MM...) as being in the
+// given timezone, then return the equivalent UTC Date.
+function localIsoToUtcDate(iso: string, timezone: string): Date {
+  // If the input already has a timezone offset or Z, parse it directly (already absolute).
+  if (/[Z+-]/.test(iso.substring(10))) {
+    return new Date(iso);
+  }
+  const naive = iso.replace("T", " ").substring(0, 19); // strip any offset
+  const asIfUtc = new Date(naive + "Z"); // treat naive string as UTC moment
+  const offsetMin = getTimezoneOffsetMinutes(asIfUtc, timezone);
+  return new Date(asIfUtc.getTime() - offsetMin * 60000);
+}
+
+// Convert a local time-of-day (in the given timezone) to the equivalent UTC hour/minute.
+function localToUtcTime(hh: number, mm: number, offsetMin: number): { hh: number; mm: number } {
+  let totalMin = hh * 60 + mm - offsetMin;
+  totalMin = ((totalMin % 1440) + 1440) % 1440;
+  return { hh: Math.floor(totalMin / 60), mm: totalMin % 60 };
+}
+
+// Compute the next run time for a scheduled notification based on its schedule type
+function computeNextRunAt(job: any, fromTime?: Date): string | null {
+  const tz = job.timezone || "Asia/Kolkata";
+  const now = fromTime || new Date();
+
+  // For 'once' type, return scheduled_at if it's still in the future
+  if (job.schedule_type === "once") {
+    if (job.status === "sent" || job.status === "cancelled") return null;
+    if (!job.scheduled_at) return null;
+    const scheduled = new Date(job.scheduled_at);
+    if (scheduled > now) return job.scheduled_at;
+    return null;
+  }
+
+  // For recurring types, parse time_of_day (HH:MM) in the user's timezone
+  const timeOfDay: string = job.time_of_day || "09:00";
+  const localHH = parseInt(timeOfDay.split(":")[0], 10) || 0;
+  const localMM = parseInt(timeOfDay.split(":")[1], 10) || 0;
+
+  // Convert local time to UTC using the timezone offset at the current date
+  const offsetMin = getTimezoneOffsetMinutes(now, tz);
+  const { hh: utcHH, mm: utcMM } = localToUtcTime(localHH, localMM, offsetMin);
+
+  if (job.schedule_type === "daily") {
+    // Next day at the UTC-equivalent time
+    const next = new Date(now);
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCHours(utcHH, utcMM, 0, 0);
+    return next.toISOString().replace("T", " ").substring(0, 19);
+  }
+
+  if (job.schedule_type === "weekly") {
+    // Find next matching day-of-week (using UTC day, since we compute UTC-equivalent time)
+    const daysOfWeek: number[] = (job.days_of_week || "0").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 0 && n <= 6);
+    if (daysOfWeek.length === 0) return null;
+    for (let i = 1; i <= 7; i++) {
+      const candidate = new Date(now);
+      candidate.setUTCDate(candidate.getUTCDate() + i);
+      candidate.setUTCHours(utcHH, utcMM, 0, 0);
+      if (daysOfWeek.includes(candidate.getUTCDay())) {
+        return candidate.toISOString().replace("T", " ").substring(0, 19);
+      }
+    }
+    return null;
+  }
+
+  if (job.schedule_type === "monthly") {
+    // Find next matching day-of-month
+    const daysOfMonth: number[] = (job.days_of_month || "1").split(",").map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => n >= 1 && n <= 31);
+    if (daysOfMonth.length === 0) return null;
+    daysOfMonth.sort((a: number, b: number) => a - b);
+    const currentDay = now.getUTCDate();
+    // Try remaining days in this month
+    for (const d of daysOfMonth) {
+      if (d > currentDay) {
+        const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d, utcHH, utcMM, 0));
+        return candidate.toISOString().replace("T", " ").substring(0, 19);
+      }
+    }
+    // No more in this month Ã¢ÂÂ first valid day of next month
+    const firstDay = daysOfMonth[0];
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, utcHH, utcMM, 0));
+    return candidate.toISOString().replace("T", " ").substring(0, 19);
+  }
+
+  return null;
+}
+
+// Convert ISO datetime string to SQLite DATETIME format
+function isoToSqliteDatetime(iso: string): string {
+  if (!iso) return "";
+  // Accept "YYYY-MM-DDTHH:MM" or full ISO; convert to "YYYY-MM-DD HH:MM:SS"
+  const cleaned = iso.replace("T", " ").substring(0, 19);
+  return cleaned.length === 16 ? cleaned + ":00" : cleaned;
+}
+
+// Send a scheduled notification and persist to BroadcastLog
+async function fireScheduledNotification(env: Env, job: any): Promise<{ sent: number; failed: number; skip: number; logId: string }> {
+  const title = job.title_hi && job.title_hi.trim() ? job.title_hi : job.title;
+  const body = job.body_hi && job.body_hi.trim() ? job.body_hi : job.body;
+
+  let data: any = {};
+  try {
+    data = job.data_json ? JSON.parse(job.data_json) : {};
+  } catch {
+    data = {};
+  }
+
+  let devices: any[] = [];
+  let audienceLabel = job.audience;
+
+  if (job.audience === "specific" && job.target_user_ids) {
+    let userIds: string[] = [];
+    try {
+      userIds = JSON.parse(job.target_user_ids);
+    } catch {
+      userIds = [];
+    }
+    if (userIds.length === 0) {
+      return { sent: 0, failed: 0, skip: 0, logId: "" };
+    }
+    const placeholders = userIds.map(() => "?").join(",");
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       WHERE ps.user_id IN (${placeholders}) AND ps.fcm_token IS NOT NULL`,
+    ).bind(...userIds).all();
+    devices = result.results || [];
+    audienceLabel = `specific:${userIds.length}`;
+  } else if (job.audience === "all" || job.audience === "logged_in") {
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       INNER JOIN Users u ON u.id = ps.user_id
+       WHERE ps.fcm_token IS NOT NULL AND u.id IS NOT NULL`,
+    ).all();
+    devices = result.results || [];
+  } else if (job.audience === "anonymous") {
+    const result: any = await env.DB.prepare(
+      "SELECT id, fcm_token FROM PushSubscriptions WHERE user_id IS NULL AND fcm_token IS NOT NULL",
+    ).all();
+    devices = result.results || [];
+  } else if (job.audience === "students" || job.audience === "teachers" || job.audience === "admin") {
+    const result: any = await env.DB.prepare(
+      `SELECT ps.id, ps.fcm_token FROM PushSubscriptions ps
+       INNER JOIN Users u ON u.id = ps.user_id
+       WHERE ps.fcm_token IS NOT NULL AND u.role = ?`,
+    ).bind(job.audience === "admin" ? "admin" : job.audience === "teachers" ? "teacher" : "student").all();
+    devices = result.results || [];
+  }
+
+  const { sent, failed } = await sendFCMBatch(env, devices, title, body, data);
+
+  const logId = generateCustomId("YA-SCH");
+  await env.DB.prepare(
+    `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  ).bind(logId, job.created_by, audienceLabel, title, body, JSON.stringify(data), sent, failed).run();
+  return { sent, failed, skip: 0, logId };
+}
+
+// Cron: process all pending scheduled notifications (every 1 minute)
+async function handleProcessScheduledNotifications(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const provided = url.searchParams.get("secret") || request.headers.get("x-cron-secret");
+    let expected: string | null = null;
+    try {
+      expected = await env.PLATFORM_SECRETS.get("CRON_SECRET");
+    } catch {
+      expected = null;
+    }
+    if (!expected || provided !== expected) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Get current SQLite datetime
+    const nowRow: any = await env.DB.prepare("SELECT datetime('now') as now").first();
+    const nowSqlite = nowRow?.now || new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    // Find pending jobs whose next_run_at <= now
+    const dueJobs: any = await env.DB.prepare(
+      `SELECT * FROM ScheduledNotifications
+       WHERE status = 'pending' AND next_run_at IS NOT NULL AND next_run_at <= ?`,
+    ).bind(nowSqlite).all();
+
+    const jobs = dueJobs.results || [];
+    const summary: any[] = [];
+
+    for (const job of jobs) {
+      try {
+        // Check expires_at
+        if (job.expires_at && job.expires_at < nowSqlite) {
+          await env.DB.prepare(
+            "UPDATE ScheduledNotifications SET status = 'expired', updated_at = datetime('now') WHERE id = ?",
+          ).bind(job.id).run();
+          summary.push({ id: job.id, status: "expired" });
+          continue;
+        }
+
+        // Check max_runs
+        const newRunCount = Number(job.run_count ?? 0) + 1;
+        if (newRunCount > (job.max_runs || 100)) {
+          await env.DB.prepare(
+            "UPDATE ScheduledNotifications SET status = 'completed', run_count = ?, updated_at = datetime('now') WHERE id = ?",
+          ).bind(newRunCount - 1, job.id).run();
+          summary.push({ id: job.id, status: "completed" });
+          continue;
+        }
+
+        // Fire the notification
+        const result = await fireScheduledNotification(env, job);
+
+        if (job.schedule_type === "once") {
+          // One-time job: mark as sent
+          await env.DB.prepare(
+            `UPDATE ScheduledNotifications
+             SET status = 'sent', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+             WHERE id = ?`,
+          ).bind(newRunCount, result.logId, job.id).run();
+          summary.push({ id: job.id, status: "sent", sent: result.sent, failed: result.failed });
+        } else {
+          // Recurring: compute next_run_at
+          const jobForCompute = { ...job, status: "pending" };
+          const nextRunAt = computeNextRunAt(jobForCompute);
+          if (!nextRunAt) {
+            // No more valid runs (e.g., recurring with no valid days)
+            await env.DB.prepare(
+              `UPDATE ScheduledNotifications
+               SET status = 'completed', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+               WHERE id = ?`,
+            ).bind(newRunCount, result.logId, job.id).run();
+            summary.push({ id: job.id, status: "completed", sent: result.sent, failed: result.failed });
+          } else {
+            await env.DB.prepare(
+              `UPDATE ScheduledNotifications
+               SET last_run_at = datetime('now'), run_count = ?, result_log_id = ?, next_run_at = ?, updated_at = datetime('now')
+               WHERE id = ?`,
+            ).bind(newRunCount, result.logId, nextRunAt, job.id).run();
+            summary.push({ id: job.id, status: "fired", sent: result.sent, failed: result.failed, nextRunAt });
+          }
+        }
+      } catch (jobErr) {
+        await env.DB.prepare(
+          "UPDATE ScheduledNotifications SET last_error = ?, updated_at = datetime('now') WHERE id = ?",
+        ).bind(String(jobErr), job.id).run();
+        summary.push({ id: job.id, status: "error", error: String(jobErr) });
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, processed: jobs.length, summary }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ProcessScheduled", env, request);
+  }
+}
+
+// Helper: validate soft cap of 50 active jobs per admin
+async function checkAdminScheduledCap(env: Env, adminId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
+  const row: any = await env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM ScheduledNotifications WHERE created_by = ? AND status IN ('pending', 'paused')",
+  ).bind(adminId).first();
+  const current = row?.cnt || 0;
+  return { allowed: current < 50, current, limit: 50 };
+}
+
+async function handleCreateScheduledNotification(request: Request, env: Env, ctx: any, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden: admin/teacher only" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const body: any = await request.json();
+    const { title, title_hi, body: textBody, body_hi, audience, target_user_ids, data, schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, max_runs, expires_at } = body;
+    const timezone = body.timezone || "Asia/Kolkata";
+    if (body.timezone !== undefined && !isValidTimezone(timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (!title || !textBody || !audience || !schedule_type) {
+      return new Response(JSON.stringify({ error: "title, body, audience, schedule_type required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (!["once", "daily", "weekly", "monthly"].includes(schedule_type)) {
+      return new Response(JSON.stringify({ error: "Invalid schedule_type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (!["all", "logged_in", "anonymous", "students", "teachers", "admin", "specific"].includes(audience)) {
+      return new Response(JSON.stringify({ error: "Invalid audience" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (audience === "specific" && (!Array.isArray(target_user_ids) || target_user_ids.length === 0)) {
+      return new Response(JSON.stringify({ error: "target_user_ids required when audience is 'specific'" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const cap = await checkAdminScheduledCap(env, (userAuth as any).sub);
+    if (!cap.allowed) {
+      return new Response(JSON.stringify({ error: `Soft cap reached: ${cap.current}/${cap.limit} active jobs. Cancel or delete some before creating more.` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const id = generateCustomId("YA-SCH");
+    const dataJson = data ? JSON.stringify(data) : null;
+    const targetUsersJson = audience === "specific" ? JSON.stringify(target_user_ids) : null;
+    const maxRunsInt = max_runs == null ? 100 : Math.max(1, Math.min(parseInt(max_runs, 10) || 100, 9999));
+    const scheduledAtSqlite = schedule_type === "once" && scheduled_at
+      ? isoToSqliteDatetime(localIsoToUtcDate(scheduled_at, timezone).toISOString())
+      : null;
+    const expiresAtSqlite = expires_at ? isoToSqliteDatetime(expires_at) : null;
+
+    // For 'once', next_run_at = scheduled_at. For recurring, compute initial next_run_at.
+    let nextRunAt: string | null = null;
+    if (schedule_type === "once") {
+      nextRunAt = scheduledAtSqlite;
+    } else {
+      // For recurring, compute next occurrence from current time
+      const draftJob: any = { schedule_type, time_of_day, days_of_week, days_of_month, timezone, status: "pending" };
+      nextRunAt = computeNextRunAt(draftJob, new Date());
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO ScheduledNotifications
+        (id, created_by, title, title_hi, body, body_hi, audience, target_user_ids, data_json,
+         schedule_type, scheduled_at, time_of_day, days_of_week, days_of_month, timezone,
+         status, next_run_at, run_count, max_runs, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)`,
+    ).bind(
+      id,
+      (userAuth as any).sub,
+      title,
+      title_hi || null,
+      textBody,
+      body_hi || null,
+      audience,
+      targetUsersJson,
+      dataJson,
+      schedule_type,
+      scheduledAtSqlite,
+      time_of_day || null,
+      days_of_week || null,
+      days_of_month || null,
+      timezone,
+      nextRunAt,
+      maxRunsInt,
+      expiresAtSqlite,
+    ).run();
+
+    return new Response(JSON.stringify({ success: true, id, nextRunAt, cap }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.CreateScheduled", env, request);
+  }
+}
+
+async function handleListScheduledNotifications(request: Request, env: Env, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const url = new URL(request.url);
+    const statusFilter = url.searchParams.get("status") || "all";
+    const page = parseInt(url.searchParams.get("page") || "1", 10) || 1;
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10) || 20, 100);
+    const offset = (page - 1) * limit;
+
+    let whereClause = "";
+    const params: any[] = [];
+    if (statusFilter !== "all") {
+      whereClause = "WHERE status = ?";
+      params.push(statusFilter);
+    }
+
+    const countRow: any = await env.DB.prepare(`SELECT COUNT(*) as total FROM ScheduledNotifications ${whereClause}`).bind(...params).first();
+    const total = Number(countRow?.total ?? 0);
+
+    const rows: any = await env.DB.prepare(
+      `SELECT * FROM ScheduledNotifications ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+    ).bind(...params, limit, offset).all();
+
+    const items = (rows.results || []).map((row: any) => {
+      let targetUserIds: string[] = [];
+      try {
+        if (row.target_user_ids) targetUserIds = JSON.parse(row.target_user_ids);
+      } catch {
+        targetUserIds = [];
+      }
+      let dataObj: any = {};
+      try {
+        if (row.data_json) dataObj = JSON.parse(row.data_json);
+      } catch {
+        dataObj = {};
+      }
+      return { ...row, target_user_ids_parsed: targetUserIds, data_parsed: dataObj };
+    });
+
+    return new Response(JSON.stringify({ success: true, total, page, limit, items }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ListScheduled", env, request);
+  }
+}
+
+async function handleUpdateScheduledNotification(request: Request, env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "pending" && existing.status !== "paused") {
+      return new Response(JSON.stringify({ error: `Cannot edit job in status '${existing.status}'. Only pending or paused.` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const body: any = await request.json();
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+      return new Response(JSON.stringify({ error: "Invalid timezone" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const fields = ["title", "title_hi", "body", "body_hi", "audience", "schedule_type", "time_of_day", "days_of_week", "days_of_month", "timezone"];
+    for (const f of fields) {
+      if (body[f] !== undefined) {
+        updates.push(`${f} = ?`);
+        params.push(body[f] || null);
+      }
+    }
+    if (body.target_user_ids !== undefined) {
+      updates.push("target_user_ids = ?");
+      params.push(body.audience === "specific" ? JSON.stringify(body.target_user_ids) : null);
+    }
+    if (body.data !== undefined) {
+      updates.push("data_json = ?");
+      params.push(body.data ? JSON.stringify(body.data) : null);
+    }
+    if (body.scheduled_at !== undefined) {
+      updates.push("scheduled_at = ?");
+      const effectiveTz = body.timezone || existing.timezone || "Asia/Kolkata";
+      const isOnce = (body.schedule_type || existing.schedule_type) === "once";
+      const newScheduledAt = body.scheduled_at
+        ? (isOnce
+            ? isoToSqliteDatetime(localIsoToUtcDate(body.scheduled_at, effectiveTz).toISOString())
+            : isoToSqliteDatetime(body.scheduled_at))
+        : null;
+      params.push(newScheduledAt);
+    }
+    if (body.max_runs !== undefined) {
+      updates.push("max_runs = ?");
+      params.push(Math.max(1, Math.min(parseInt(body.max_runs, 10) || 100, 9999)));
+    }
+    if (body.expires_at !== undefined) {
+      updates.push("expires_at = ?");
+      params.push(body.expires_at ? isoToSqliteDatetime(body.expires_at) : null);
+    }
+
+    if (updates.length === 0) {
+      return new Response(JSON.stringify({ error: "No fields to update" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    // If schedule-affecting fields changed, recompute next_run_at
+    const scheduleAffecting = ["schedule_type", "time_of_day", "days_of_week", "days_of_month", "scheduled_at", "timezone"];
+    if (scheduleAffecting.some((f) => body[f] !== undefined)) {
+      const merged = { ...existing, ...body };
+      const nextRunAt = computeNextRunAt(merged, new Date());
+      updates.push("next_run_at = ?");
+      params.push(nextRunAt);
+      // If was 'paused', reactivate
+      if (existing.status === "paused") {
+        updates.push("status = 'pending'");
+      }
+    }
+
+    updates.push("updated_at = datetime('now')");
+    params.push(id);
+
+    await env.DB.prepare(`UPDATE ScheduledNotifications SET ${updates.join(", ")} WHERE id = ?`).bind(...params).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.UpdateScheduled", env, request);
+  }
+}
+
+async function handleDeleteScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    // Soft delete: mark as cancelled (preserves history)
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
+    ).bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.DeleteScheduled", env);
+  }
+}
+
+async function handlePauseScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT status FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "pending") {
+      return new Response(JSON.stringify({ error: `Cannot pause: status is '${existing.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'paused', updated_at = datetime('now') WHERE id = ?",
+    ).bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.PauseScheduled", env);
+  }
+}
+
+async function handleResumeScheduledNotification(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const existing: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (existing.status !== "paused") {
+      return new Response(JSON.stringify({ error: `Cannot resume: status is '${existing.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    // Recompute next_run_at
+    const nextRunAt = computeNextRunAt(existing, new Date());
+    await env.DB.prepare(
+      "UPDATE ScheduledNotifications SET status = 'pending', next_run_at = ?, updated_at = datetime('now') WHERE id = ?",
+    ).bind(nextRunAt, id).run();
+    return new Response(JSON.stringify({ success: true, nextRunAt }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.ResumeScheduled", env);
+  }
+}
+
+async function handleRunScheduledNotificationNow(env: Env, userAuth: any, id: string): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const job: any = await env.DB.prepare("SELECT * FROM ScheduledNotifications WHERE id = ?").bind(id).first();
+    if (!job) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (job.status === "cancelled" || job.status === "expired") {
+      return new Response(JSON.stringify({ error: `Cannot run: status is '${job.status}'` }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const result = await fireScheduledNotification(env, job);
+    const newRunCount = Number(job.run_count ?? 0) + 1;
+
+    if (job.schedule_type === "once") {
+      await env.DB.prepare(
+        `UPDATE ScheduledNotifications
+         SET status = 'sent', last_run_at = datetime('now'), run_count = ?, result_log_id = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(newRunCount, result.logId, id).run();
+    } else {
+      const nextRunAt = computeNextRunAt({ ...job, status: "pending" }, new Date());
+      await env.DB.prepare(
+        `UPDATE ScheduledNotifications
+         SET last_run_at = datetime('now'), run_count = ?, result_log_id = ?, next_run_at = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(newRunCount, result.logId, nextRunAt, id).run();
+    }
+    return new Response(JSON.stringify({ success: true, sent: result.sent, failed: result.failed, runCount: newRunCount }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Notification.RunScheduled", env);
+  }
+}
+
+// Get list of users for the multi-select picker
+async function handleAdminUsersList(request: Request, env: Env, userAuth: any): Promise<Response> {
+  try {
+    if (!userAuth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const adminRole = (userAuth as any).role || (userAuth as any).custom_role;
+    if (adminRole !== "admin" && adminRole !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const url = new URL(request.url);
+    const search = (url.searchParams.get("search") || "").trim();
+    const roleFilter = url.searchParams.get("role") || "all";
+    const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10) || 50, 200);
+
+    let whereClause = "";
+    const params: any[] = [];
+    if (search) {
+      whereClause = "WHERE (full_name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')";
+      const escapedSearch = escapeLikePattern(search);
+      const like = `%${escapedSearch}%`;
+      params.push(like, like, like, like);
+    }
+    if (roleFilter !== "all") {
+      const roleClause = search ? "AND role = ?" : "WHERE role = ?";
+      whereClause = whereClause ? `${whereClause} ${roleClause}` : roleClause;
+      params.push(roleFilter);
+    }
+
+    const rows: any = await env.DB.prepare(
+      `SELECT id, full_name, email, phone, role FROM Users ${whereClause}
+       ORDER BY full_name ASC LIMIT ?`,
+    ).bind(...params, limit).all();
+
+    return new Response(JSON.stringify({ success: true, users: rows.results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UsersList", env, request);
+  }
+}
+
+// Dynamically serve firebase-messaging-sw.js with embedded config
+async function serveFirebaseSW(env: Env): Promise<Response> {
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase config missing in PLATFORM_SECRETS" }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const js = `
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: ${JSON.stringify(apiKey)},
+  projectId: ${JSON.stringify(projectId)},
+  messagingSenderId: ${JSON.stringify(messagingSenderId)},
+  appId: ${JSON.stringify(appId)}
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage(function(payload) {
+  var title = payload.notification?.title || 'Adityanveshan';
+  var options = {
+    body: payload.notification?.body || '',
+    icon: '/logo.png',
+    vibrate: [100, 50, 100],
+    data: payload.data || { url: '/dashboard' }
+  };
+  self.registration.showNotification(title, options);
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var urlToOpen = (event.notification.data && event.notification.data.clickUrl)
+    ? event.notification.data.clickUrl
+    : (event.notification.data && event.notification.data.url)
+      ? event.notification.data.url
+      : '/dashboard';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ('focus' in client) {
+          client.focus();
+          if (client.navigate) client.navigate(urlToOpen);
+          return;
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(urlToOpen);
+    })
+  );
+});
+`;
+
+  return new Response(js, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/javascript",
+      "Cache-Control": "no-cache",
+      "Service-Worker-Allowed": "/",
+    },
+  });
+}
+
+// Serve Firebase client config for frontend SDK initialization
+async function handleFirebaseConfig(env: Env): Promise<Response> {
+  const apiKey = await env.PLATFORM_SECRETS.get("FIREBASE_API_KEY");
+  const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
+  const messagingSenderId = await env.PLATFORM_SECRETS.get("FIREBASE_MESSAGING_SENDER_ID");
+  const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
+
+  if (!appId) {
+    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS Ã¢ÂÂ FCM token generation may fail");
+  }
+
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    return new Response(
+      JSON.stringify({ error: "Firebase configuration incomplete in PLATFORM_SECRETS", missing: { apiKey: !apiKey, projectId: !projectId, messagingSenderId: !messagingSenderId, appId: !appId } }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  return new Response(
+    JSON.stringify({ apiKey, projectId, messagingSenderId, appId }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+async function handleGetUnreadNotificationCount(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAuth(request, env);
+    const result: any = await env.DB.prepare(
+      "SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND is_read = 0",
+    )
+      .bind(auth.sub)
+      .first();
+    return new Response(JSON.stringify({ count: Number(result?.count ?? 0) }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+    return handleGlobalError(error, "Notification.UnreadCount", env, request);
+  }
+}
+
+async function handleGetMyCourses(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    let results;
+    try {
+      const res = await env.DB.prepare(`
+        SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Enrollments e
+        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        WHERE e.user_id = ?
+        ORDER BY e.purchased_at DESC
+      `).bind(userId).all();
+      results = res.results;
+    } catch (e: any) {
+      if (e.message?.toLowerCase().includes('no such column')) {
+        const res = await env.DB.prepare(`
+          SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+                 0 as min_live_class_credit_cost
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          LEFT JOIN Categories cat ON c.category_id = cat.id
+          WHERE e.user_id = ?
+          ORDER BY e.purchased_at DESC
+        `).bind(userId).all();
+        results = res.results;
+      } else { throw e; }
+    }
+
+    return new Response(JSON.stringify({ courses: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.MyCourses", env, request);
+  }
+}
+
+async function handleListUserForms(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    let results;
+    try {
+      const res = await env.DB.prepare(
+        "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id, book_id FROM FormTemplates ORDER BY created_at DESC",
+      ).all();
+      results = res.results;
+    } catch (e: any) {
+      if (e.message?.includes("no such column: book_id")) {
+        const res = await env.DB.prepare(
+          "SELECT id, slug, title, description, fields_json, theme_json, linked_course_id FROM FormTemplates ORDER BY created_at DESC",
+        ).all();
+        results = res.results;
+      } else {
+        throw e;
+      }
+    }
+    return new Response(JSON.stringify({ forms: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.ListForms", env, request);
+  }
+}
+
+async function handleListUserFormSubmissions(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT s.*, t.title as template_title, t.slug as template_slug
+       FROM FormSubmissions s
+       JOIN FormTemplates t ON s.template_id = t.id
+       WHERE s.user_id = ?
+       ORDER BY s.created_at DESC`,
+    ).bind(payload.sub).all();
+    return new Response(JSON.stringify({ submissions: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.ListFormSubmissions", env, request);
+  }
+}
+
+async function handleGetProfile(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?")
+      .bind(payload.sub)
+      .first()) as any;
+
+    let userData: any = null;
+    if (user) {
+      userData = { ...user };
+      delete userData.password_hash;
+      delete userData.salt;
+    }
+
+    const walletBalance = await getWalletBalance(env, payload.sub);
+    let aiCreditsAllowed = walletBalance.balance_rupees > 0 ? walletBalance.balance_rupees : 0;
+
+    if (userData) {
+      userData.balance_rupees = aiCreditsAllowed;
+    }
+
+    return new Response(JSON.stringify({ user: userData }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+    return handleGlobalError(error, "User.GetProfile", env, request);
+  }
+}
+
+async function handleUpdateProfile(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const {
+      email,
+      full_name,
+      phone,
+      district,
+      state,
+      country,
+      birth_date,
+      father_name,
+      mother_name,
+      grand_father_name,
+      pincode,
+      gender,
+      bio,
+      birth_place,
+    } = body;
+
+    if (
+      !email ||
+      !full_name ||
+      !phone ||
+      !birth_date ||
+      !father_name ||
+      !mother_name ||
+      !grand_father_name
+    ) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Email, Name, Phone, Birth Date, Father Name, Mother Name and Grandfather Name are required",
+        }),
+        { status: 400 },
+      );
+    }
+
+    const finalPincode = pincode || null;
+    const existingEmail = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND id != ?").bind(email, payload.sub).first();
+    if (existingEmail) {
+      return new Response(JSON.stringify({ error: "Email already in use by another account" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    }
+    await env.DB.prepare(
+      `
+      UPDATE Users SET
+        email = ?, full_name = ?, phone = ?, district = ?, state = ?, country = ?,
+        birth_date = ?, father_name = ?, mother_name = ?, grand_father_name = ?,
+        pincode = ?, gender = ?, bio = ?, birth_place = ?
+      WHERE id = ?
+    `,
+    )
+      .bind(
+        email,
+        full_name,
+        phone,
+        district || null,
+        state || null,
+        country || "IN",
+        birth_date,
+        father_name,
+        mother_name,
+        grand_father_name,
+        finalPincode,
+        gender || null,
+        bio || null,
+        birth_place || null,
+        payload.sub,
+      )
+      .run();
+
+    await broadcastToUser(env, payload.sub, "user", { updated: true });
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Profile updated successfully",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+    return handleGlobalError(error, "User.UpdateProfile", env, request);
+  }
+}
+
+async function handleGetNotifications(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const [notificationResult, countResult] = await env.DB.batch([
+      env.DB.prepare(
+        "SELECT id, user_id, title, message, type, is_read, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+      ).bind(payload.sub),
+      env.DB.prepare(
+        "SELECT COUNT(*) as count FROM Notifications WHERE user_id = ? AND is_read = 0",
+      ).bind(payload.sub),
+    ]);
+    const results = (notificationResult as any)?.results || [];
+    const unreadCount = Number((countResult as any)?.results?.[0]?.count || 0);
+    return new Response(JSON.stringify({ notifications: results, unreadCount }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+      });
+    return handleGlobalError(error, "Notifications.Get", env, request);
+  }
+}
+
+async function handleMarkNotificationRead(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { id } = (await request.json()) as any;
+
+    if (id === "all") {
+      await env.DB.prepare(
+        "UPDATE Notifications SET is_read = 1 WHERE user_id = ?",
+      )
+        .bind(payload.sub)
+        .run();
+    } else {
+      await env.DB.prepare(
+        "UPDATE Notifications SET is_read = 1 WHERE user_id = ? AND id = ?",
+      )
+        .bind(payload.sub, id)
+        .run();
+    }
+
+    await broadcastToUser(env, payload.sub, "notification", { all: !id, id });
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+      });
+    return handleGlobalError(error, "Notifications.MarkRead", env, request);
+  }
+}
+
+// --- Google Merchant API Helpers ---
+
+type MerchantListingInput = {
+  sync_enabled?: boolean | number;
+  offer_id?: string;
+  content_language?: string;
+  feed_label?: string;
+  target_country?: string;
+  currency?: string;
+  availability?: string;
+  condition?: string;
+  brand?: string;
+  google_product_category?: string;
+  image_url?: string;
+  landing_url?: string;
+};
+
+const GOOGLE_MERCHANT_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_MERCHANT_PRODUCTS_BASE = "https://merchantapi.googleapis.com/products/v1";
+const GOOGLE_MERCHANT_DATASOURCES_BASE = "https://merchantapi.googleapis.com/datasources/v1";
+const GOOGLE_MERCHANT_ACCOUNTS_BASE = "https://merchantapi.googleapis.com/accounts/v1";
+const GOOGLE_MERCHANT_SCOPE = "https://www.googleapis.com/auth/content";
+
+function jsonResponse(body: any, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function base64UrlEncodeBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function base64UrlEncodeJson(value: any): string {
+  return btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const normalized = pem.replace(/\\n/g, "\n");
+  const base64 = normalized
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function sanitizeOfferId(courseId: string, offerId?: string | null): string {
+  return (offerId || courseId).trim().replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64);
+}
+
+function normalizeMerchantListing(courseId: string, input: MerchantListingInput = {}) {
+  return {
+    sync_enabled: input.sync_enabled ? 1 : 0,
+    offer_id: sanitizeOfferId(courseId, input.offer_id),
+    content_language: (input.content_language || "en").trim() || "en",
+    feed_label: (input.feed_label || "IN").trim().toUpperCase() || "IN",
+    target_country: (input.target_country || "IN").trim().toUpperCase() || "IN",
+    currency: (input.currency || "INR").trim().toUpperCase() || "INR",
+    availability: (input.availability || "in_stock").trim() || "in_stock",
+    condition: (input.condition || "new").trim() || "new",
+    brand: (input.brand || "Adityanveshan").trim() || "Adityanveshan",
+    google_product_category: (input.google_product_category || "").trim() || null,
+    image_url: (input.image_url || "").trim() || null,
+    landing_url: (input.landing_url || "").trim() || null,
+  };
+}
+
+function parseGoogleMerchantServiceAccountJson(rawJson: string | null) {
+  if (!rawJson) return { serviceAccountEmail: null, privateKey: null, parseError: null };
+  try {
+    const parsed = JSON.parse(rawJson) as { client_email?: string; private_key?: string };
+    return {
+      serviceAccountEmail: parsed.client_email?.trim() || null,
+      privateKey: parsed.private_key?.trim() || null,
+      parseError: null,
+    };
+  } catch (error: any) {
+    return {
+      serviceAccountEmail: null,
+      privateKey: null,
+      parseError: error?.message || "Invalid Google Merchant service account JSON.",
+    };
+  }
+}
+
+async function getMerchantRuntimeConfig(env: Env) {
+  const [accountId, dataSourceName, serviceAccountJson, serviceAccountEmail, privateKey, appUrl] = await Promise.all([
+    getSecret(env, "GOOGLE_MERCHANT_ACCOUNT_ID", false),
+    getSecret(env, "GOOGLE_MERCHANT_DATASOURCE_NAME", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", false),
+    getSecret(env, "GOOGLE_MERCHANT_SERVICE_ACCOUNT_EMAIL", false),
+    getSecret(env, "GOOGLE_MERCHANT_PRIVATE_KEY", false),
+    getSecret(env, "APP_URL", false),
+  ]);
+  const jsonCredentials = parseGoogleMerchantServiceAccountJson(serviceAccountJson);
+  const resolvedServiceAccountEmail = serviceAccountEmail || jsonCredentials.serviceAccountEmail;
+  const resolvedPrivateKey = privateKey || jsonCredentials.privateKey;
+
+  return {
+    accountId,
+    dataSourceName,
+    serviceAccountJson,
+    serviceAccountEmailKey: serviceAccountEmail,
+    privateKeyKey: privateKey,
+    serviceAccountEmail: resolvedServiceAccountEmail,
+    privateKey: resolvedPrivateKey,
+    appUrl,
+    serviceAccountJsonParseError: jsonCredentials.parseError,
+    isConfigured: Boolean(accountId && dataSourceName && resolvedServiceAccountEmail && resolvedPrivateKey),
+  };
+}
+
+async function getGoogleMerchantAccessToken(env: Env): Promise<string> {
+  const config = await getMerchantRuntimeConfig(env);
+  if (!config.serviceAccountEmail || !config.privateKey) {
+    throw new Error("Google Merchant service account credentials are not configured.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const assertionHeader = base64UrlEncodeJson({ alg: "RS256", typ: "JWT" });
+  const assertionClaim = base64UrlEncodeJson({
+    iss: config.serviceAccountEmail,
+    scope: GOOGLE_MERCHANT_SCOPE,
+    aud: GOOGLE_MERCHANT_TOKEN_URL,
+    exp: now + 3600,
+    iat: now,
+  });
+  const unsignedAssertion = `${assertionHeader}.${assertionClaim}`;
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToArrayBuffer(config.privateKey),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsignedAssertion),
+  );
+  const assertion = `${unsignedAssertion}.${base64UrlEncodeBytes(new Uint8Array(signature))}`;
+
+  const tokenRes = await fetch(GOOGLE_MERCHANT_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }).toString(),
+  });
+
+  const tokenBody = (await tokenRes.json().catch(() => ({}))) as any;
+  if (!tokenRes.ok || !tokenBody.access_token) {
+    throw new Error(tokenBody.error_description || tokenBody.error || "Failed to fetch Google access token.");
+  }
+
+  return tokenBody.access_token;
+}
+
+async function googleMerchantApiRequest(env: Env, baseUrl: string, path: string, init: RequestInit = {}) {
+  const accessToken = await getGoogleMerchantAccessToken(env);
+  const res = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+      ...(init.headers || {}),
+    },
+  });
+  const body = (await res.json().catch(() => null)) as any;
+  if (!res.ok) {
+    const message = body?.error?.message || body?.error_description || body?.error || `Google Merchant API returned ${res.status}`;
+    throw new Error(message);
+  }
+  return body;
+}
+
+async function merchantApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_PRODUCTS_BASE, path, init);
+}
+
+
+async function merchantDataSourcesApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_DATASOURCES_BASE, path, init);
+}
+
+async function merchantAccountsApiRequest(env: Env, path: string, init: RequestInit = {}) {
+  return googleMerchantApiRequest(env, GOOGLE_MERCHANT_ACCOUNTS_BASE, path, init);
+}
+
+async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: string) {
+  if (userAuth.role !== "teacher") return;
+  const courseCheck = await env.DB.prepare("SELECT id FROM Courses WHERE id = ? AND teacher_id = ?")
+    .bind(courseId, userAuth.id)
+    .first();
+  if (!courseCheck) throw new Error("Forbidden");
+}
+
+async function getCourseMerchantRecord(env: Env, courseId: string) {
+  return await env.DB.prepare(
+    `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
+            ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
+            ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
+            ml.landing_url, ml.sync_status, ml.sync_error, ml.last_synced_at
+       FROM Courses c
+       LEFT JOIN Categories cat ON c.category_id = cat.id
+       LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id
+      WHERE c.id = ?`,
+  )
+    .bind(courseId)
+    .first();
+}
+
+function buildCourseLandingUrl(configAppUrl: string | null, request: Request, courseId: string, override?: string | null): string {
+  if (override) return override;
+  const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
+  return `${baseUrl}/course?id=${encodeURIComponent(courseId)}`;
+}
+
+function buildPublicAssetUrl(configAppUrl: string | null, request: Request, assetUrl?: string | null): string | null {
+  if (!assetUrl) return null;
+  try { return new URL(assetUrl).toString(); } catch { }
+  const baseUrl = (configAppUrl || new URL(request.url).origin).replace(/\/$/, "");
+  return `${baseUrl}/${String(assetUrl).replace(/^\//, "")}`;
+}
+
+function validateMerchantCourse(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string | null) {
+  const errors: string[] = [];
+  if (!course?.title) errors.push("Course title is required.");
+  if (!course?.description) errors.push("Course description is required.");
+  if (!Number(course?.price_rupees || 0)) errors.push("Course INR price must be greater than 0.");
+  if (!imageUrl) errors.push("Product image URL is required for Google Merchant sync.");
+  try { new URL(landingUrl); } catch { errors.push("Landing URL must be a valid public URL."); }
+  if (imageUrl) {
+    try { new URL(imageUrl); } catch { errors.push("Image URL must be a valid public URL."); }
+  }
+  if (!listing.offer_id) errors.push("Offer ID is required.");
+  return errors;
+}
+
+function buildMerchantProductInput(course: any, listing: ReturnType<typeof normalizeMerchantListing>, landingUrl: string, imageUrl: string) {
+  const amount = Number(course.price_rupees || 0);
+  return {
+    offerId: listing.offer_id,
+    contentLanguage: listing.content_language,
+    feedLabel: listing.feed_label,
+    productAttributes: {
+      title: String(course.title).slice(0, 150),
+      description: String(course.description || course.seo_description_en || course.title).slice(0, 5000),
+      link: landingUrl,
+      imageLink: imageUrl,
+      brand: listing.brand,
+      availability: listing.availability,
+      condition: listing.condition,
+      googleProductCategory: listing.google_product_category || course.category_name || undefined,
+      price: {
+        amountMicros: String(Math.round(amount * 1000000)),
+        currencyCode: listing.currency,
+      },
+    },
+  };
+}
+
+async function upsertCourseMerchantListing(env: Env, courseId: string, input: MerchantListingInput) {
+  const normalized = normalizeMerchantListing(courseId, input);
+  const existing: any = await env.DB.prepare("SELECT id FROM CourseMerchantListings WHERE course_id = ?")
+    .bind(courseId)
+    .first();
+  const listingId = existing?.id || generateCustomId("YA-MER");
+
+  await env.DB.prepare(
+    `INSERT INTO CourseMerchantListings (
+       id, course_id, sync_enabled, offer_id, content_language, feed_label, target_country, currency,
+       availability, condition, brand, google_product_category, image_url, landing_url, sync_status, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_synced', CURRENT_TIMESTAMP)
+     ON CONFLICT(course_id) DO UPDATE SET
+       sync_enabled = excluded.sync_enabled,
+       offer_id = excluded.offer_id,
+       content_language = excluded.content_language,
+       feed_label = excluded.feed_label,
+       target_country = excluded.target_country,
+       currency = excluded.currency,
+       availability = excluded.availability,
+       condition = excluded.condition,
+       brand = excluded.brand,
+       google_product_category = excluded.google_product_category,
+       image_url = excluded.image_url,
+       landing_url = excluded.landing_url,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(
+      listingId,
+      courseId,
+      normalized.sync_enabled,
+      normalized.offer_id,
+      normalized.content_language,
+      normalized.feed_label,
+      normalized.target_country,
+      normalized.currency,
+      normalized.availability,
+      normalized.condition,
+      normalized.brand,
+      normalized.google_product_category,
+      normalized.image_url,
+      normalized.landing_url,
+    )
+    .run();
+
+  return normalized;
+}
+
+async function syncCourseToGoogleMerchant(env: Env, request: Request, courseId: string, input?: MerchantListingInput) {
+  if (input) await upsertCourseMerchantListing(env, courseId, input);
+  const course: any = await getCourseMerchantRecord(env, courseId);
+  if (!course) throw new Error("Course not found.");
+
+  const config = await getMerchantRuntimeConfig(env);
+  if (!config.accountId || !config.dataSourceName) {
+    throw new Error("Google Merchant account ID or data source name is not configured.");
+  }
+
+  const listing = normalizeMerchantListing(courseId, {
+    sync_enabled: course.sync_enabled ?? 1,
+    offer_id: course.offer_id,
+    content_language: course.content_language,
+    feed_label: course.feed_label,
+    target_country: course.target_country,
+    currency: course.currency,
+    availability: course.availability,
+    condition: course.condition,
+    brand: course.brand,
+    google_product_category: course.google_product_category,
+    image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
+    landing_url: course.landing_url,
+  });
+  const landingUrl = buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url);
+  const imageUrl = buildPublicAssetUrl(config.appUrl, request, listing.image_url);
+  const validationErrors = validateMerchantCourse(course, listing, landingUrl, imageUrl);
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
+
+  const productInput = buildMerchantProductInput(course, listing, landingUrl, imageUrl || "");
+  const responseBody: any = await merchantApiRequest(
+    env,
+    `/accounts/${encodeURIComponent(config.accountId)}/productInputs:insert?dataSource=${encodeURIComponent(config.dataSourceName)}`,
+    { method: "POST", body: JSON.stringify(productInput) },
+  );
+
+  await env.DB.prepare(
+    `UPDATE CourseMerchantListings
+        SET sync_enabled = 1, product_resource_name = ?, data_source_name = ?, sync_status = 'synced',
+            sync_error = NULL, last_synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE course_id = ?`,
+  )
+    .bind(responseBody?.name || null, config.dataSourceName, courseId)
+    .run();
+
+  return responseBody;
+}
+
+async function handleCourseMerchant(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const userAuth = await requireAdminOrTeacher(request, env);
+    await ensureCourseMerchantAccess(env, userAuth, courseId);
+
+    if (request.method === "GET") {
+      const course: any = await getCourseMerchantRecord(env, courseId);
+      if (!course) return jsonResponse({ error: "Course not found" }, 404);
+      const config = await getMerchantRuntimeConfig(env);
+      const listing = normalizeMerchantListing(courseId, {
+        sync_enabled: course.sync_enabled || 0,
+        offer_id: course.offer_id,
+        content_language: course.content_language,
+        feed_label: course.feed_label,
+        target_country: course.target_country,
+        currency: course.currency,
+        availability: course.availability,
+        condition: course.condition,
+        brand: course.brand,
+        google_product_category: course.google_product_category,
+        image_url: course.image_url || course.thumbnail_url || course.merchant_default_image_url,
+        landing_url: course.landing_url,
+      });
+      return jsonResponse({
+        configured: config.isConfigured,
+        course: { id: course.id, title: course.title, description: course.description, price_rupees: course.price_rupees },
+        listing: {
+          ...listing,
+          product_resource_name: course.product_resource_name || null,
+          sync_status: course.sync_status || "not_synced",
+          sync_error: course.sync_error || null,
+          last_synced_at: course.last_synced_at || null,
+          landing_url: buildCourseLandingUrl(config.appUrl, request, courseId, listing.landing_url),
+        },
+      });
+    }
+
+    if (request.method === "PUT") {
+      const input = (await request.json()) as MerchantListingInput;
+      const listing = await upsertCourseMerchantListing(env, courseId, input);
+      await logAdminActivity(
+        env,
+        (userAuth as any).email || "Unknown Admin",
+        "Update Google Merchant Listing",
+        `Course ID: ${courseId} Merchant listing settings updated.`,
+        getClientIP(request),
+      );
+      return jsonResponse({ success: true, listing });
+    }
+
+    if (request.method === "POST") {
+      let input: MerchantListingInput | undefined;
+      try {
+        input = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const result = await syncCourseToGoogleMerchant(env, request, courseId, input);
+        await logAdminActivity(
+          env,
+          (userAuth as any).email || "Unknown Admin",
+          "Sync Google Merchant Listing",
+          `Course ID: ${courseId} synced to Google Merchant.`,
+          getClientIP(request),
+        );
+        return jsonResponse({ success: true, result });
+      } catch (error: any) {
+        const message = error?.message || String(error);
+        await env.DB.prepare(
+          `UPDATE CourseMerchantListings SET sync_status = 'error', sync_error = ?, updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
+        )
+          .bind(message, courseId)
+          .run();
+        return jsonResponse({ error: message }, 400);
+      }
+    }
+
+    if (request.method === "DELETE") {
+      await env.DB.prepare(
+        `UPDATE CourseMerchantListings SET sync_enabled = 0, sync_status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE course_id = ?`,
+      )
+        .bind(courseId)
+        .run();
+      return jsonResponse({ success: true });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.Course", env, request);
+  }
+}
+
+async function handleMerchantSettings(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const config = await getMerchantRuntimeConfig(env);
+    return jsonResponse({
+      configured: config.isConfigured,
+      account_id_present: Boolean(config.accountId),
+      data_source_name_present: Boolean(config.dataSourceName),
+      service_account_json_present: Boolean(config.serviceAccountJson),
+      service_account_json_valid: Boolean(config.serviceAccountJson && !config.serviceAccountJsonParseError),
+      service_account_json_error: config.serviceAccountJsonParseError,
+      service_account_email_present: Boolean(config.serviceAccountEmailKey),
+      private_key_present: Boolean(config.privateKeyKey),
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.Settings", env, request);
+  }
+}
+
+
+function normalizeMerchantAccessRights(input: any): string[] {
+  const allowed = new Set(["STANDARD", "ADMIN", "PERFORMANCE_REPORTING", "API_DEVELOPER"]);
+  const rights = Array.isArray(input) ? input : ["ADMIN", "API_DEVELOPER"];
+  const normalized = rights.map((right) => String(right).trim().toUpperCase()).filter((right) => allowed.has(right));
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : ["ADMIN", "API_DEVELOPER"];
+}
+
+function requireMerchantBaseConfig(config: Awaited<ReturnType<typeof getMerchantRuntimeConfig>>) {
+  if (!config.accountId) throw new Error("GOOGLE_MERCHANT_ACCOUNT_ID is missing in PLATFORM_SECRETS.");
+  if (!config.serviceAccountEmail || !config.privateKey) {
+    throw new Error("Google Merchant service account JSON or email/private key is missing in PLATFORM_SECRETS.");
+  }
+}
+
+async function handleMerchantDeveloperRegistration(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = await parseRequestBody(request);
+    const developerEmail = String(body.developerEmail || body.email || "").trim();
+    if (!developerEmail) return jsonResponse({ error: "developerEmail is required." }, 400);
+
+    const result = await merchantAccountsApiRequest(
+      env,
+      `/accounts/${encodeURIComponent(config.accountId!)}/developerRegistration:registerGcp`,
+      { method: "POST", body: JSON.stringify({ developerEmail }) },
+    );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperRegistration", env, request);
+  }
+}
+
+async function handleMerchantDeveloperUser(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    if (!["POST", "PATCH"].includes(request.method)) return new Response("Method not allowed", { status: 405 });
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+    const body = await parseRequestBody(request);
+    const email = String(body.email || body.developerEmail || "").trim();
+    if (!email) return jsonResponse({ error: "email is required." }, 400);
+    const accessRights = normalizeMerchantAccessRights(body.accessRights || body.access_rights);
+    const user = {
+      name: `accounts/${config.accountId}/users/${email}`,
+      accessRights,
+    };
+
+    const result = request.method === "POST"
+      ? await merchantAccountsApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/users?userId=${encodeURIComponent(email)}`,
+        { method: "POST", body: JSON.stringify(user) },
+      )
+      : await merchantAccountsApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/users/${encodeURIComponent(email)}?updateMask=accessRights`,
+        { method: "PATCH", body: JSON.stringify(user) },
+      );
+    return jsonResponse({ success: true, result });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DeveloperUser", env, request);
+  }
+}
+
+function normalizeMerchantDataSource(source: any, configuredDataSourceName?: string | null) {
+  const dataSourceId = source.dataSourceId || String(source.name || "").split("/").pop() || null;
+  return {
+    name: source.name,
+    data_source_id: dataSourceId,
+    display_name: source.displayName || source.name,
+    input: source.input || null,
+    type:
+      source.primaryProductDataSource ? "primary_product" :
+        source.supplementalProductDataSource ? "supplemental_product" :
+          source.localInventoryDataSource ? "local_inventory" :
+            source.regionalInventoryDataSource ? "regional_inventory" :
+              source.promotionDataSource ? "promotion" :
+                "unknown",
+    is_configured: source.name === configuredDataSourceName,
+    raw: source,
+  };
+}
+
+async function handleMerchantDataSources(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+
+    const config = await getMerchantRuntimeConfig(env);
+    requireMerchantBaseConfig(config);
+
+    if (request.method === "GET") {
+      const searchParams = new URL(request.url).searchParams;
+      const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") || 100), 1), 1000);
+      const pageToken = searchParams.get("pageToken") || "";
+      const query = new URLSearchParams({ pageSize: String(pageSize) });
+      if (pageToken) query.set("pageToken", pageToken);
+
+      const body = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources?${query.toString()}`,
+        { method: "GET" },
+      );
+      const dataSources = Array.isArray(body?.dataSources) ? body.dataSources : [];
+      const sources = dataSources.map((source: any) => normalizeMerchantDataSource(source, config.dataSourceName));
+
+      return jsonResponse({
+        success: true,
+        account_id: config.accountId,
+        configured_data_source_name: config.dataSourceName || null,
+        sources,
+        next_page_token: body?.nextPageToken || null,
+      });
+    }
+
+    if (request.method === "POST") {
+      await requireAdmin(request, env);
+      const body = await parseRequestBody(request);
+      const contentLanguage = String(body.contentLanguage || body.content_language || "en").trim() || "en";
+      const feedLabel = String(body.feedLabel || body.feed_label || "IN").trim().toUpperCase() || "IN";
+      const countries = Array.isArray(body.countries) && body.countries.length > 0
+        ? body.countries.map((country: any) => String(country).trim().toUpperCase()).filter(Boolean)
+        : [feedLabel];
+      const displayName = String(body.displayName || body.display_name || "YA Courses API Data Source").trim() || "YA Courses API Data Source";
+      const requestBody = {
+        primaryProductDataSource: {
+          contentLanguage,
+          countries,
+          feedLabel,
+        },
+        displayName,
+      };
+      const result = await merchantDataSourcesApiRequest(
+        env,
+        `/accounts/${encodeURIComponent(config.accountId!)}/dataSources`,
+        { method: "POST", body: JSON.stringify(requestBody) },
+      );
+      if (body.saveAsDefault !== false && result?.name) {
+        await env.PLATFORM_SECRETS.put("GOOGLE_MERCHANT_DATASOURCE_NAME", String(result.name));
+      }
+      return jsonResponse({ success: true, saved_as_default: body.saveAsDefault !== false, source: normalizeMerchantDataSource(result, result?.name) });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired" || error.message === "Token expired") return jsonResponse({ error: error.message }, 401);
+    if (error.message === "Forbidden") return jsonResponse({ error: error.message }, 403);
+    return handleGlobalError(error, "GoogleMerchant.DataSources", env, request);
+  }
+}
+
+
+// --- Exams & Quizzes Handlers ---
+
+function parseExamOptions(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim());
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item || "").trim());
+    } catch (_) { }
+  }
+  return [];
+}
+
+function normalizeExamQuestions(rawQuestions: any[]): any[] {
+  if (!Array.isArray(rawQuestions)) return [];
+  return rawQuestions
+    .map((question, index) => {
+      const options = parseExamOptions(question.options || question.options_json);
+      const questionType = String(question.question_type || "mcq");
+      return {
+        id: question.id || generateCustomId("YA-QST"),
+        question_text: String(question.question_text || question.text || "").trim(),
+        options,
+        correct_option_index: Number(question.correct_option_index ?? question.correctIndex ?? 0),
+        marks: Math.max(1, Number(question.marks || 1)),
+        order_index: Number(question.order_index ?? index),
+        question_type: questionType,
+      };
+    })
+    .filter((question) => {
+      if (!question.question_text) return false;
+      if (question.question_type === "mcq") {
+        return (
+          question.options.length >= 2 &&
+          question.correct_option_index >= 0 &&
+          question.correct_option_index < question.options.length
+        );
+      }
+      return true; // text/assignment type
+    });
+}
+
+async function handleAdminExamAnalytics(request: Request, env: Env, examId: string): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const [totalResult, scoreResult, topStudentsResult, recentResult] = await env.DB.batch([
+      env.DB.prepare(`SELECT COUNT(*) as totalAttempts FROM ExamAttempts WHERE exam_id = ?`).bind(examId),
+      env.DB.prepare(`SELECT ROUND(AVG(score_percent), 1) as averageScore, ROUND(100.0 * SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) / COUNT(*), 1) as passRate FROM ExamAttempts WHERE exam_id = ?`).bind(examId),
+      env.DB.prepare(`
+        SELECT u.full_name as name, ea.score_percent as score
+        FROM ExamAttempts ea JOIN Users u ON ea.user_id = u.id
+        WHERE ea.exam_id = ? ORDER BY ea.score_percent DESC LIMIT 5
+      `).bind(examId),
+      env.DB.prepare(`
+        SELECT u.full_name as name, ea.score_percent as score, ea.passed as passed
+        FROM ExamAttempts ea JOIN Users u ON ea.user_id = u.id
+        WHERE ea.exam_id = ? ORDER BY ea.submitted_at DESC LIMIT 10
+      `).bind(examId),
+    ]);
+
+    const total = (totalResult as any)?.results?.[0] || {};
+    const scores = (scoreResult as any)?.results?.[0] || {};
+    const top = (topStudentsResult as any)?.results || [];
+    const recent = (recentResult as any)?.results || [];
+
+    return new Response(JSON.stringify({
+      totalAttempts: Number(total.totalAttempts ?? 0),
+      averageScore: Number(scores.averageScore ?? 0),
+      passRate: Number(scores.passRate ?? 0),
+      topStudents: top,
+      recentAttempts: recent,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    console.error("Error fetching exam analytics:", error);
+    return new Response(JSON.stringify({ error: "Failed to fetch analytics" }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
+}
+
+async function handleAdminExams(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const examMatch = url.pathname.match(/^\/api\/admin\/exams\/([^/]+)$/);
+    const examId = examMatch ? decodeURIComponent(examMatch[1]) : null;
+
+    if (request.method === "GET") {
+      if (examId) {
+        const exam: any = await env.DB.prepare(
+          `SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name
+           FROM Exams e
+           LEFT JOIN Courses c ON e.course_id = c.id
+           LEFT JOIN Books bo ON e.book_id = bo.id
+           LEFT JOIN Batches b ON e.batch_id = b.id
+           WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!exam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && exam.teacher_id !== auth.id) {
+          const ownsCourse = await env.DB.prepare("SELECT id FROM Courses WHERE id = ? AND teacher_id = ?")
+            .bind(exam.course_id, auth.id)
+            .first();
+          if (!ownsCourse) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+        const questions = await env.DB.prepare(
+          "SELECT id, question_text, options_json, correct_option_index, marks, order_index, question_type FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+        )
+          .bind(examId)
+          .all();
+        return new Response(JSON.stringify({ exam, questions: questions.results || [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const teacherFilter = auth.role === "teacher" ? "WHERE (e.teacher_id = ? OR c.teacher_id = ?)" : "";
+      const query = `
+        SELECT e.*, c.title as course_title, bo.title as book_title, b.name as batch_name,
+          (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = e.id) as question_count,
+          (SELECT COUNT(*) FROM ExamAttempts a WHERE a.exam_id = e.id) as attempt_count
+        FROM Exams e
+        LEFT JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Books bo ON e.book_id = bo.id
+        LEFT JOIN Batches b ON e.batch_id = b.id
+        ${teacherFilter}
+        ORDER BY e.created_at DESC
+      `;
+      const statement = env.DB.prepare(query);
+      const { results } = auth.role === "teacher" ? await statement.bind(auth.id, auth.id).all() : await statement.all();
+      return new Response(JSON.stringify({ exams: results || [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST" || request.method === "PUT") {
+      if (request.method === "PUT") {
+        const existingExam: any = await env.DB.prepare(
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!existingExam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && existingExam.teacher_id !== auth.id) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+      }
+
+      const body = (await request.json()) as any;
+      const courseId = String(body.course_id || body.courseId || "").trim() || null;
+      const bookId = String(body.book_id || body.bookId || "").trim() || null;
+      const batchId = String(body.batch_id || body.batchId || "").trim() || null;
+      const title = String(body.title || "").trim();
+      const description = String(body.description || "").trim();
+      const type = String(body.type || "quiz").trim();
+      const scheduledAt = body.scheduled_at ? String(body.scheduled_at) : null;
+      const endAt = body.end_at ? String(body.end_at) : null;
+      const requireVideo = body.require_video === true || body.require_video === 1 ? 1 : 0;
+      const passingScore = Math.max(0, Math.min(100, Number(body.passing_score ?? body.passingScore ?? 50)));
+      const durationMinutes = Math.max(0, Number(body.duration_minutes ?? body.durationMinutes ?? 0));
+      const isPublished = body.is_published === true || body.is_published === 1 ? 1 : 0;
+      const questions = normalizeExamQuestions(body.questions || []);
+
+      if (!title || (!courseId && !bookId)) {
+        return new Response(JSON.stringify({ error: "Title and course or book are required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (courseId && bookId) {
+        return new Response(JSON.stringify({ error: "Cannot link exam to both course and book" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (questions.length === 0) {
+        return new Response(JSON.stringify({ error: "At least one valid question is required." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (courseId) {
+        const course: any = await env.DB.prepare("SELECT id, teacher_id FROM Courses WHERE id = ?")
+          .bind(courseId)
+          .first();
+        if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (auth.role === "teacher" && course.teacher_id !== auth.id) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        }
+      } else if (bookId && auth.role === "teacher") {
+        return new Response(JSON.stringify({ error: "Teachers cannot create book exams" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (batchId) {
+        const batch = await env.DB.prepare("SELECT id FROM Batches WHERE id = ? AND (course_id = ? OR book_id = ?)")
+          .bind(batchId, courseId, bookId)
+          .first();
+        if (!batch) return new Response(JSON.stringify({ error: "Batch does not belong to selected course/book." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      const id = request.method === "POST" ? generateCustomId("YA-EXM") : String(examId || "");
+      if (request.method === "PUT" && !id) {
+        return new Response(JSON.stringify({ error: "Exam id is required." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      const totalMarks = questions.reduce((sum, question) => sum + question.marks, 0);
+      const writeStatements = [];
+      if (request.method === "POST") {
+        writeStatements.push(
+          env.DB.prepare(
+            `INSERT INTO Exams (id, course_id, book_id, batch_id, teacher_id, title, description, type, scheduled_at, end_at, require_video, passing_score, duration_minutes, is_published, total_marks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            id,
+            courseId,
+            bookId,
+            batchId,
+            auth.id,
+            title,
+            description,
+            type,
+            scheduledAt,
+            endAt,
+            requireVideo,
+            passingScore,
+            durationMinutes,
+            isPublished,
+            totalMarks,
+          ),
+        );
+      } else {
+        writeStatements.push(
+          env.DB.prepare(
+            `UPDATE Exams SET course_id = ?, book_id = ?, batch_id = ?, title = ?, description = ?, type = ?, scheduled_at = ?, end_at = ?, require_video = ?, passing_score = ?, duration_minutes = ?, is_published = ?, total_marks = ? WHERE id = ?`,
+          ).bind(
+            courseId,
+            bookId,
+            batchId,
+            title,
+            description,
+            type,
+            scheduledAt,
+            endAt,
+            requireVideo,
+            passingScore,
+            durationMinutes,
+            isPublished,
+            totalMarks,
+            id,
+          ),
+          env.DB.prepare("DELETE FROM ExamQuestions WHERE exam_id = ?").bind(id),
+        );
+      }
+      questions.forEach((question) => {
+        writeStatements.push(
+          env.DB.prepare(
+            `INSERT INTO ExamQuestions (id, exam_id, question_text, options_json, correct_option_index, marks, order_index, question_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            question.id,
+            id,
+            question.question_text,
+            JSON.stringify(question.options),
+            question.correct_option_index,
+            question.marks,
+            question.order_index,
+            question.question_type,
+          ),
+        );
+      });
+      await env.DB.batch(writeStatements);
+      if (scheduledAt) {
+        const startDate = new Date(scheduledAt);
+        const endDate = endAt ? new Date(endAt) : new Date(startDate.getTime() + (durationMinutes || 60) * 60 * 1000);
+        syncEventToGoogle(env, "Exams", id, `Exam: ${title}`, description || title, startDate.toISOString(), endDate.toISOString()).catch((e) => console.error("[GC] Exam sync failed", e));
+      }
+      return new Response(JSON.stringify({ message: "Exam saved successfully", id }), {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "DELETE" && examId) {
+      if (auth.role === "teacher") {
+        const existingExam: any = await env.DB.prepare(
+          `SELECT e.id, c.teacher_id FROM Exams e LEFT JOIN Courses c ON e.course_id = c.id WHERE e.id = ?`,
+        )
+          .bind(examId)
+          .first();
+        if (!existingExam) return new Response(JSON.stringify({ error: "Exam not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (existingExam.teacher_id !== auth.id) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      await removeEventFromGoogle(env, "Exams", examId);
+      await env.DB.prepare("DELETE FROM Exams WHERE id = ?").bind(examId).run();
+      return new Response(JSON.stringify({ message: "Exam deleted successfully" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Forbidden" ? 403 : 401, headers: { "Content-Type": "application/json" } });
+    }
+    return handleGlobalError(error, "Admin.Exams", env, request);
+  }
+}
+
+async function getStudentExamAccess(env: Env, userId: string, examId: string): Promise<any> {
+  return env.DB.prepare(
+    `SELECT ex.*, c.title as course_title, bo.title as book_title, b.name as batch_name, e.id as enrollment_id, e.batch_id as enrollment_batch_id, e.course_id as enrolled_course_id
+     FROM Exams ex
+     LEFT JOIN Courses c ON ex.course_id = c.id
+     LEFT JOIN Books bo ON ex.book_id = bo.id
+     JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed') AND (
+        (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+        OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+        OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+     )
+     LEFT JOIN Batches b ON ex.batch_id = b.id
+     WHERE ex.id = ? AND ex.is_published = 1 AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+     LIMIT 1`,
+  )
+    .bind(userId, examId)
+    .first();
+}
+
+async function handleStudentExams(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(JSON.stringify({ error: "Only students can access exams." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const url = new URL(request.url);
+    const submitMatch = url.pathname.match(/^\/api\/exams\/([^/]+)\/submit$/);
+    const detailMatch = url.pathname.match(/^\/api\/exams\/([^/]+)$/);
+
+    if (request.method === "GET" && url.pathname === "/api/exams") {
+      const { results } = await env.DB.prepare(
+        `SELECT ex.id, ex.title, ex.description, ex.type, ex.scheduled_at, ex.end_at, ex.require_video, ex.course_id, ex.book_id, ex.batch_id, ex.passing_score, ex.duration_minutes, ex.total_marks,
+                c.title as course_title, bo.title as book_title, b.name as batch_name,
+                (SELECT COUNT(*) FROM ExamQuestions q WHERE q.exam_id = ex.id) as question_count,
+                (SELECT MAX(a.score_percent) FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ?) as best_score,
+                (SELECT passed FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_passed,
+                (SELECT submitted_at FROM ExamAttempts a WHERE a.exam_id = ex.id AND a.user_id = ? ORDER BY submitted_at DESC LIMIT 1) as latest_submitted_at
+         FROM Exams ex
+         LEFT JOIN Courses c ON ex.course_id = c.id
+         LEFT JOIN Books bo ON ex.book_id = bo.id
+         LEFT JOIN Batches b ON ex.batch_id = b.id
+         WHERE ex.is_published = 1
+         AND EXISTS (
+            SELECT 1 FROM Enrollments e
+            WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+            AND (
+                (ex.course_id IS NOT NULL AND e.course_id = ex.course_id)
+                OR (ex.book_id IS NOT NULL AND e.book_id = ex.book_id)
+                OR (ex.book_id IS NOT NULL AND e.course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ex.book_id))
+            )
+            AND (ex.batch_id IS NULL OR ex.batch_id = '' OR ex.batch_id = e.batch_id)
+         )
+         ORDER BY ex.created_at DESC`,
+      )
+        .bind(payload.sub, payload.sub, payload.sub, payload.sub)
+        .all();
+      return new Response(JSON.stringify({ exams: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "GET" && detailMatch) {
+      const examId = decodeURIComponent(detailMatch[1]);
+      const exam = await getStudentExamAccess(env, payload.sub, examId);
+      if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+      // Check scheduling
+      const now = new Date();
+      if (exam.scheduled_at && new Date(exam.scheduled_at) > now) {
+        return new Response(JSON.stringify({ error: "This test is not yet open.", scheduled_at: exam.scheduled_at }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      if (exam.end_at && new Date(exam.end_at) < now) {
+        return new Response(JSON.stringify({ error: "This test has ended.", end_at: exam.end_at }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
+      const { results } = await env.DB.prepare(
+        "SELECT id, question_text, options_json, marks, order_index, question_type FROM ExamQuestions WHERE exam_id = ? ORDER BY order_index ASC",
+      )
+        .bind(examId)
+        .all();
+      return new Response(JSON.stringify({ exam, questions: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST" && submitMatch) {
+      const examId = decodeURIComponent(submitMatch[1]);
+      const exam: any = await getStudentExamAccess(env, payload.sub, examId);
+      if (!exam) return new Response(JSON.stringify({ error: "Exam not found or not assigned to you." }), { status: 404, headers: { "Content-Type": "application/json" } });
+
+      // Check scheduling for submission as well
+      const now = new Date();
+      if (exam.scheduled_at && new Date(exam.scheduled_at) > now) {
+        return new Response(JSON.stringify({ error: "This test is not yet open." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      if (exam.end_at && new Date(exam.end_at) < now) {
+        return new Response(JSON.stringify({ error: "This test has ended." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+
+      // Check sequential unlock if this exam is linked to a lesson
+      const linkedLesson: any = await env.DB.prepare(
+        "SELECT l.id, c.sequential_unlock FROM Lessons l JOIN Courses c ON c.id = ? WHERE l.exam_id = ?"
+      ).bind(exam.enrolled_course_id, examId).first();
+
+      if (linkedLesson && linkedLesson.sequential_unlock === 1) {
+        const allLessons = await env.DB.prepare(
+          "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+        ).bind(exam.enrolled_course_id, exam.enrolled_course_id).all();
+        
+        const lessonsList = allLessons.results as any[];
+        const currentIndex = lessonsList.findIndex(l => l.id === linkedLesson.id);
+        if (currentIndex > 0) {
+           const prevLessonId = lessonsList[currentIndex - 1].id;
+           const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(payload.sub, prevLessonId).first();
+           if (!isCompleted) {
+              return new Response(JSON.stringify({ error: "Cannot submit this exam yet. Previous lesson/quiz is not completed." }), { 
+                status: 403, 
+                headers: { "Content-Type": "application/json" } 
+              });
+           }
+        }
+      }
+
+      const body = (await request.json()) as any;
+      const answers = Array.isArray(body.answers) ? body.answers : [];
+      const answerMap = new Map(answers.map((answer: any) => [String(answer.question_id), answer.selected_index]));
+      const questionsRes = await env.DB.prepare(
+        "SELECT id, correct_option_index, marks, question_type FROM ExamQuestions WHERE exam_id = ?",
+      )
+        .bind(examId)
+        .all();
+      const questions = (questionsRes.results || []) as any[];
+      if (questions.length === 0) return new Response(JSON.stringify({ error: "Exam has no questions." }), { status: 400, headers: { "Content-Type": "application/json" } });
+
+      const totalMarks = questions.reduce((sum, question) => sum + Number(question.marks || 1), 0);
+      const earnedMarks = questions.reduce((sum, question) => {
+        if (question.question_type === "mcq") {
+          return (
+            sum +
+            (answerMap.get(question.id) === Number(question.correct_option_index) ? Number(question.marks || 1) : 0)
+          );
+        } else {
+          // Assignment type, if they provided any answer (non-empty string), we count it for now
+          // (In a real system, these might need manual grading, but here we can automate if needed)
+          const providedAnswer = answers.find((a: any) => String(a.question_id) === String(question.id))?.answer_text;
+          return sum + (providedAnswer && providedAnswer.trim() ? Number(question.marks || 1) : 0);
+        }
+      }, 0);
+      const scorePercent = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
+      const passed = scorePercent >= Number(exam.passing_score || 0) ? 1 : 0;
+      const attemptId = generateCustomId("YA-ATM");
+      await env.DB.prepare(
+        `INSERT INTO ExamAttempts (id, exam_id, user_id, answers_json, score, score_percent, total_marks, passed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(attemptId, examId, payload.sub, JSON.stringify(answers), earnedMarks, scorePercent, totalMarks, passed)
+        .run();
+
+      if (passed === 1) {
+         const linkedLesson: any = await env.DB.prepare("SELECT id FROM Lessons WHERE exam_id = ?").bind(examId).first();
+         if (linkedLesson) {
+            await env.DB.prepare(
+              "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, 0) ON CONFLICT(user_id, lesson_id) DO NOTHING"
+            ).bind(payload.sub, linkedLesson.id).run();
+         }
+      }
+
+      return new Response(JSON.stringify({ message: "Exam submitted successfully", attempt_id: attemptId, score: earnedMarks, total_marks: totalMarks, score_percent: scorePercent, passed }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Route not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Session Expired") {
+      return new Response(JSON.stringify({ error: error.message }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    return handleGlobalError(error, "Student.Exams", env, request);
+  }
+}
+
+// --- Course & Enrollment Handlers ---
+
+async function handleListCourses(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    let results;
+    try {
+      const res = await env.DB.prepare(
+        `
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Courses c
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        ORDER BY c.created_at DESC
+      `,
+      ).all();
+      results = res.results;
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no such column")) {
+        const res = await env.DB.prepare(
+          `
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+                 0 as min_live_class_credit_cost
+          FROM Courses c
+          LEFT JOIN Categories cat ON c.category_id = cat.id
+          ORDER BY c.created_at DESC
+        `,
+        ).all();
+        results = res.results;
+      } else {
+        throw dbError;
+      }
+    }
+    return new Response(JSON.stringify({ courses: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Course.List", env, request);
+  }
+}
+
+async function handleGetCourse(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+      .bind(courseId)
+      .first();
+    if (!course)
+      return new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+      });
+
+    let isEnrolled = false;
+    let isAdmin = false;
+    let paymentStatus: string | null = null;
+    let enrollmentStatus: string | null = null;
+    let progress = 0;
+    let hasActiveSubscription = false;
+    let subscriptionCourseAccess = false;
+    let walletBalanceCrs: { balance_rupees: number } | null = null;
+
+    const token = getCookie(request, "session");
+    if (token) {
+      try {
+        const jwtSecret = await getCachedJwtSecret(env);
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+        if (payload.role === "admin" || payload.role === "teacher")
+          isAdmin = true;
+        if (payload.role === "student") {
+          walletBalanceCrs = await getWalletBalance(env, payload.sub);
+          const profile = await getUserAccessProfile(payload.sub, env);
+          hasActiveSubscription = profile.hasActiveSub;
+          subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
+        }
+        const existing = (await env.DB.prepare(
+          `SELECT payment_status, status, progress
+           FROM Enrollments
+           WHERE user_id = ? AND course_id = ?
+           ORDER BY purchased_at DESC
+           LIMIT 1`,
+        )
+          .bind(payload.sub, courseId)
+          .first()) as any;
+        if (existing) {
+          isEnrolled = true;
+          paymentStatus = existing.payment_status || null;
+          enrollmentStatus = existing.status || null;
+          progress = existing.progress ?? 0;
+        }
+      } catch (e) {
+        /* ignore invalid token for public view */
+      }
+    }
+
+    return new Response(JSON.stringify({
+      course,
+      isEnrolled,
+      isAdmin,
+      paymentStatus,
+      enrollmentStatus,
+      progress,
+      hasActiveSubscription,
+      subscriptionCourseAccess,
+      walletBalance: walletBalanceCrs,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Course.Get", env, request);
+  }
+}
+
+async function handleGetBook(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
+      .bind(bookId)
+      .first();
+    if (!book)
+      return new Response(JSON.stringify({ error: "Book not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const [lessonsRes, linkedCoursesRes] = await Promise.all([
+      env.DB.prepare(
+        `SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi
+         FROM Lessons l
+         LEFT JOIN Batches b ON l.batch_id = b.id
+         WHERE l.book_id = ? ORDER BY l.order_index ASC`,
+      ).bind(bookId).all(),
+      env.DB.prepare(
+        "SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
+      ).bind(bookId).all(),
+    ]);
+
+    let isEnrolled = false;
+    let paymentStatus: string | null = null;
+    let completedLessonIds: string[] = [];
+
+    const token = getCookie(request, "session");
+    if (token) {
+      try {
+        const jwtSecret = await getCachedJwtSecret(env);
+        if (jwtSecret) {
+          const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+          const userId = payload.sub;
+
+          // Check enrollment by book_id
+          const enrollment: any = await env.DB.prepare(
+            "SELECT payment_status FROM Enrollments WHERE user_id = ? AND book_id = ? AND status IN ('active', 'completed') LIMIT 1",
+          ).bind(userId, bookId).first();
+          if (enrollment) {
+            isEnrolled = true;
+            paymentStatus = enrollment.payment_status;
+          }
+
+          // Also check enrollment via linked course
+          if (!isEnrolled && linkedCoursesRes.results.length > 0) {
+            const courseIds = linkedCoursesRes.results.map((c: any) => c.id);
+            const placeholders = courseIds.map(() => "?").join(",");
+            const courseEnr: any = await env.DB.prepare(
+              `SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id IN (${placeholders}) AND status IN ('active', 'completed') LIMIT 1`,
+            ).bind(userId, ...courseIds).first();
+            if (courseEnr) {
+              isEnrolled = true;
+              paymentStatus = courseEnr.payment_status;
+            }
+          }
+
+          // Check subscription access
+          if (!isEnrolled) {
+            for (const c of linkedCoursesRes.results as any[]) {
+              if (await userHasSubscriptionCourseAccess(userId, c.id, env)) {
+                isEnrolled = true;
+                paymentStatus = "paid";
+                break;
+              }
+            }
+          }
+
+          // Completed lesson IDs
+          const completedRes = await env.DB.prepare(
+            "SELECT lesson_id FROM CompletedLessons WHERE user_id = ? AND lesson_id IN (SELECT id FROM Lessons WHERE book_id = ?)",
+          ).bind(userId, bookId).all();
+          completedLessonIds = completedRes.results?.map((r: any) => r.lesson_id) || [];
+        }
+      } catch (e) {
+        // Not authenticated Ã¢ÂÂ treat as unauthenticated user
+      }
+    }
+
+    return new Response(JSON.stringify({
+      book,
+      lessons: lessonsRes.results,
+      courses: linkedCoursesRes.results,
+      isEnrolled,
+      paymentStatus,
+      completedLessonIds,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.Get", env, request);
+  }
+}
+
+async function handleListPublicBooks(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, title_hi, description, description_hi, price_rupees,
+              thumbnail_url, self_study_enabled, wallet_rupees,
+              is_standalone
+       FROM Books
+       ORDER BY created_at DESC`,
+    ).all();
+    return new Response(JSON.stringify({ books: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.List", env, request);
+  }
+}
+
+async function handleAdminListBooks(request: Request, env: Env, bookId?: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const id = bookId || url.searchParams.get("bookId");
+
+    // Single book fetch Ã¢ÂÂ used by [bookId] page to get title
+    if (id) {
+      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
+      if (!book) {
+        return new Response(JSON.stringify({ error: "Book not found" }), {
+          status: 404,
+          headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ book }), {
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      });
+    }
+
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, title, price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+               created_at
+        FROM Books
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Books").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      books: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ListBooks", env, request);
+  }
+}
+
+async function handleAdminCreateBook(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const body: any = await request.json();
+
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
+      });
+    }
+
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
+      });
+    }
+
+    const id = generateCustomId("YA-BOK");
+    const bookCost = normalizeNonNegativeInt(body.wallet_rupees);
+    await env.DB.prepare(
+      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+      .bind(
+        id,
+        body.title.trim(),
+        body.description || '',
+        normalizeNonNegativeInt(body.price_rupees),
+        normalizeNonNegativeInt(body.price_usd),
+        body.thumbnail_url || null,
+        body.is_standalone ? 1 : 0,
+        body.self_study_enabled ? 1 : 0,
+        bookCost,
+      ).run();
+    return new Response(JSON.stringify({ success: true, id }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBook", env, request);
+  }
+}
+
+async function handleAdminUpdateBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const body: any = await request.json();
+
+    if (!body.title || body.title.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Title is required" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
+      });
+    }
+
+    if (body.title.length > 200) {
+      return new Response(JSON.stringify({ error: "Title must be less than 200 characters" }), {
+        status: 400,
+        headers: await getCORSHeaders(request, env)
+      });
+    }
+
+    const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+
+    const existingBook: any = await env.DB.prepare(
+      "SELECT thumbnail_url FROM Books WHERE id = ?"
+    ).bind(bookId).first();
+
+    await env.DB.prepare(
+      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
+    )
+      .bind(
+        body.title.trim(),
+        body.description || '',
+        body.price_rupees != null ? normalizeNonNegativeInt(body.price_rupees) : null,
+        body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
+        body.thumbnail_url ?? null,
+        body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
+        body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
+        updateBookCost,
+        bookId,
+      ).run();
+
+    if (body.thumbnail_url != null && existingBook?.thumbnail_url && existingBook.thumbnail_url !== body.thumbnail_url) {
+      await deleteR2ObjectFromUrl(env, existingBook.thumbnail_url);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBook", env, request);
+  }
+}
+
+async function handleAdminDeleteBook(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    await env.DB.prepare("DELETE FROM Books WHERE id = ?").bind(bookId).run();
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBook", env, request);
+  }
+}
+
+// Ã¢ÂÂÃ¢ÂÂ Book Lesson Handlers Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// These handle /api/admin/books/lessons with bookId and lessonId as query params.
+// Book-only lessons have course_id = NULL and book_id = bookId.
+
+async function handleAdminGetBookLessons(request: Request, env: Env, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE book_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(bookId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE book_id = ?").bind(bookId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetBookLessons", env, request);
+  }
+}
+
+async function handleAdminCreateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const body = (await request.json()) as any;
+    const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
+    await env.DB.prepare(
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status, exam_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      lessonId,
+      null,
+      bookId,
+      body.chapter_title || "General",
+      body.title ?? "Untitled Lesson",
+      body.type ?? "video",
+      body.content_url ?? "",
+      body.text_content ?? "",
+      body.order_index ?? 0,
+      body.is_free ?? 0,
+      hasManualText ? "completed" : "pending",
+      body.exam_id || null
+    ).run();
+
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(env, ctx, lessonId, body.extracted_audio_url ? "audio" : lessonType, analysisUrl, body.title || "Untitled")
+      : false;
+
+    let courseId = body.course_id;
+    if (!courseId) {
+      const cb = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      ).bind(bookId).first() as any;
+      if (cb) courseId = cb.course_id;
+    }
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId || "",
+        title: body.title || "Untitled Lesson",
+        type: lessonType,
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: body.text_content_hi || "",
+        order_index: body.order_index ?? 0,
+      }));
+    }
+
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
+      status: 200,
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateBookLesson", env, request);
+  }
+}
+
+async function handleAdminUpdateBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const existing: any = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+      });
+    }
+
+    const body = (await request.json()) as any;
+
+    const newContentUrl = body.content_url !== undefined ? body.content_url : existing.content_url;
+    const newTextContent = body.text_content !== undefined ? body.text_content : existing.text_content;
+    const newType = body.type ?? existing.type;
+    const newTitle = body.title ?? existing.title;
+
+    const hasManualText = hasLessonTextContent(newTextContent);
+    const alreadyHasText = hasLessonTextContent(existing.text_content);
+    const processingStatus = hasManualText ? "completed" : (body.content_url ? "pending" : existing.processing_status);
+
+    await env.DB.prepare(
+      `UPDATE Lessons SET
+        chapter_title = ?,
+        title = ?,
+        type = ?,
+        content_url = ?,
+        text_content = ?,
+        processing_status = ?,
+        order_index = COALESCE(?, order_index),
+        is_free = COALESCE(?, is_free),
+        exam_id = COALESCE(?, exam_id)
+      WHERE id = ? AND book_id = ?`,
+    ).bind(
+      body.chapter_title ?? existing.chapter_title,
+      newTitle,
+      newType,
+      newContentUrl,
+      newTextContent,
+      processingStatus,
+      body.order_index ?? null,
+      body.is_free ?? null,
+      body.exam_id ?? null,
+      lessonId,
+      bookId,
+    ).run();
+
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText && analysisUrl
+      ? scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          body.extracted_audio_url ? "audio" : newType,
+          analysisUrl,
+          newTitle || "Untitled",
+        )
+      : false;
+
+    let courseId = existing.course_id;
+    if (!courseId) {
+      const cb = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      ).bind(bookId).first() as any;
+      if (cb) courseId = cb.course_id;
+    }
+
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId || "",
+        title: newTitle || "Untitled Lesson",
+        type: newType || "video",
+        chapter_title: body.chapter_title || existing.chapter_title || "General",
+        text_content: newTextContent || "",
+        text_content_hi: existing.text_content_hi || "",
+        order_index: body.order_index ?? existing.order_index ?? 0,
+      }));
+    }
+
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
+      status: 200,
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateBookLesson", env, request);
+  }
+}
+
+async function handleAdminDeleteBookLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const lesson: any = await env.DB.prepare(
+      "SELECT content_url FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+
+    if (lesson?.content_url) {
+      const match = lesson.content_url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try { await env.STORAGE.delete(decodeURIComponent(match[1])); } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
+      }
+    }
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ? AND book_id = ?")
+      .bind(lessonId, bookId).run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteBookLesson", env, request);
+  }
+}
+
+async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseBooks", env, request);
+  }
+}
+
+async function handleAdminLinkBookToCourse(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const body: any = await request.json();
+    await env.DB.prepare(
+      "INSERT INTO CourseBooks (course_id, book_id, order_index) VALUES (?, ?, ?) ON CONFLICT(course_id, book_id) DO UPDATE SET order_index = excluded.order_index"
+    ).bind(courseId, body.book_id, body.order_index || 0).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.LinkBook", env, request);
+  }
+}
+
+async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, courseId: string, bookId: string): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    await env.DB.prepare("DELETE FROM CourseBooks WHERE course_id = ? AND book_id = ?").bind(courseId, bookId).run();
+    return new Response(JSON.stringify({ success: true }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UnlinkBook", env, request);
+  }
+}
+
+async function handleListCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+    ).bind(courseId).all();
+    return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
+  } catch (error) {
+    return handleGlobalError(error, "Course.GetBooks", env, request);
+  }
+}
+
+async function handleListLessons(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    let allowed = false;
+    let isPaid = false;
+    let paymentStatusVal = "unpaid";
+    let trialExpired = false;
+    let trialUpgradePrice: number | null = null;
+    let hasActiveSubscription = false;
+    let subscriptionCourseAccess = false;
+    let userId = null;
+
+    if (token) {
+      try {
+        const jwtSecret = await getCachedJwtSecret(env);
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+        userId = payload.sub;
+        if (payload.role === "admin" || payload.role === "teacher") {
+          allowed = true;
+          isPaid = true;
+          paymentStatusVal = "paid";
+        } else {
+          const enrollment: any = await env.DB.prepare(
+            "SELECT payment_status, trial_expires_at FROM Enrollments WHERE user_id = ? AND course_id = ?",
+          )
+            .bind(userId, courseId)
+            .first();
+          if (enrollment) {
+            allowed = true;
+            paymentStatusVal = enrollment.payment_status;
+            isPaid = enrollment.payment_status === "paid";
+            if (enrollment.payment_status === "trial") {
+              if (enrollment.trial_expires_at && new Date() > new Date(enrollment.trial_expires_at)) {
+                trialExpired = true;
+                isPaid = false;
+                allowed = true;
+              } else {
+                trialExpired = false;
+                isPaid = true;
+              }
+              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
+              if (courseRes && courseRes.trial_upgrade_price_rupees !== null) {
+                trialUpgradePrice = courseRes.trial_upgrade_price_rupees;
+              }
+            }
+          }
+
+          if (!isPaid) {
+            const profile = await getUserAccessProfile(userId, env);
+            hasActiveSubscription = profile.hasActiveSub;
+            subscriptionCourseAccess = userAccessProfileAllowsCourse(profile, courseId);
+            if (subscriptionCourseAccess) {
+              allowed = true;
+              isPaid = true;
+              paymentStatusVal = "paid";
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[Lessons.List] Auth/payment check failed", e);
+      }
+    }
+
+
+    const url = new URL(request.url);
+    const bookId = url.searchParams.get("book_id");
+    let results: any[];
+
+    if (bookId) {
+      const q = await env.DB.prepare(
+        "SELECT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.book_id = ? ORDER BY l.order_index ASC"
+      ).bind(bookId).all();
+      results = q.results;
+    } else {
+      const q = await env.DB.prepare(
+        "SELECT DISTINCT l.*, b.name as batch_name, b.name_hi as batch_name_hi FROM Lessons l LEFT JOIN Batches b ON l.batch_id = b.id WHERE l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY l.order_index ASC"
+      ).bind(courseId, courseId).all();
+      results = q.results;
+    }
+
+
+    let completedLessonIds: string[] = [];
+    if (userId && allowed) {
+      const completedQuery = await env.DB.prepare(
+        `SELECT CL.lesson_id
+         FROM CompletedLessons CL
+         JOIN Lessons L ON CL.lesson_id = L.id
+         WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`,
+      )
+        .bind(userId, courseId, courseId)
+        .all();
+      if (completedQuery.results) {
+        completedLessonIds = completedQuery.results.map(
+          (r: any) => r.lesson_id,
+        );
+      }
+    }
+
+    if (!allowed) {
+      // Return only titles and types if not allowed to view content at all
+      const safeResults = results.map((r) => ({
+        id: r.id,
+        chapter_title: r.chapter_title,
+        title: r.title,
+        type: r.type,
+        order_index: r.order_index,
+        is_free: r.is_free,
+      }));
+      return new Response(
+        JSON.stringify({ lessons: safeResults, locked: true }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let isSequentialUnlock = 1;
+    const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(courseId).first();
+    if (courseInfo && courseInfo.sequential_unlock !== undefined) {
+      isSequentialUnlock = courseInfo.sequential_unlock;
+    }
+
+    // If allowed but NOT paid, strip content from premium lessons
+    const filteredResults = results.map((r, index) => {
+      let premiumLocked = (!isPaid && r.is_free !== 1);
+      let sequentialLocked = false;
+      
+      if (isSequentialUnlock === 1 && index > 0) {
+         const prevLesson = results[index - 1];
+         if (!completedLessonIds.includes(prevLesson.id)) {
+            sequentialLocked = true;
+         }
+      }
+
+      if (premiumLocked || sequentialLocked) {
+        return {
+          ...r,
+          content_url: "",
+          text_content: premiumLocked 
+            ? "Ã°ÂÂÂ This content is premium. Please enroll/pay to unlock." 
+            : "Ã°ÂÂÂ You must complete the previous lesson/quiz to unlock this.",
+          is_locked: true,
+          locked_reason: premiumLocked ? 'premium' : 'sequential'
+        };
+      }
+      return { ...r, is_locked: false };
+    });
+
+    return new Response(
+      JSON.stringify({
+        lessons: filteredResults,
+        locked: !isPaid,
+        completedLessonIds,
+        isEnrolled: allowed,
+        paymentStatus: paymentStatusVal,
+        hasActiveSubscription,
+        subscriptionCourseAccess,
+        trialExpired,
+        trialUpgradePrice
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.Lessons", env, request);
+  }
+}
+
+async function handleGetLesson(
+  request: Request,
+  env: Env,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    let userId = null;
+    let isAdmin = false;
+
+    if (token) {
+      const jwtSecret = await getCachedJwtSecret(env);
+      if (!jwtSecret) throw new Error("JWT_SECRET missing");
+      try {
+        const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+        userId = payload.sub;
+        isAdmin = payload.role === "admin" || payload.role === "teacher";
+      } catch (e) {
+        console.error("[Lessons.Detail] Auth check failed", e);
+      }
+    }
+
+    const lesson: any = await env.DB.prepare(
+      "SELECT * FROM Lessons WHERE id = ?",
+    )
+      .bind(lessonId)
+      .first();
+    if (!lesson)
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+      });
+
+    // Resolve course_id: if lesson.course_id is NULL, look up via book->CourseBooks
+    let resolvedCourseId = lesson.course_id;
+    if (!resolvedCourseId && lesson.book_id) {
+      const linkedCourse: any = await env.DB.prepare(
+        "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+      )
+        .bind(lesson.book_id)
+        .first();
+      if (linkedCourse) {
+        resolvedCourseId = linkedCourse.course_id;
+      }
+    }
+
+    const course: any = resolvedCourseId
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+        .bind(resolvedCourseId)
+        .first()
+      : null;
+
+    // Access Logic:
+    // 1. Admin/Teacher always allowed
+    // 2. Free lessons always allowed (for everyone)
+    // 3. Paid lessons require 'paid' enrollment status
+    let allowed = isAdmin || lesson.is_free === 1;
+
+    if (!allowed && userId && resolvedCourseId) {
+      const enrollment: any = await env.DB.prepare(
+        "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+      )
+        .bind(userId, resolvedCourseId)
+        .first();
+      if (enrollment && enrollment.payment_status === "paid") {
+        allowed = true;
+      }
+
+      if (!allowed) {
+        const profile = await getUserAccessProfile(userId, env);
+        if (userAccessProfileAllowsCourse(profile, resolvedCourseId)) {
+          allowed = true;
+        }
+      }
+    }
+
+    if (allowed && !isAdmin && resolvedCourseId && userId) {
+      const courseInfo: any = await env.DB.prepare("SELECT sequential_unlock FROM Courses WHERE id = ?").bind(resolvedCourseId).first();
+      if (courseInfo && courseInfo.sequential_unlock === 1) {
+        const allLessons = await env.DB.prepare(
+          "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+        ).bind(resolvedCourseId, resolvedCourseId).all();
+        
+        const lessonsList = allLessons.results as any[];
+        const currentIndex = lessonsList.findIndex(l => l.id === lessonId);
+        if (currentIndex > 0) {
+           const prevLessonId = lessonsList[currentIndex - 1].id;
+           const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(userId, prevLessonId).first();
+           if (!isCompleted) {
+              const safeLesson = {
+                id: lesson.id,
+                course_id: resolvedCourseId,
+                title: lesson.title,
+                type: lesson.type,
+                is_free: lesson.is_free,
+                content_url: "",
+                text_content: "Ã°ÂÂÂ You must complete the previous lesson/quiz to unlock this."
+              };
+              return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Sequential lock active" }), { status: 403, headers: { "Content-Type": "application/json" } });
+           }
+        }
+      }
+    }
+
+    if (!allowed) {
+      // Return safe version of lesson without sensitive content
+      const safeLesson = {
+        id: lesson.id,
+        course_id: resolvedCourseId,
+        title: lesson.title,
+        type: lesson.type,
+        is_free: lesson.is_free,
+        content_url: "",
+        text_content:
+          lesson.is_free === 1
+            ? lesson.text_content
+            : "Ã°ÂÂÂ Premium Content Locked. Please upgrade your enrollment to access.",
+      };
+      return new Response(
+        JSON.stringify({
+          lesson: safeLesson,
+          course,
+          error: "Enrollment required for premium content",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response(JSON.stringify({ lesson, course }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "User.GetLesson", env, request);
+  }
+}
+
+
+const AUTO_ANALYSIS_SUPPORTED_TYPES = new Set([
+  "audio",
+  "image",
+  "pdf",
+  "recording",
+  "video",
+]);
+
+function hasLessonTextContent(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isInternalMediaUrl(value: unknown): value is string {
+  return typeof value === "string" && /\/api\/(?:media|assets)\/.+/.test(value);
+}
+
+function shouldAnalyzeContentUrl(type: string, contentUrl: unknown): boolean {
+  if (!isInternalMediaUrl(contentUrl)) return false;
+
+  const normalizedType = type.toLowerCase();
+  if (normalizedType === "video" || normalizedType === "recording") {
+    return /\.(mp3|m4a|wav|ogg|webm|flac|aac|mp4|mov|mkv)(\?|$)/i.test(contentUrl);
+  }
+
+  return AUTO_ANALYSIS_SUPPORTED_TYPES.has(normalizedType);
+}
+
+function chunkArrayBuffer(buffer: ArrayBuffer, maxChunkSize: number): Uint8Array[] {
+  const uint8 = new Uint8Array(buffer);
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  while (offset < uint8.length) {
+    const end = Math.min(offset + maxChunkSize, uint8.length);
+    chunks.push(uint8.slice(offset, end));
+    offset = end;
+  }
+  return chunks;
+}
+
+export function uint8ArrayToBase64(uint8: Uint8Array): string {
+  const chunkSize = 8192;
+  const chunks: string[] = [];
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    const slice = uint8.subarray(i, i + chunkSize);
+    chunks.push(String.fromCharCode(...slice));
+  }
+  return btoa(chunks.join(""));
+}
+
+export function resolveLessonMediaStorageKey(mediaUrl: unknown): string | null {
+  if (typeof mediaUrl !== "string") return null;
+  // Strip query parameters and hash fragment before matching
+  const cleanUrl = mediaUrl.split("?")[0].split("#")[0];
+  const match = cleanUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  if (!match) return null;
+  const key = match[1];
+  return key ? decodeURIComponent(key) : null;
+}
+
+// Remove an R2 object given an internal /api/media/<key> or /<key> URL.
+async function deleteR2ObjectFromUrl(env: Env, mediaUrl: unknown): Promise<void> {
+  const key = resolveLessonMediaStorageKey(mediaUrl);
+  if (!key) return;
+  try {
+    await env.STORAGE.delete(key);
+  } catch (e) {
+    console.warn(`[R2 Cleanup] Failed to delete object ${key}:`, e);
+  }
+}
+
+function describeWhisperAudioSource(audio: unknown): string {
+  if (audio instanceof Uint8Array) return `Uint8Array(${audio.byteLength} bytes)`;
+  if (audio instanceof ArrayBuffer) return `ArrayBuffer(${audio.byteLength} bytes)`;
+  if (Array.isArray(audio)) return `number[](${audio.length})`;
+  if (typeof audio === "string") return `string(${audio.length})`;
+  if (audio === null) return "null";
+  return typeof audio;
+}
+
+export function createWhisperAudioPayload(
+  audio: ArrayBuffer | Uint8Array | number[],
+  context = "Whisper",
+): { audio: Uint8Array } {
+  if (typeof audio === "string") {
+    throw new Error(
+      `[${context}] Invalid Whisper audio source type: string. Pass binary audio bytes, not a URL, base64 string, or transcript text.`,
+    );
+  }
+
+  let bytes: Uint8Array;
+  if (audio instanceof Uint8Array) {
+    bytes = audio;
+  } else if (audio instanceof ArrayBuffer) {
+    bytes = new Uint8Array(audio);
+  } else if (Array.isArray(audio)) {
+    bytes = new Uint8Array(audio);
+  } else {
+    throw new Error(
+      `[${context}] Unsupported audio type: ${describeWhisperAudioSource(audio)}. Expected Uint8Array, ArrayBuffer, or number[].`,
+    );
+  }
+
+  if (bytes.byteLength === 0) {
+    throw new Error(`[${context}] Whisper audio source is empty (0 bytes).`);
+  }
+
+  return { audio: bytes };
+}
+
+async function handleProcessingFailure(
+  env: Env,
+  lesson: { id: string; course_id: string; title: string; content_url?: string; audio_url?: string },
+  error: Error,
+) {
+  try {
+    const adminEmail = await getSecret(env, "ADMIN_CONTACT_EMAIL", false);
+    if (adminEmail) {
+      const errorMsg = `Lesson: ${lesson.title} (${lesson.id})\nCourse: ${lesson.course_id}\nError: ${error.message}`;
+      await safeSendEmail(
+        env,
+        adminEmail,
+        `[FAILED] Lesson Processing - ${lesson.title}`,
+        "Lesson Processing Failed",
+        `<p><strong>Lesson:</strong> ${lesson.title} (${lesson.id})</p>
+         <p><strong>Course:</strong> ${lesson.course_id}</p>
+         <p><strong>Error:</strong> ${error.message}</p>
+         <p>Associated media files have been deleted from storage and the lesson has been removed.</p>`,
+        errorMsg,
+        true,
+      );
+    }
+
+    const mediaUrls = [lesson.content_url, lesson.audio_url].filter(Boolean);
+    for (const url of mediaUrls) {
+      const match = url!.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        await env.STORAGE.delete(decodeURIComponent(match[1])).catch((e) => console.error("[Lesson.Delete] R2 media delete failed:", e));
+      }
+    }
+
+    const transcriptKey = `${lesson.course_id}/transcripts/${lesson.id}.txt`;
+    await env.STORAGE.delete(transcriptKey).catch((e) => console.error("[Lesson.Delete] R2 transcript delete failed:", e));
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+      .bind(lesson.id).run();
+  } catch (e) {
+    console.error(`[Queue] Failure handler error for ${lesson.id}:`, e);
+  }
+}
+
+async function processLessonInQueue(env: Env, msg: any) {
+  const { lessonId, courseId, mediaUrl, lessonType, title } = msg;
+
+  try {
+    await env.DB.prepare(
+      "UPDATE Lessons SET processing_status = 'processing' WHERE id = ?",
+    ).bind(lessonId).run();
+
+    const mediaPathMatch = mediaUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+    if (!mediaPathMatch) throw new Error(`Invalid media URL: ${mediaUrl}`);
+    const mediaKey = decodeURIComponent(mediaPathMatch[1]);
+
+    const objectMeta = await env.STORAGE.head(mediaKey);
+    if (!objectMeta) throw new Error(`Media not found in R2: ${mediaKey}`);
+
+    const contentType = objectMeta.httpMetadata?.contentType || "";
+    const isVideoType = lessonType === "video" || lessonType === "recording";
+
+    if (objectMeta.size > 100 * 1024 * 1024) {
+      console.warn(`[Queue] File too large for transcription (${objectMeta.size} bytes). Skipping.`);
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+      return;
+    }
+
+    const object = await env.STORAGE.get(mediaKey);
+    if (!object) throw new Error(`Failed to get media: ${mediaKey}`);
+
+    const buffer = await object.arrayBuffer();
+
+    let fullText = "";
+
+    if (isVideoType || lessonType === "audio") {
+      const chunkSize = 25 * 1024 * 1024;
+      const chunks = chunkArrayBuffer(buffer, chunkSize);
+      console.log(`[Queue] Transcribing ${chunks.length} audio chunks for lesson ${lessonId}`);
+      for (let i = 0; i < chunks.length; i++) {
+        const whisperResponse = await env.AI.run(
+          "@cf/openai/whisper-large-v3-turbo",
+          { audio: uint8ArrayToBase64(chunks[i]) },
+        );
+        const chunkText = (whisperResponse as any).text || "";
+        fullText += chunkText + " ";
+        console.log(`[Queue] Chunk ${i + 1}/${chunks.length} done (${chunkText.length} chars)`);
+      }
+      fullText = fullText.trim();
+    }
+
+    if (fullText) {
+      const transcriptKey = `${courseId}/transcripts/${lessonId}.txt`;
+      await env.STORAGE.put(transcriptKey, fullText, {
+        httpMetadata: { contentType: "text/plain" },
+      });
+
+      await env.DB.prepare(
+        "UPDATE Lessons SET text_content = ?, processing_status = 'completed' WHERE id = ?",
+      ).bind(fullText, lessonId).run();
+
+      const updatedLesson = await env.DB.prepare(
+        "SELECT id, course_id, batch_id, is_free, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE id = ?",
+      ).bind(lessonId).first();
+
+      if (updatedLesson) {
+        await indexLessonToAISearch(env, updatedLesson);
+
+        await env.DB.prepare(
+          "UPDATE Lessons SET audio_url = ? WHERE id = ?",
+        ).bind(mediaUrl, lessonId).run();
+      }
+    } else {
+      await env.DB.prepare(
+        "UPDATE Lessons SET processing_status = 'completed' WHERE id = ?",
+      ).bind(lessonId).run();
+    }
+  } catch (error: any) {
+    console.error(`[Queue] Processing failed for lesson ${lessonId}:`, error);
+    await handleProcessingFailure(
+      env,
+      { id: lessonId, course_id: courseId, title, content_url: mediaUrl },
+      error,
+    );
+    throw error;
+  }
+}
+
+async function enqueueLessonProcessing(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
+  await env.DB.prepare(
+    "UPDATE Lessons SET processing_status = 'pending' WHERE id = ?",
+  ).bind(lessonId).run();
+
+  if (env.LESSON_TRANSCRIPTION_WORKFLOW) {
+    const mediaKey = extractMediaKey(mediaUrl);
+    try {
+      await env.LESSON_TRANSCRIPTION_WORKFLOW.create({
+        params: { lessonId, courseId, mediaKey, lessonType, title },
+      });
+      return true;
+    } catch (err: any) {
+      console.error(`[Workflow] Failed to start workflow for ${lessonId}, falling back to queue:`, err);
+      return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+    }
+  }
+  return await sendToQueue(env, lessonId, courseId, mediaUrl, lessonType, title);
+}
+
+async function sendToQueue(
+  env: Env,
+  lessonId: string,
+  courseId: string,
+  mediaUrl: string,
+  lessonType: string,
+  title: string,
+) {
+  if (!env.LESSON_QUEUE) {
+    console.warn(`[Queue] LESSON_QUEUE binding missing, skipping enqueue for ${lessonId}`);
+    return false;
+  }
+  try {
+    await env.LESSON_QUEUE.send({
+      lessonId,
+      courseId,
+      mediaUrl,
+      lessonType,
+      title,
+      attempt: 0,
+    });
+    return true;
+  } catch (e) {
+    console.error(`[Queue] Failed to enqueue lesson ${lessonId}:`, e);
+    return false;
+  }
+}
+
+function extractCourseId(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/([^/]+)/);
+  return match ? match[1] : "general";
+}
+
+function extractMediaKey(contentUrl: string): string {
+  const match = contentUrl.match(/\/api\/(?:media|assets)\/(.+)$/);
+  if (!match) return contentUrl;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function triggerTranscriptionWorkflow(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  lessonId: string,
+  contentUrl: string,
+  type: string,
+  title: string,
+): boolean {
+  const promise = enqueueLessonProcessing(env, lessonId, extractCourseId(contentUrl), contentUrl, type, title)
+    .catch((err: any) => console.error(`[Workflow] enqueueLessonProcessing failed for ${lessonId}:`, err));
+  if (ctx) {
+    ctx.waitUntil(promise);
+  }
+  return true;
+}
+
+function scheduleAutoAnalyzeLesson(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  lessonId: string,
+  type: string,
+  contentUrl: unknown,
+  title: string,
+) {
+  if (!isInternalMediaUrl(contentUrl) || !shouldAnalyzeContentUrl(type, contentUrl)) {
+    console.warn(
+      `[Auto-AI] Skipping unsupported or non-internal media URL for ${lessonId}: ${String(contentUrl || "")}`,
+    );
+    return false;
+  }
+
+  triggerTranscriptionWorkflow(env, ctx, lessonId, contentUrl as string, type, title);
+  return true;
+}
+
+async function handleAdminGetCourseLessons(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT id, course_id, batch_id, book_id, chapter_title, title, type,
+               content_url, audio_url, order_index, is_free, processing_status,
+               exam_id, created_at
+        FROM Lessons
+        WHERE course_id = ?
+        ORDER BY order_index ASC
+        LIMIT ? OFFSET ?
+      `).bind(courseId, limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM Lessons WHERE course_id = ?").bind(courseId).first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      lessons: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseLessons", env, request);
+  }
+}
+
+async function handleAdminCreateLesson(
+  request: Request,
+  env: Env,
+  courseId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const course = await env.DB.prepare(
+        "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(courseId || "dummy", auth.id)
+        .first();
+      if (!course)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this course.",
+          }),
+          { status: 403 },
+        );
+    }
+
+    const body = (await request.json()) as any;
+    if (!body.book_id) {
+      return new Response(JSON.stringify({ error: "book_id is required. Lessons must be added to a book." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const linkCheck = await env.DB.prepare(
+      "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?",
+    ).bind(courseId, body.book_id).first();
+    if (!linkCheck) {
+      return new Response(JSON.stringify({ error: "Selected book is not linked to this course. Please link the book first." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const lessonId = generateCustomId("YA-LSN");
+    const hasManualText = hasLessonTextContent(body.text_content);
+    await env.DB.prepare(
+      "INSERT INTO Lessons (id, course_id, book_id, chapter_title, title, type, content_url, text_content, order_index, is_free, processing_status, exam_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        lessonId,
+        courseId,
+        body.book_id,
+        body.chapter_title || "General",
+        body.title ?? "Untitled Lesson",
+        body.type ?? "video",
+        body.content_url ?? "",
+        body.text_content ?? "",
+        body.order_index ?? 0,
+        body.is_free ?? 0,
+        hasManualText ? "completed" : "pending",
+        body.exam_id || null
+      )
+      .run();
+    const lessonType = body.type || "video";
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasLessonTextContent(body.text_content)
+      ? scheduleAutoAnalyzeLesson(
+        env,
+        ctx,
+        lessonId,
+        body.extracted_audio_url ? "audio" : lessonType,
+        analysisUrl,
+        body.title || "Untitled",
+      )
+      : false;
+
+    // Index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || "Untitled Lesson",
+        type: body.type || "video",
+        chapter_title: body.chapter_title || "General",
+        text_content: body.text_content || "",
+        text_content_hi: "",
+        order_index: body.order_index ?? 0,
+      }));
+    }
+
+    if (ctx) {
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: body.title }));
+    }
+
+    return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateLesson", env, request);
+  }
+}
+
+// Ã¢ÂÂÃ¢ÂÂ Chapter Names API Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+async function handleAdminGetCourseChapters(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT chapter_title FROM Lessons WHERE course_id = ? AND chapter_title IS NOT NULL AND chapter_title != '' ORDER BY chapter_title ASC"
+    ).bind(courseId).all();
+    const chapters = (results as any[]).map((r: any) => r.chapter_title);
+    return new Response(JSON.stringify({ chapters }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetCourseChapters", env, request);
+  }
+}
+
+async function handleAdminGetBookChapters(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    await requireAdminOrTeacher(request, env);
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT chapter_title FROM Lessons WHERE book_id = ? AND chapter_title IS NOT NULL AND chapter_title != '' ORDER BY chapter_title ASC"
+    ).bind(bookId).all();
+    const chapters = (results as any[]).map((r: any) => r.chapter_title);
+    return new Response(JSON.stringify({ chapters }), {
+      headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetBookChapters", env, request);
+  }
+}
+
+async function handleAdminUpload(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+
+    const contentType =
+      request.headers.get("Content-Type") || "application/octet-stream";
+    let key = "";
+    let courseId = "general";
+    let streamBody: any;
+    let finalContentType = contentType;
+
+    const EXT_TO_MIME: Record<string, string[]> = {
+      "mp4": ["video/mp4"],
+      "webm": ["video/webm"],
+      "mov": ["video/quicktime"],
+      "mkv": ["video/x-matroska"],
+      "mp3": ["audio/mpeg"],
+      "m4a": ["audio/mp4", "audio/x-m4a"],
+      "wav": ["audio/wav", "audio/x-wav"],
+      "png": ["image/png"],
+      "jpg": ["image/jpeg"],
+      "jpeg": ["image/jpeg"],
+      "pdf": ["application/pdf"],
+      "webp": ["image/webp"],
+    };
+    const ALLOWED_EXTENSIONS = Object.keys(EXT_TO_MIME);
+    const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+
+    const getExtension = (name: string) => {
+      const parts = name.split(".");
+      return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
+    };
+
+    const sanitizeName = (name: string) => {
+      const ext = getExtension(name);
+      const parts = name.split(".");
+      parts.pop();
+      let cleanBase = parts
+        .join(".")
+        .replace(/[^\x00-\x7F]/g, "")
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9._-]/g, "");
+      return (cleanBase || "media") + (ext ? `.${ext}` : "");
+    };
+
+    const assertValidUpload = (name: string, declaredSize?: number | null, declaredMime?: string | null) => {
+      const ext = getExtension(name);
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        throw new Error(`File type not allowed: ${ext || "unknown"}`);
+      }
+      if (declaredSize != null && declaredSize > MAX_UPLOAD_SIZE_BYTES) {
+        throw new Error(`File exceeds maximum upload size of ${MAX_UPLOAD_SIZE_BYTES} bytes`);
+      }
+      if (declaredMime && ext && declaredMime !== "application/octet-stream") {
+        const validMimes = EXT_TO_MIME[ext];
+        if (validMimes && !validMimes.includes(declaredMime.toLowerCase())) {
+          throw new Error(`MIME type ${declaredMime} does not match extension .${ext}`);
+        }
+      }
+    };
+
+    if (contentType.includes("multipart/form-data")) {
+      // Fallback for old forms (small files)
+      const formData = await request.formData();
+      const file = formData.get("file") as File;
+      courseId = (formData.get("courseId") as string) || "general";
+      if (!file)
+        return new Response(JSON.stringify({ error: "No file provided" }), {
+          status: 400,
+        });
+      assertValidUpload(file.name, file.size, file.type);
+      key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(file.name)}`;
+      streamBody = await file.arrayBuffer();
+      finalContentType = file.type;
+    } else {
+      // Direct raw stream for large files (bypasses RAM limits)
+      const encodedName = request.headers.get("X-File-Name") || "upload.bin";
+      courseId = request.headers.get("X-Course-Id") || "general";
+      const fileName = decodeURIComponent(encodedName);
+      assertValidUpload(fileName, parseInt(request.headers.get("Content-Length") || "0", 10) || null, finalContentType);
+      key = `${courseId}/${generateCustomId("YA-MED")}-${sanitizeName(fileName)}`;
+      streamBody = request.body;
+
+      // Infer mime type from extension if missing or generic
+      if (
+        !finalContentType ||
+        finalContentType === "application/octet-stream"
+      ) {
+        const ext = fileName.split(".").pop()?.toLowerCase();
+        if (ext) {
+          const mimes = EXT_TO_MIME[ext];
+          if (mimes) finalContentType = mimes[0];
+        }
+      }
+    }
+
+    if (!streamBody) {
+      return new Response(JSON.stringify({ error: "Empty request body" }), {
+        status: 400,
+      });
+    }
+
+    await env.STORAGE.put(key, streamBody, {
+      httpMetadata: { contentType: finalContentType },
+    });
+
+    const url = `/api/media/${key}`;
+    const lessonId = request.headers.get("X-Lesson-Id") || "";
+    const shouldAutoAnalyze =
+      request.headers.get("X-Auto-Analyze") === "1" ||
+      request.headers.get("X-Media-Purpose") === "transcript";
+
+    const mediaPurpose = request.headers.get("X-Media-Purpose") || "";
+    if (lessonId && mediaPurpose === "transcript") {
+      await env.DB.prepare(
+        "UPDATE Lessons SET audio_url = ? WHERE id = ?",
+      ).bind(url, lessonId).run();
+    }
+
+    let analysisQueued = false;
+    if (lessonId && shouldAutoAnalyze) {
+      const lesson = (await env.DB.prepare(
+        `SELECT l.id, l.title, l.type, l.text_content, l.text_content_hi,
+                (SELECT c.teacher_id FROM CourseBooks cb JOIN Courses c ON c.id = cb.course_id WHERE cb.book_id = l.book_id LIMIT 1) as teacher_id
+         FROM Lessons l
+         WHERE l.id = ?`,
+      )
+        .bind(lessonId)
+        .first()) as any;
+
+      if (!lesson) {
+        console.warn(`[Auto-AI] Upload analysis skipped; lesson not found: ${lessonId}`);
+      } else if (auth.role === "teacher" && lesson.teacher_id && lesson.teacher_id !== auth.id) {
+        console.warn(`[Auto-AI] Upload analysis denied for teacher ${auth.id}: ${lessonId}`);
+      } else if (hasLessonTextContent(lesson.text_content)) {
+        console.log(`[Auto-AI] Upload analysis skipped; lesson already has text: ${lessonId}`);
+      } else {
+        const analysisType = finalContentType.startsWith("audio/")
+          ? "audio"
+          : lesson.type || "video";
+        analysisQueued = scheduleAutoAnalyzeLesson(
+          env,
+          ctx,
+          lessonId,
+          analysisType,
+          url,
+          lesson.title || "Untitled",
+        );
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, url, analysisQueued }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("File type not allowed") || message.startsWith("File exceeds")) {
+      return new Response(JSON.stringify({ error: message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return handleGlobalError(error, "Admin.Upload", env, request);
+  }
+}
+
+async function handleServeMedia(
+  request: Request,
+  env: Env,
+  key: string,
+): Promise<Response> {
+  try {
+    const rangeHeader = request.headers.get("Range");
+    const mediaUrl = `/api/media/${key}`;
+    const lesson = (await env.DB.prepare(
+      "SELECT id, course_id, book_id, is_free FROM Lessons WHERE content_url = ? OR audio_url = ? LIMIT 1",
+    )
+      .bind(mediaUrl, mediaUrl)
+      .first()) as any;
+
+    const token = getCookie(request, "session");
+    let payload: any = null;
+    if (token) {
+      try {
+        const jwtSecret = await getCachedJwtSecret(env);
+        if (!jwtSecret) throw new Error("JWT_SECRET missing");
+        payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+      } catch (e) {
+        payload = null;
+      }
+    }
+
+    if (!lesson) {
+      if (!payload || (payload.role !== "admin" && payload.role !== "teacher")) {
+        return new Response("Not Found", { status: 404 });
+      }
+    } else if (lesson.is_free !== 1) {
+      if (!payload) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (payload.role !== "admin" && payload.role !== "teacher") {
+        let resolvedCourseId = lesson.course_id;
+        if (!resolvedCourseId && lesson.book_id) {
+          const cb = await env.DB.prepare(
+            "SELECT course_id FROM CourseBooks WHERE book_id = ? LIMIT 1",
+          ).bind(lesson.book_id).first() as any;
+          if (cb) resolvedCourseId = cb.course_id;
+        }
+        const enrollment = resolvedCourseId ? (await env.DB.prepare(
+          "SELECT payment_status FROM Enrollments WHERE user_id = ? AND course_id = ? AND status IN ('active', 'completed') ORDER BY purchased_at DESC LIMIT 1",
+        )
+          .bind(payload.sub, resolvedCourseId)
+          .first()) as any : null;
+        const hasPaidEnrollment = enrollment?.payment_status === "paid";
+        const hasSubscriptionAccess = resolvedCourseId
+          ? await userHasSubscriptionCourseAccess(payload.sub, resolvedCourseId, env)
+          : false;
+        if (!hasPaidEnrollment && !hasSubscriptionAccess) {
+          // Fallback: check book-level enrollment
+          const bookEnrollment = await env.DB.prepare(
+            "SELECT payment_status FROM Enrollments WHERE user_id = ? AND book_id = ? AND status IN ('active', 'completed') LIMIT 1",
+          ).bind(payload.sub, lesson.book_id).first() as any;
+          if (!bookEnrollment || bookEnrollment.payment_status !== "paid") {
+            return new Response("Forbidden", { status: 403 });
+          }
+        }
+      }
+    }
+
+    // Get metadata first using head() to avoid downloading massive bodies just for size
+    const objectMeta = await env.STORAGE.head(key);
+
+    if (!objectMeta) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const totalSize = objectMeta.size;
+    const contentType =
+      objectMeta.httpMetadata?.contentType || "application/octet-stream";
+
+    const headers = new Headers();
+    headers.set("Content-Type", contentType);
+    headers.set("Accept-Ranges", "bytes");
+    headers.set("Cache-Control", "public, max-age=3600");
+    headers.set("ETag", objectMeta.httpEtag);
+
+    const corsHeaders = await getCORSHeaders(request, env);
+    for (const [key, value] of Object.entries(corsHeaders)) {
+      headers.set(key, value);
+    }
+
+    headers.set(
+      "Access-Control-Expose-Headers",
+      "Content-Range, Content-Length, Accept-Ranges",
+    );
+
+    // Force inline for video/audio
+    if (contentType.startsWith("video/") || contentType.startsWith("audio/")) {
+      headers.set("Content-Disposition", "inline");
+    }
+
+    // Handle Range request (essential for video seeking in browsers)
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+      if (match) {
+        let start = 0;
+        let end = totalSize - 1;
+
+        if (match[1] && match[2]) {
+          start = parseInt(match[1], 10);
+          end = parseInt(match[2], 10);
+        } else if (match[1] && !match[2]) {
+          start = parseInt(match[1], 10);
+        } else if (!match[1] && match[2]) {
+          start = totalSize - parseInt(match[2], 10);
+          if (start < 0) start = 0;
+        }
+
+        if (end >= totalSize) end = totalSize - 1;
+
+        if (start >= totalSize || start > end) {
+          headers.set("Content-Range", `bytes */${totalSize}`);
+          return new Response("Range Not Satisfiable", {
+            status: 416,
+            headers,
+          });
+        }
+
+        const chunkSize = end - start + 1;
+        headers.set("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+        headers.set("Content-Length", chunkSize.toString());
+
+        if (request.method === "HEAD") {
+          return new Response(null, { status: 206, headers });
+        }
+
+        const rangeOpts: any = { offset: start };
+        if (end < totalSize - 1) {
+          rangeOpts.length = chunkSize;
+        }
+
+        const rangedObject = await env.STORAGE.get(key, { range: rangeOpts });
+
+        if (!rangedObject) {
+          return new Response("Range Not Satisfiable", {
+            status: 416,
+            headers,
+          });
+        }
+
+        return new Response(rangedObject.body, { status: 206, headers });
+      }
+    }
+
+    // Full file
+    headers.set("Content-Length", totalSize.toString());
+
+    if (request.method === "HEAD") {
+      return new Response(null, { status: 200, headers });
+    }
+
+    const fullObject = await env.STORAGE.get(key);
+    if (!fullObject) {
+      return new Response("Error fetching object", { status: 500 });
+    }
+    return new Response(fullObject.body, { status: 200, headers });
+  } catch (error) {
+    console.error("Media Serve Error:", error);
+    return new Response("Error serving media", { status: 500 });
+  }
+}
+
+async function handleAdminUpdateLesson(
+  request: Request,
+  env: Env,
+  courseId: string,
+  lessonId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const course = await env.DB.prepare(
+        "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(courseId, auth.id)
+        .first();
+      if (!course)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this course.",
+          }),
+          { status: 403 },
+        );
+    }
+
+    const body = (await request.json()) as any;
+    const existingLesson = (await env.DB.prepare(
+      "SELECT title, type, text_content, text_content_hi, chapter_title, order_index, book_id FROM Lessons WHERE id = ?",
+    )
+      .bind(lessonId)
+      .first()) as any;
+
+    if (!existingLesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // If book_id is being changed, validate it's linked to this course
+    if (body.book_id && body.book_id !== existingLesson.book_id) {
+      const linkCheck = await env.DB.prepare(
+        "SELECT 1 FROM CourseBooks WHERE course_id = ? AND book_id = ?",
+      ).bind(courseId, body.book_id).first();
+      if (!linkCheck) {
+        return new Response(
+          JSON.stringify({ error: "Selected book is not linked to this course." }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    await env.DB.prepare(
+      `
+      UPDATE Lessons SET
+        chapter_title = COALESCE(?, chapter_title),
+        title = COALESCE(?, title),
+        type = COALESCE(?, type),
+        content_url = COALESCE(?, content_url),
+        text_content = COALESCE(?, text_content),
+        text_content_hi = COALESCE(?, text_content_hi),
+        order_index = COALESCE(?, order_index),
+        is_free = COALESCE(?, is_free),
+        book_id = COALESCE(?, book_id),
+        exam_id = COALESCE(?, exam_id)
+      WHERE id = ?
+    `,
+    )
+      .bind(
+        body.chapter_title ?? null,
+        body.title ?? null,
+        body.type ?? null,
+        body.content_url ?? null,
+        body.text_content ?? null,
+        body.text_content_hi ?? null,
+        body.order_index ?? null,
+        body.is_free ?? null,
+        body.book_id ?? null,
+        body.exam_id ?? null,
+        lessonId,
+      )
+      .run();
+
+    const lessonType = body.type || existingLesson.type || "video";
+    const lessonTitle = body.title || existingLesson.title || "Untitled";
+    const hasManualText = hasLessonTextContent(body.text_content);
+    const alreadyHasText = hasLessonTextContent(existingLesson.text_content);
+    const analysisUrl = body.extracted_audio_url || body.content_url;
+    const analysisQueued = !hasManualText && !alreadyHasText && !body.skip_auto_analyze
+      ? scheduleAutoAnalyzeLesson(
+        env,
+        ctx,
+        lessonId,
+        body.extracted_audio_url ? "audio" : lessonType,
+        analysisUrl,
+        lessonTitle,
+      )
+      : false;
+
+    // Re-index to AI Search
+    if (ctx) {
+      ctx.waitUntil(indexLessonToAISearch(env, {
+        id: lessonId,
+        course_id: courseId,
+        title: body.title || existingLesson.title || "Untitled",
+        type: body.type || existingLesson.type || "video",
+        chapter_title: body.chapter_title || existingLesson.chapter_title || "General",
+        text_content: body.text_content ?? existingLesson.text_content ?? "",
+        text_content_hi: body.text_content_hi ?? existingLesson.text_content_hi ?? "",
+        order_index: body.order_index ?? existingLesson.order_index ?? 0,
+      }));
+    }
+
+    if (ctx) {
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: lessonTitle }));
+    }
+
+    return new Response(JSON.stringify({ success: true, analysisQueued }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateLesson", env, request);
+  }
+}
+
+async function handleAdminDeleteLesson(
+  request: Request,
+  env: Env,
+  courseId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const course = await env.DB.prepare(
+        "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(courseId, auth.id)
+        .first();
+      if (!course)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this course.",
+          }),
+          { status: 403 },
+        );
+    }
+
+    const lesson: any = await env.DB.prepare(
+      "SELECT content_url, audio_url FROM Lessons WHERE id = ?",
+    )
+      .bind(lessonId)
+      .first();
+
+    const deleteFromR2 = async (url: string) => {
+      const match = url.match(/\/api\/(?:media|assets)\/(.+)$/);
+      if (match) {
+        try {
+          await env.STORAGE.delete(decodeURIComponent(match[1]));
+        } catch (e) {
+          console.error("Failed to delete from R2:", e);
+        }
+      }
+    };
+
+    if (lesson) {
+      if (lesson.content_url) await deleteFromR2(lesson.content_url);
+      if (lesson.audio_url) await deleteFromR2(lesson.audio_url);
+    }
+
+    await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+      .bind(lessonId)
+      .run();
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteLesson", env, request);
+  }
+}
+
+// --- Dynamic Forms Handlers ---
+
+async function handleAdminFormTemplates(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const userAuth = await requireAdminOrTeacher(request, env);
+    if (request.method === "GET") {
+      let query = "SELECT * FROM FormTemplates";
+      let results;
+      if (userAuth.role === "teacher") {
+        // Teacher sees forms directly assigned to them OR forms linked to their courses
+        query +=
+          " WHERE teacher_id = ? OR linked_course_id IN (SELECT id FROM Courses WHERE teacher_id = ?) ORDER BY created_at DESC";
+        results = (
+          await env.DB.prepare(query).bind(userAuth.id, userAuth.id).all()
+        ).results;
+      } else {
+        query += " ORDER BY created_at DESC";
+        results = (await env.DB.prepare(query).all()).results;
+      }
+      return new Response(JSON.stringify({ templates: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "POST") {
+      const {
+        slug,
+        title,
+        title_hi,
+        description,
+        description_hi,
+        fields_json,
+        seo_json,
+        theme_json,
+        confirmation_email_body,
+        linked_course_id,
+        book_id,
+        linked_batch_id,
+        auto_enroll,
+      } = (await request.json()) as any;
+      const id = generateCustomId("YA-FRM");
+
+      const teacherId = userAuth.role === "teacher" ? userAuth.id : null;
+
+      if (userAuth.role === "teacher" && linked_course_id) {
+        const check = await env.DB.prepare(
+          "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+        )
+          .bind(linked_course_id, userAuth.id)
+          .first();
+        if (!check)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+      }
+
+      await env.DB.prepare(
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(
+          id,
+          slug,
+          title,
+          title_hi || null,
+          description || "",
+          description_hi || null,
+          JSON.stringify(fields_json),
+          JSON.stringify(seo_json || {}),
+          JSON.stringify(theme_json || {}),
+          confirmation_email_body || null,
+          linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
+          auto_enroll ? 1 : 0,
+          teacherId,
+        )
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Form template created successfully", id }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const {
+        slug,
+        title,
+        title_hi,
+        description,
+        description_hi,
+        fields_json,
+        seo_json,
+        theme_json,
+        confirmation_email_body,
+        linked_course_id,
+        book_id,
+        linked_batch_id,
+        auto_enroll,
+      } = (await request.json()) as any;
+
+      if (userAuth.role === "teacher") {
+        const template = (await env.DB.prepare(
+          "SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?",
+        )
+          .bind(id)
+          .first()) as any;
+        if (!template)
+          return new Response(JSON.stringify({ error: "Not found" }), {
+            status: 404,
+          });
+
+        let isOwner = template.teacher_id === userAuth.id;
+        if (!isOwner && template.linked_course_id) {
+          const courseCheck = await env.DB.prepare(
+            "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+          )
+            .bind(template.linked_course_id, userAuth.id)
+            .first();
+          if (courseCheck) isOwner = true;
+        }
+        if (!isOwner)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+
+        if (linked_course_id) {
+          const linkCheck = await env.DB.prepare(
+            "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+          )
+            .bind(linked_course_id, userAuth.id)
+            .first();
+          if (!linkCheck)
+            return new Response(JSON.stringify({ error: "Forbidden link" }), {
+              status: 403,
+            });
+        }
+      }
+
+      await env.DB.prepare(
+        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ? WHERE id = ?",
+      )
+        .bind(
+          slug,
+          title,
+          title_hi || null,
+          description || "",
+          description_hi || null,
+          JSON.stringify(fields_json),
+          JSON.stringify(seo_json || {}),
+          JSON.stringify(theme_json || {}),
+          confirmation_email_body || null,
+          linked_course_id || null,
+          book_id || null,
+          linked_batch_id || null,
+          auto_enroll ? 1 : 0,
+          id,
+        )
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Form template updated successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/form-templates\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Template ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (userAuth.role === "teacher") {
+        const template = (await env.DB.prepare(
+          "SELECT teacher_id, linked_course_id FROM FormTemplates WHERE id = ?",
+        )
+          .bind(id)
+          .first()) as any;
+        if (!template)
+          return new Response(JSON.stringify({ error: "Not found" }), {
+            status: 404,
+          });
+
+        let isOwner = template.teacher_id === userAuth.id;
+        if (!isOwner && template.linked_course_id) {
+          const courseCheck = await env.DB.prepare(
+            "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+          )
+            .bind(template.linked_course_id, userAuth.id)
+            .first();
+          if (courseCheck) isOwner = true;
+        }
+        if (!isOwner)
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+          });
+      }
+
+      await env.DB.prepare("DELETE FROM FormTemplates WHERE id = ?")
+        .bind(id)
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Form template deleted successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.FormTemplates", env, request);
+  }
+}
+
+async function handleAdminFormSubmissions(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (request.method === "GET") {
+      let query = `
+        SELECT s.*, t.title as template_title, t.slug as template_slug, t.linked_course_id, c.title as course_title
+        FROM FormSubmissions s
+        JOIN FormTemplates t ON s.template_id = t.id
+        LEFT JOIN Courses c ON t.linked_course_id = c.id
+      `;
+      let params: any[] = [];
+      if (auth.role === "teacher") {
+        query += " WHERE t.teacher_id = ?";
+        params.push(auth.id);
+      }
+      query += " ORDER BY s.created_at DESC";
+
+      const { results } = await env.DB.prepare(query)
+        .bind(...params)
+        .all();
+      return new Response(JSON.stringify({ submissions: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (auth.role === "teacher") {
+        const ownership = await env.DB.prepare(
+          `
+          SELECT s.id FROM FormSubmissions s
+          JOIN FormTemplates t ON s.template_id = t.id
+          WHERE s.id = ? AND t.teacher_id = ?
+        `,
+        )
+          .bind(id, auth.id)
+          .first();
+        if (!ownership)
+          return new Response(
+            JSON.stringify({
+              error: "Access Denied: You do not own this form.",
+            }),
+            { status: 403 },
+          );
+      }
+
+      const { status, ai_analysis } = (await request.json()) as any;
+      await env.DB.prepare(
+        "UPDATE FormSubmissions SET status = ?, ai_analysis = ? WHERE id = ?",
+      )
+        .bind(status, ai_analysis || null, id)
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Submission updated successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const id = url.pathname.match(/\/api\/admin\/form-submissions\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Submission ID is required in URL path" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (auth.role === "teacher") {
+        const ownership = await env.DB.prepare(
+          `
+          SELECT s.id FROM FormSubmissions s
+          JOIN FormTemplates t ON s.template_id = t.id
+          WHERE s.id = ? AND t.teacher_id = ?
+        `,
+        )
+          .bind(id, auth.id)
+          .first();
+        if (!ownership)
+          return new Response(
+            JSON.stringify({
+              error: "Access Denied: You do not own this form.",
+            }),
+            { status: 403 },
+          );
+      }
+
+      await env.DB.prepare("DELETE FROM FormSubmissions WHERE id = ?")
+        .bind(id)
+        .run();
+      return new Response(
+        JSON.stringify({ message: "Submission deleted successfully" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.FormSubmissions", env, request);
+  }
+}
+
+async function handleCheckDuplicateSubmission(
+  request: Request,
+  env: Env,
+  slug: string,
+): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const email = url.searchParams.get("email");
+    const phone = url.searchParams.get("phone");
+    if (!email && !phone)
+      return new Response(JSON.stringify({ exists: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const template: any = await env.DB.prepare(
+      "SELECT id FROM FormTemplates WHERE slug = ?",
+    )
+      .bind(slug)
+      .first();
+    if (!template)
+      return new Response(JSON.stringify({ error: "Form not found" }), {
+        status: 404,
+      });
+
+    let exists = false;
+    if (email) {
+      const existingEmail = await env.DB.prepare(
+        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
+      )
+        .bind(template.id, email)
+        .first();
+      if (existingEmail) exists = true;
+    }
+    if (!exists && phone) {
+      const phoneSubmissions = await env.DB.prepare(
+        "SELECT data_json FROM FormSubmissions WHERE template_id = ?",
+      )
+        .bind(template.id)
+        .all();
+      for (const sub of phoneSubmissions.results) {
+        try {
+          const data = JSON.parse(sub.data_json as string);
+          const storedPhone = (data.phone || data.mobile || "").toString().trim();
+          if (storedPhone === phone) {
+            exists = true;
+            break;
+          }
+        } catch {
+          // skip malformed JSON
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({ exists }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Form.CheckDuplicate", env, request);
+  }
+}
+
+async function handleGetFormTemplate(
+  request: Request,
+  env: Env,
+  slug: string,
+): Promise<Response> {
+  try {
+    const template = await env.DB.prepare(
+      "SELECT * FROM FormTemplates WHERE slug = ?",
+    )
+      .bind(slug)
+      .first();
+    if (!template)
+      return new Response(JSON.stringify({ error: "Form not found" }), {
+        status: 404,
+      });
+    return new Response(JSON.stringify(template), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Form.GetTemplate", env, request);
+  }
+}
+
+async function handleFormResponseSubmit(
+  request: Request,
+  env: Env,
+  slug: string,
+): Promise<Response> {
+  try {
+    const template: any = await env.DB.prepare(
+      "SELECT * FROM FormTemplates WHERE slug = ?",
+    )
+      .bind(slug)
+      .first();
+    if (!template)
+      return new Response(JSON.stringify({ error: "Form not found" }), {
+        status: 404,
+      });
+
+    const submissionData = (await request.json()) as any;
+    const submissionId = generateCustomId("YA-SUB");
+    const email = submissionData.email || "";
+    const fullName =
+      submissionData.full_name ||
+      submissionData.name ||
+      submissionData.student_name ||
+      "New Student";
+    const phone = submissionData.phone || submissionData.mobile || null;
+    // Extract country/district codes from form data
+    const countryCode =
+      submissionData.country_code || submissionData.country || "IN";
+    const districtCode =
+      submissionData.district_code || submissionData.district || "01";
+    // Batch selected by user in form
+    const selectedBatchId =
+      submissionData.selected_batch_id || template.linked_batch_id || null;
+
+    // AI Analysis (Eligibility / Admission processing)
+    let aiFeedback = null;
+    let isFit = false;
+    let autoEnrolled = false;
+
+    if (template.eligibility_criteria || template.auto_enroll) {
+      try {
+        const criteriaText =
+          template.eligibility_criteria ||
+          "Review the application for general sincerity.";
+        const systemPrompt = `You are "Ashram Admission AI". Review this application for "${template.title}".
+        Evaluate based on these rules: ${criteriaText}
+        Format: {"score": 0-10, "feedback": "Short encouraging feedback in Hindi", "is_fit": boolean}
+        Application: ${JSON.stringify(submissionData)}`;
+
+        const aiResult = await generateAIContent(
+          [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: "Review this application." },
+          ],
+          env,
+          true,
+        );
+        const parsedAnalysis = JSON.parse(sanitizeJson(aiResult));
+        aiFeedback = JSON.stringify(parsedAnalysis);
+        isFit = parsedAnalysis.is_fit === true;
+      } catch (e) {
+        console.error("Submission AI Analysis Error:", e);
+        isFit = true; // Default to fit if AI unavailable
+      }
+    } else {
+      isFit = true; // No criteria = auto-fit
+    }
+
+    // Check for duplicates FIRST before any auto-enrollment
+    let isDuplicate = false;
+    if (email) {
+      const existingSubmission = await env.DB.prepare(
+        "SELECT id FROM FormSubmissions WHERE template_id = ? AND email = ?",
+      )
+        .bind(template.id, email)
+        .first();
+      if (existingSubmission) {
+        isDuplicate = true;
+      }
+    }
+
+    let submissionStatus = "pending";
+    let createdUserId: string | null = null;
+
+    // Auto Account Creation + Enrollment Logic (only if NOT duplicate)
+    // Trigger if: linked_course_id exists OR book_id exists OR auto_enroll is set
+    if (!isDuplicate && (template.linked_course_id || template.book_id || template.auto_enroll) && email) {
+      try {
+        // Find existing user or create a new one with proper student ID
+        let user: any = await env.DB.prepare(
+          "SELECT id, email, full_name FROM Users WHERE email = ?",
+        )
+          .bind(email)
+          .first();
+        if (!user) {
+          const newUserId = await generateStudentId(
+            env.DB,
+            countryCode,
+            districtCode,
+            fullName,
+          );
+          await env.DB.prepare(
+            "INSERT INTO Users (id, student_id, email, role, full_name, phone) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+            .bind(newUserId, newUserId, email, "student", fullName, phone)
+            .run();
+          user = { id: newUserId, email, full_name: fullName };
+          createdUserId = newUserId;
+
+          // Welcome email for new account
+          const welcomeHtml = `
+            <p style="font-size:16px;">Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${fullName}</strong>,</p>
+            <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Adityanveshan LMS Ã Â¤ÂªÃ Â¤Â° account Ã Â¤Â¬Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+            <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
+            <p>Login Ã Â¤ÂÃ Â¤Â°Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¤Â¾ email (<strong>${email}</strong>) use Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° OTP Ã Â¤Â¸Ã Â¥Â verify Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+          `;
+          const welcomeText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${fullName},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Adityanveshan LMS Ã Â¤ÂªÃ Â¤Â° account Ã Â¤Â¬Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤\nStudent ID: ${newUserId}\n\nLogin Ã Â¤ÂÃ Â¤Â°Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¤Â¾ email (${email}) use Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° OTP Ã Â¤Â¸Ã Â¥Â verify Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`;
+          await safeSendEmail(
+            env,
+            email,
+            "Ã Â¤Â¯Ã Â¤ÂÃ Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¤Â® - Account Created",
+            "Ã Â¤Â¯Ã Â¤ÂÃ Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â¶Ã Â¥ÂÃ Â¤Â°Ã Â¤Â® Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â¤!",
+            welcomeHtml,
+            welcomeText,
+          );
+        }
+
+        // Enroll in linked course if isFit
+        if (template.linked_course_id && isFit) {
+          const existingEnr: any = await env.DB.prepare(
+            "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+          )
+            .bind(user.id, template.linked_course_id)
+            .first();
+          if (existingEnr) {
+            if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
+              await env.DB.prepare(
+                "UPDATE Enrollments SET batch_id = ? WHERE id = ?",
+              )
+                .bind(selectedBatchId, existingEnr.id)
+                .run();
+              await createNotification(
+                env,
+                user.id,
+                "Batch Updated",
+                `Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â course enrollment Ã Â¤ÂÃ Â¤Â¾ batch Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¡Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤`,
+                "success",
+              );
+            }
+          } else {
+            const enrollId = generateCustomId("YA-ENR");
+            await env.DB.prepare(
+              "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+              .bind(
+                enrollId,
+                user.id,
+                template.linked_course_id,
+                selectedBatchId,
+                "active",
+                "unpaid",
+              )
+              .run();
+            await createNotification(
+              env,
+              user.id,
+              "Course Enrollment",
+              `Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â form Ã Â¤ÂÃ Â¥Â Ã Â¤Â®Ã Â¤Â¾Ã Â¤Â§Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â® Ã Â¤Â¸Ã Â¥Â course Ã Â¤Â®Ã Â¥ÂÃ Â¤Â enroll Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤`,
+              "success",
+            );
+          }
+          submissionStatus = "approved";
+          autoEnrolled = true;
+        } else if (template.book_id && isFit) {
+          const existingEnr: any = await env.DB.prepare(
+            "SELECT id, batch_id FROM Enrollments WHERE user_id = ? AND book_id = ?",
+          )
+            .bind(user.id, template.book_id)
+            .first();
+          if (existingEnr) {
+            if (selectedBatchId && existingEnr.batch_id !== selectedBatchId) {
+              await env.DB.prepare(
+                "UPDATE Enrollments SET batch_id = ? WHERE id = ?",
+              )
+                .bind(selectedBatchId, existingEnr.id)
+                .run();
+              await createNotification(
+                env,
+                user.id,
+                "Batch Updated",
+                `Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¤Â enrollment Ã Â¤ÂÃ Â¤Â¾ batch Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¡Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤`,
+                "success",
+              );
+            }
+          } else {
+            const enrollId = generateCustomId("YA-ENR");
+            await env.DB.prepare(
+              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+              .bind(
+                enrollId,
+                user.id,
+                template.book_id,
+                selectedBatchId,
+                "active",
+                "unpaid",
+              )
+              .run();
+            await createNotification(
+              env,
+              user.id,
+              "Book Enrollment",
+              `Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â form Ã Â¤ÂÃ Â¥Â Ã Â¤Â®Ã Â¤Â¾Ã Â¤Â§Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â® Ã Â¤Â¸Ã Â¥Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¤Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â enroll Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤`,
+              "success",
+            );
+          }
+          submissionStatus = "approved";
+          autoEnrolled = true;
+        }
+      } catch (e) {
+        console.error("Auto-enrollment failed:", e);
+      }
+    }
+
+    await env.DB.prepare(
+      "INSERT INTO FormSubmissions (id, template_id, email, data_json, ai_analysis, status) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        submissionId,
+        template.id,
+        email,
+        JSON.stringify(submissionData),
+        aiFeedback,
+        submissionStatus,
+      )
+      .run();
+
+    // Get course info for emails
+    let courseInfo: any = null;
+    if (template.linked_course_id) {
+      courseInfo = await env.DB.prepare(
+        "SELECT title, price_rupees FROM Courses WHERE id = ?",
+      )
+        .bind(template.linked_course_id)
+        .first();
+    }
+
+    // Send confirmation email to user ONLY IF NOT DUPLICATE
+    if (email && !isDuplicate) {
+      const subject = `Confirmation: ${template.title}`;
+      let userBody = template.confirmation_email_body;
+      if (!userBody) {
+        userBody = `
+          <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${fullName}</strong>,</p>
+          <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Ã Â¤Â«Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â® "<strong>${template.title}</strong>" Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¤ Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">Ã°ÂÂÂ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â <strong>${courseInfo.title}</strong> Ã Â¤Â®Ã Â¥ÂÃ Â¤Â enroll Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¦Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!${courseInfo.price_rupees > 0 ? " Premium access Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â course page Ã Â¤ÂªÃ Â¤Â° Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤" : ""}</p></div>` : ""}
+        `;
+      }
+      const userText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${fullName},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ Ã Â¤Â«Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â® "${template.title}" Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¤ Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤\n\nOm!`;
+      await safeSendEmail(
+        env,
+        email,
+        subject,
+        "Ã¢ÂÂ Ã Â¤Â«Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â® Ã Â¤ÂÃ Â¤Â®Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â!",
+        userBody,
+        userText,
+      );
+    }
+
+    // Send admin notification email
+    const adminEmail =
+      (await getSecret(env, "ADMIN_CONTACT_EMAIL", false)) ||
+      "navasanganakah@gmail.com";
+    const adminHtml = `
+      <table style="width:100%;border-collapse:collapse; text-align: left;">
+        <tr><th style="padding:8px; border-bottom: 1px solid #ddd;">Field</th><th style="padding:8px; border-bottom: 1px solid #ddd;">Value</th></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Form:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${template.title}</td></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Name:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${fullName}</td></tr>
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Email:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${email}</td></tr>
+        ${createdUserId ? `<tr><td style="padding:8px; border-bottom: 1px solid #eee;">Student ID:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${createdUserId}</td></tr>` : ""}
+        ${autoEnrolled && courseInfo ? `<tr><td style="padding:8px; border-bottom: 1px solid #eee;">Enrolled In:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${courseInfo.title}</td></tr>` : ""}
+        <tr><td style="padding:8px; border-bottom: 1px solid #eee;">Status:</td><td style="padding:8px; border-bottom: 1px solid #eee;">${submissionStatus}</td></tr>
+      </table>
+      <div style="margin-top:16px;">
+        <h3 style="color:#6366f1;font-weight:600;">Full Submission Data</h3>
+        <pre style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;overflow:auto;">${JSON.stringify(submissionData, null, 2)}</pre>
+      </div>
+    `;
+    const adminText = `New Form Submission for ${template.title}\nName: ${fullName}\nEmail: ${email}\nStatus: ${submissionStatus}\n\nSubmission Data: ${JSON.stringify(submissionData, null, 2)}`;
+    await safeSendEmail(
+      env,
+      adminEmail,
+      `[LMS Form] New Submission: ${template.title}`,
+      "Ã°ÂÂÂ New Form Submission",
+      adminHtml,
+      adminText,
+    );
+
+    return new Response(
+      JSON.stringify({
+        message: "Form submitted successfully!",
+        id: submissionId,
+        ai_analysis: aiFeedback,
+        auto_enrolled: autoEnrolled,
+      }),
+      { status: 201, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Form.Submit", env, request);
+  }
+}
+
+// --- Live Session Handlers (Cloudflare Real-time Kit / Calls) ---
+
+async function callRealtimeAPI(
+  env: Env,
+  path: string,
+  method: string,
+  body: any,
+  silent404: boolean = false,
+) {
+  try {
+    const accountId =
+      (await getSecret(env, "CLOUDFLARE_ACCOUNT_ID", false)) ||
+      (await getSecret(env, "NEXT_PUBLIC_CF_ACCOUNT_ID", false));
+    const appId =
+      (await getSecret(env, "REALTIME_APP_ID", false)) ||
+      (await getSecret(env, "NEXT_PUBLIC_RT_APP_ID", false));
+    const apiToken =
+      (await getSecret(env, "CLOUDFLARE_API_TOKEN", false)) ||
+      (await getSecret(env, "CF_API_TOKEN", false));
+
+    const missingKeys = [];
+    if (!accountId)
+      missingKeys.push("CLOUDFLARE_ACCOUNT_ID (or NEXT_PUBLIC_CF_ACCOUNT_ID)");
+    if (!appId) missingKeys.push("REALTIME_APP_ID (or NEXT_PUBLIC_RT_APP_ID)");
+    if (!apiToken) missingKeys.push("CLOUDFLARE_API_TOKEN (or CF_API_TOKEN)");
+
+    if (missingKeys.length > 0) {
+      const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(", ")}`;
+      console.error(`[Realtime] ${msg} Ã¢ÂÂ returning null, callers will treat as empty result`);
+      // Send urgent alert to admin
+      await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => { });
+      return null;
+    }
+
+    const apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}${path}`;
+
+    const res = await fetch(apiUrl, {
+      method,
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      if (res.status === 404 && silent404) {
+        return null;
+      }
+      console.error(`[Realtime API Error] ${res.status}: ${errText}`);
+      // Send urgent alert to admin
+      await sendRedAlert(
+        env,
+        `Live Session (RealtimeKit) Error - ${method} ${path}`,
+        `URL: ${apiUrl}\nStatus: ${res.status}\nError Response: ${errText}\nPayload: ${body ? JSON.stringify(body, null, 2) : "none"}`,
+      );
+      return null;
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error(`[Realtime API Fetch Error]`, error);
+    // Send urgent alert to admin
+    await sendRedAlert(
+      env,
+      `Live Session (RealtimeKit) Fetch Exception - ${method} ${path}`,
+      `Exception details: ${error instanceof Error ? error.stack || error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+async function createRealtimeMeeting(
+  env: Env,
+  request: Request,
+  title: string,
+) {
+  // Use hardcoded host for production webhooks as requested
+  const hostUrl = "https://lms.yagyaashram.com";
+
+  const data = await callRealtimeAPI(env, "/meetings", "POST", {
+    title: title || "Live Class",
+    record_on_start: true,
+    recording_config: {
+      video_config: {
+        codec: "H264",
+        width: 1280,
+        height: 720,
+        export_file: true,
+      },
+      audio_config: { codec: "AAC", channel: "stereo", export_file: true },
+    },
+    ai_config: {
+      transcription: { language: "hi" },
+      summarization: { summary_type: "lecture" },
+    },
+    webhooks: [
+      {
+        url: `${hostUrl}/api/webhooks/realtime`,
+        events: ["recording.statusUpdate"],
+      },
+    ],
+  });
+  return (data as any)?.data?.id || (data as any)?.result?.id || null;
+}
+
+async function getRealtimeParticipantToken(
+  env: Env,
+  meetingId: string,
+  userId: string,
+  name: string,
+  isAdmin: boolean,
+) {
+  const data = await callRealtimeAPI(
+    env,
+    `/meetings/${meetingId}/participants`,
+    "POST",
+    {
+      custom_participant_id: userId,
+      name: name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°",
+      preset_name: isAdmin ? "group_call_host" : "group_call_participant",
+    },
+  );
+  return (data as any)?.data?.token || (data as any)?.result?.token || null;
+}
+
+async function handleEndLiveSession(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { meetingId, sessionId } = (await request.json()) as any;
+
+    let session: any = null;
+    if (sessionId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE id = ? AND status != 'ended'",
+      )
+        .bind(sessionId)
+        .first()) as any;
+    }
+    if (!session && meetingId) {
+      session = (await env.DB.prepare(
+        "SELECT * FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+      )
+        .bind(meetingId)
+        .first()) as any;
+    }
+    if (!session)
+      return new Response(JSON.stringify({ error: "Session not found" }), {
+        status: 404,
+      });
+
+    if (auth.role === "teacher" && session.teacher_id !== auth.id) {
+      return new Response(JSON.stringify({ error: "Access Denied" }), {
+        status: 403,
+      });
+    }
+
+    // Idempotency guard: skip if session is already ended (prevents double charging)
+    if (session.status === "ended") {
+      console.log(`[EndSession] Session ${session.id} already ended, skipping side-effects`);
+      return new Response(JSON.stringify({ success: true, alreadyEnded: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    await env.DB.prepare(
+      'UPDATE LiveSessions SET status = "ended" WHERE id = ?',
+    )
+      .bind(session.id)
+      .run();
+
+    try {
+      await chargeEndedSessionGroupClassCredits(env, session.id);
+    } catch(err) {
+      console.error("Error charging ended session group class credits:", err);
+    }
+
+    try {
+      await chargeNoShowStudents(env, session.id);
+    } catch(err) {
+      console.error("Error charging no show students:", err);
+    }
+
+    // Mark individual booking as completed if this is an individual class session
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET status = 'completed', end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE live_session_id = ? AND status IN ('live', 'scheduled')`,
+    )
+      .bind(session.id)
+      .run();
+
+    // Deduct cost_per_class_rupees from active subscribers' live_class_amount_rupees
+    // Only deduct if plan has live_class_amount_rupees > 0 and does NOT include free live session access
+    try {
+      await env.DB.prepare(
+        `
+        UPDATE Subscriptions
+        SET live_class_amount_rupees = MAX(0, live_class_amount_rupees - COALESCE(
+          (SELECT cost_per_class_rupees FROM LiveSessions ls
+           LEFT JOIN Batches b ON ls.batch_id = b.id
+           WHERE ls.id = ?),
+          0
+        ))
+        WHERE id IN (
+          SELECT id
+          FROM Subscriptions s1
+          WHERE s1.status = 'active'
+          AND s1.live_class_amount_rupees > 0
+          AND s1.user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
+          AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = s1.plan_id) = 0
+          AND s1.created_at = (
+            SELECT MAX(created_at)
+            FROM Subscriptions s2
+            WHERE s2.user_id = s1.user_id AND s2.status = 'active'
+          )
+        )
+      `,
+      )
+        .bind(session.id, session.id)
+        .run();
+    } catch (e) {
+      console.error("Failed to deduct live class rupees:", e);
+    }
+
+    let recordingId = session.recording_id;
+    if (!recordingId) {
+      const activeData = await callRealtimeAPI(
+        env,
+        `/recordings/active-recording/${meetingId}`,
+        "GET",
+        null,
+        true,
+      );
+      recordingId =
+        (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+    }
+
+    if (!recordingId) {
+      const listRecs = await callRealtimeAPI(env, `/recordings`, "GET", null);
+      const recordsArray =
+        (listRecs as any)?.data || (listRecs as any)?.result || [];
+      const matchedRec = recordsArray.find(
+        (r: any) => r.meeting_id === meetingId,
+      );
+      if (matchedRec) recordingId = matchedRec.id;
+    }
+
+    if (recordingId) {
+      try {
+        await callRealtimeAPI(env, `/recordings/${recordingId}`, "PUT", {
+          action: "stop",
+        });
+      } catch (err: any) {
+        if (
+          err?.message?.includes("not in progress") ||
+          err?.message?.includes("UPLOADED")
+        ) {
+          // Recording is already stopped/uploaded, ignore the error
+        } else {
+          throw err;
+        }
+      }
+
+      await env.DB.prepare(
+        'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
+      )
+        .bind(recordingId, session.id)
+        .run();
+    }
+
+    if (session && session.course_id && ctx) {
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, session.course_id, "live_session", { sessionId: session.id, courseId: session.course_id, status: "ended" }));
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Meeting ended. Recording status saved.",
+      }),
+      { status: 200 },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Live.EndSession", env, request);
+  }
+}
+
+async function processRecordingToR2(
+  env: Env,
+  recordingId: string,
+  session: any,
+) {
+  try {
+    const meetingId = session.rtc_room_id;
+    let recDetails: any = null;
+    let isReady = false;
+    let downloadUrl: string | null = null;
+    let audioDownloadUrl: string | null = null;
+
+    // Poll up to 10 times, waiting 5 seconds between polls
+    for (let i = 0; i < 10; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 5000));
+
+      if (recordingId) {
+        recDetails = await callRealtimeAPI(
+          env,
+          `/recordings/${recordingId}`,
+          "GET",
+          null,
+        );
+      } else {
+        recDetails = await callRealtimeAPI(
+          env,
+          `/recordings/active-recording/${meetingId}`,
+          "GET",
+          null,
+          true,
+        );
+      }
+
+      const status = String(
+        recDetails?.data?.status || recDetails?.result?.status || "",
+      ).toLowerCase();
+      downloadUrl =
+        recDetails?.data?.download_url || recDetails?.result?.download_url;
+      audioDownloadUrl =
+        recDetails?.data?.audio_download_url || recDetails?.result?.audio_download_url;
+
+      // Cloudflare may report recordings as uploaded before/when the download URL is available.
+      if (
+        status === "ready" ||
+        status === "completed" ||
+        status === "uploaded" ||
+        downloadUrl
+      ) {
+        isReady = true;
+        break;
+      }
+    }
+
+    let finalUrl = downloadUrl;
+    let finalAudioUrl = audioDownloadUrl;
+
+    if (isReady && downloadUrl && env.STORAGE) {
+      // Stream directly to R2 to avoid OOM
+      // Assuming downloadUrl is a pre-signed S3 URL, no Authorization header should be added
+      const fileRes = await fetch(downloadUrl);
+      if (fileRes.ok && fileRes.body) {
+        const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+        await env.STORAGE.put(objectKey, fileRes.body, {
+          httpMetadata: { contentType: "video/mp4" },
+        });
+        finalUrl = `/api/assets/${objectKey}`;
+      } else {
+        const errText = await fileRes.text();
+        console.error(
+          `Failed to download recording from Cloudflare. Status: ${fileRes.status}, Error: ${errText}`,
+        );
+        throw new Error(`Cloudflare Download Error: ${fileRes.status}`);
+      }
+
+      if (audioDownloadUrl) {
+        try {
+          const audioRes = await fetch(audioDownloadUrl);
+          if (audioRes.ok && audioRes.body) {
+            const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+            await env.STORAGE.put(audioKey, audioRes.body, {
+              httpMetadata: { contentType: "audio/mpeg" },
+            });
+            finalAudioUrl = `/api/assets/${audioKey}`;
+          }
+        } catch (audioErr) {
+          console.error("Failed to fetch audio recording from 100ms", audioErr);
+        }
+      }
+    }
+
+    if (finalUrl) {
+      const lessonId = generateCustomId("YA-LES");
+
+      let transcriptText = "";
+      try {
+        const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+        transcriptText = await generateAIContent(
+          [{ role: "user", content: aiPrompt }],
+          env,
+          false,
+        );
+      } catch (aiErr) {
+        console.error("AI Transcription generation failed:", aiErr);
+      }
+
+      const maxOrderRes = await env.DB.prepare("SELECT IFNULL(MAX(order_index), 0) + 1 as next_order FROM Lessons WHERE course_id = ?").bind(session.course_id).first() as any;
+      const orderIndex = maxOrderRes?.next_order || 1;
+
+      await env.DB.prepare(
+        "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(
+          lessonId,
+          session.course_id,
+          session.batch_id || null,
+          "Live Recordings",
+          `Recording: ${session.title}`,
+          "recording",
+          finalUrl,
+          downloadUrl,
+          transcriptText || null,
+          orderIndex,
+          0,
+        )
+        .run();
+
+      await env.DB.prepare(
+        'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
+      )
+        .bind(session.id)
+        .run();
+
+      await enqueueLessonProcessing(
+        env,
+        lessonId,
+        session.course_id,
+        finalAudioUrl || finalUrl,
+        "recording",
+        `Recording: ${session.title}`,
+      );
+    } else {
+      throw new Error("Final URL could not be resolved or download failed.");
+    }
+  } catch (e: any) {
+    console.error("Background recording processing failed", e);
+    await sendRedAlert(
+      env,
+      "Recording Processing Failed",
+      `Failed to process recording ${recordingId} for session ${session.id}. Error: ${e.message}`,
+    );
+  }
+}
+
+async function handleAdminDownloadRecording(
+  request: Request,
+  env: Env,
+  sessionId: string,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const session = (await env.DB.prepare(
+      "SELECT * FROM LiveSessions WHERE id = ?",
+    )
+      .bind(sessionId)
+      .first()) as any;
+    if (!session)
+      return new Response(JSON.stringify({ error: "Session not found" }), {
+        status: 404,
+      });
+    if (auth.role === "teacher" && session.teacher_id !== auth.id)
+      return new Response(JSON.stringify({ error: "Access Denied" }), {
+        status: 403,
+      });
+
+    let recordingId = session.recording_id;
+
+    if (!recordingId && session.rtc_room_id) {
+      let recDetails = await callRealtimeAPI(
+        env,
+        `/recordings/active-recording/${session.rtc_room_id}`,
+        "GET",
+        null,
+        true,
+      );
+      let fetchedId =
+        (recDetails as any)?.data?.id || (recDetails as any)?.result?.id;
+
+      if (!fetchedId) {
+        const listRecs = await callRealtimeAPI(env, `/recordings`, "GET", null);
+        const recordsArray =
+          (listRecs as any)?.data || (listRecs as any)?.result || [];
+        const matchedRec = recordsArray.find(
+          (r: any) => r.meeting_id === session.rtc_room_id,
+        );
+        if (matchedRec) fetchedId = matchedRec.id;
+      }
+
+      if (fetchedId) {
+        recordingId = fetchedId;
+        await env.DB.prepare(
+          "UPDATE LiveSessions SET recording_id = ? WHERE id = ?",
+        )
+          .bind(recordingId, session.id)
+          .run();
+        session.recording_id = recordingId;
+      }
+    }
+
+    if (!recordingId) {
+      return new Response(
+        JSON.stringify({ error: "No recording found for this session" }),
+        { status: 400 },
+      );
+    }
+
+    const recDetails = await callRealtimeAPI(
+      env,
+      `/recordings/${recordingId}`,
+      "GET",
+      null,
+    );
+    const downloadUrl =
+      (recDetails as any)?.data?.download_url ||
+      (recDetails as any)?.result?.download_url;
+
+    if (!downloadUrl) {
+      return new Response(
+        JSON.stringify({ error: "Recording is not ready to download yet." }),
+        { status: 400 },
+      );
+    }
+
+    // Proxy the download from Cloudflare API so the browser can download it
+    // S3 Pre-signed URLs don't need Authorization header
+    const fileRes = await fetch(downloadUrl);
+
+    if (!fileRes.ok || !fileRes.body) {
+      return new Response(
+        JSON.stringify({
+          error: "Failed to fetch recording from Cloudflare API.",
+        }),
+        { status: 500 },
+      );
+    }
+
+    // Set headers for download
+    const headers = new Headers(fileRes.headers);
+    headers.set(
+      "Content-Disposition",
+      `attachment; filename="recording_${session.id}.mp4"`,
+    );
+    headers.set("Content-Type", "video/mp4");
+
+    return new Response(fileRes.body, {
+      status: 200,
+      headers: headers,
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DownloadRecording", env, request);
+  }
+}
+
+async function handleAdminProcessRecording(
+  request: Request,
+  env: Env,
+  sessionId: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const session = (await env.DB.prepare(
+      "SELECT * FROM LiveSessions WHERE id = ?",
+    )
+      .bind(sessionId)
+      .first()) as any;
+    if (!session)
+      return new Response(JSON.stringify({ error: "Session not found" }), {
+        status: 404,
+      });
+    if (auth.role === "teacher" && session.teacher_id !== auth.id)
+      return new Response(JSON.stringify({ error: "Access Denied" }), {
+        status: 403,
+      });
+
+    if (!session.recording_id)
+      return new Response(
+        JSON.stringify({ error: "No recording found for this session" }),
+        { status: 400 },
+      );
+    if (session.recording_status === "processed")
+      return new Response(
+        JSON.stringify({ error: "Recording is already processed" }),
+        { status: 400 },
+      );
+
+    const recordingId = session.recording_id;
+
+    // Fast-path background processing using processRecordingToR2
+    if (ctx && typeof ctx.waitUntil === "function") {
+      await env.DB.prepare(
+        'UPDATE LiveSessions SET recording_status = "processing" WHERE id = ?',
+      )
+        .bind(session.id)
+        .run();
+      ctx.waitUntil(processRecordingToR2(env, recordingId, session));
+    } else {
+      await env.DB.prepare(
+        'UPDATE LiveSessions SET recording_status = "processing" WHERE id = ?',
+      )
+        .bind(session.id)
+        .run();
+      processRecordingToR2(env, recordingId, session).catch(console.error);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Recording processing started/completed",
+      }),
+      { status: 200 },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ProcessRecording", env, request);
+  }
+}
+
+async function handleRealtimeWebhook(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  try {
+    const payload = (await request.json()) as any;
+    const eventType = payload?.event || payload?.type;
+
+    // We only care about recording status updates for now
+    if (eventType !== "recording.statusUpdate") {
+      return new Response("Ignored", { status: 200 });
+    }
+
+    const recordingData = payload?.recording || payload?.data;
+    const readyStatuses = new Set(["ready", "completed", "uploaded"]);
+    const recordingStatus = String(recordingData?.status || "").toLowerCase();
+    if (!recordingData || !readyStatuses.has(recordingStatus)) {
+      return new Response("Not ready", { status: 200 });
+    }
+
+    const recordingId = recordingData.id;
+    const downloadUrl = recordingData.download_url;
+    const audioDownloadUrl = recordingData.audio_download_url;
+
+    if (!recordingId || !downloadUrl) {
+      return new Response("Missing download info", { status: 200 });
+    }
+
+    // Find the session that this recording belongs to
+    const session = (await env.DB.prepare(
+      "SELECT * FROM LiveSessions WHERE recording_id = ?",
+    )
+      .bind(recordingId)
+      .first()) as any;
+    if (!session) {
+      return new Response("Session not found for recording", { status: 404 });
+    }
+
+    if (
+      session.recording_status === "success" ||
+      session.recording_status === "processing"
+    ) {
+      return new Response("Already processed or processing", { status: 200 });
+    }
+
+    if (env.STORAGE) {
+      // Stream directly to R2 to avoid OOM
+      // Using pre-signed URL directly, Authorization header causes 403
+      const fileRes = await fetch(downloadUrl);
+      if (fileRes.ok && fileRes.body) {
+        const objectKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}.mp4`;
+        await env.STORAGE.put(objectKey, fileRes.body, {
+          httpMetadata: { contentType: "video/mp4" },
+        });
+        const finalUrl = `/api/assets/${objectKey}`;
+
+        let finalAudioUrl = audioDownloadUrl;
+        if (audioDownloadUrl) {
+          try {
+            const audioRes = await fetch(audioDownloadUrl);
+            if (audioRes.ok && audioRes.body) {
+              const audioKey = `${session.course_id}/${session.batch_id || "general"}/recording/${session.id}_${session.rtc_room_id}_audio.mp3`;
+              await env.STORAGE.put(audioKey, audioRes.body, {
+                httpMetadata: { contentType: "audio/mpeg" },
+              });
+              finalAudioUrl = `/api/assets/${audioKey}`;
+            } else {
+              console.error(`Failed to fetch audio recording from 100ms in webhook, status: ${audioRes.status}`);
+              const admins: any = await env.DB.prepare("SELECT id FROM Users WHERE role = 'admin'").all();
+              for (const admin of admins.results || []) {
+                await sendPush(env, {
+                  userId: admin.id,
+                  title: "Audio Fetch Failed",
+                  body: `Failed to fetch audio recording from webhook (Status: ${audioRes.status}).`
+                }).catch(e => console.error("Failed to send push notification to admin", e));
+              }
+            }
+          } catch (audioErr) {
+            console.error("Failed to fetch audio recording from 100ms in webhook", audioErr);
+          }
+        }
+
+        const lessonId = generateCustomId("YA-LES");
+
+        let transcriptText = "";
+        try {
+          const aiPrompt = `Please provide a professional, short textual summary/transcript description for a recorded live class titled: "${session.title}". This will be saved as the lesson's text content.`;
+          transcriptText = await generateAIContent(
+            [{ role: "user", content: aiPrompt }],
+            env,
+            false,
+          );
+        } catch (aiErr) {
+          console.error(
+            "AI Transcription generation failed in webhook:",
+            aiErr,
+          );
+        }
+
+        await env.DB.prepare(
+          "INSERT INTO Lessons (id, course_id, batch_id, chapter_title, title, type, content_url, audio_url, text_content, order_index, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            lessonId,
+            session.course_id,
+            session.batch_id || null,
+            "Live Recordings",
+            `Recording: ${session.title}`,
+            "recording",
+            finalUrl,
+            downloadUrl,
+            transcriptText || null,
+            999,
+            session.is_free || 0,
+          )
+          .run();
+
+        await env.DB.prepare(
+          'UPDATE LiveSessions SET recording_status = "success" WHERE id = ?',
+        )
+          .bind(session.id)
+          .run();
+
+        await enqueueLessonProcessing(
+          env,
+          lessonId,
+          session.course_id,
+          finalAudioUrl || finalUrl,
+          "recording",
+          `Recording: ${session.title}`,
+        );
+      } else {
+        throw new Error("Final URL could not be resolved or download failed.");
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error: any) {
+    console.error("Webhook processing failed", error);
+    await sendRedAlert(
+      env,
+      "Realtime Webhook Error",
+      `Webhook failed: ${error.message}`,
+    );
+    return new Response("Error", { status: 500 });
+  }
+}
+
+async function handleListRecordings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const data = await callRealtimeAPI(env, "/recordings", "GET", null);
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Live.ListRecordings", env, request);
+  }
+}
+
+async function handleRecordingAction(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const { meetingId, action, sessionId } = (await request.json()) as any;
+
+    if (action === "start") {
+      const data = (await callRealtimeAPI(env, "/recordings", "POST", {
+        meeting_id: meetingId,
+        video_config: {
+          codec: "H264",
+          width: 1280,
+          height: 720,
+          export_file: true,
+        },
+        audio_config: { codec: "AAC", channel: "stereo", export_file: true },
+      })) as any;
+
+      const recordingId = data?.data?.id || data?.result?.id;
+      if (recordingId) {
+        // Find active session for this meeting to attach the recording to
+        let activeSession: any = null;
+        if (sessionId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE id = ?").bind(sessionId).first();
+        }
+        if (!activeSession && meetingId) {
+          activeSession = await env.DB.prepare("SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(meetingId).first();
+        }
+        if (activeSession) {
+          await env.DB.prepare(
+            'UPDATE LiveSessions SET recording_id = ?, recording_status = "pending" WHERE id = ?',
+          )
+            .bind(recordingId, (activeSession as any).id)
+            .run();
+        }
+      }
+
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "stop") {
+      const activeData = await callRealtimeAPI(
+        env,
+        `/recordings/active-recording/${meetingId}`,
+        "GET",
+        null,
+        true,
+      );
+      let recordingId =
+        (activeData as any)?.data?.id || (activeData as any)?.result?.id;
+
+      if (!recordingId) {
+        const listRecs = await callRealtimeAPI(env, `/recordings`, "GET", null);
+        const recordsArray =
+          (listRecs as any)?.data || (listRecs as any)?.result || [];
+        const matchedRec = recordsArray.find(
+          (r: any) => r.meeting_id === meetingId,
+        );
+        if (matchedRec) recordingId = matchedRec.id;
+      }
+
+      if (!recordingId) {
+        return new Response(JSON.stringify({ error: "No active recording" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await callRealtimeAPI(
+        env,
+        `/recordings/${recordingId}`,
+        "PUT",
+        { action: "stop" },
+      );
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Invalid action" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Live.RecordingAction", env, request);
+  }
+}
+
+async function handleListLiveSessions(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const list = await env.DB.prepare(
+      `SELECT ls.*, c.self_study_enabled,
+              (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
+              COALESCE(
+                NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
+                (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                 FROM Batches fallback_b
+                 WHERE fallback_b.course_id = ls.course_id
+                   AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                   AND fallback_b.status != 'completed'),
+                0
+              ) as required_self_study_credits,
+              CASE
+                WHEN c.self_study_enabled = 1
+                 AND COALESCE(b.self_study_group_enabled, 1) = 1
+                 AND COALESCE(
+                   NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
+                   (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                    FROM Batches fallback_b
+                    WHERE fallback_b.course_id = ls.course_id
+                      AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
+                      AND fallback_b.status != 'completed'),
+                   0
+                 ) > 0
+                THEN 1 ELSE 0
+              END as live_join_requires_credits
+       FROM LiveSessions ls
+       JOIN Courses c ON c.id = ls.course_id
+       LEFT JOIN Batches b ON b.id = ls.batch_id
+       WHERE ls.course_id = ?
+       ORDER BY ls.start_time ASC`,
+    )
+      .bind(courseId)
+      .all();
+    return new Response(JSON.stringify({ sessions: list.results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Course.ListLiveSessions", env, request);
+  }
+}
+
+async function handleGetDashboardData(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    // Use Batch for performance
+    const results = await env.DB.batch([
+      // 1. Enrolled Courses
+      env.DB.prepare(
+        `
+        SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Enrollments e
+        JOIN Courses c ON e.course_id = c.id
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        WHERE e.user_id = ? AND e.status IN ('active', 'completed')
+        ORDER BY e.purchased_at DESC
+      `,
+      ).bind(userId),
+
+      // 2. Today's Live (IST: UTC + 5:30)
+      env.DB.prepare(
+        `
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+        FROM LiveSessions ls
+        JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
+        JOIN Enrollments e ON e.course_id = c.id
+        WHERE e.user_id = ? AND e.status = 'active'
+        AND ls.status != 'ended'
+        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes')
+        ORDER BY ls.start_time ASC
+      `,
+      ).bind(userId),
+
+      // 3. Tomorrow's Live (IST: UTC + 5:30)
+      env.DB.prepare(
+        `
+        SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
+               c.self_study_enabled,
+               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+        FROM LiveSessions ls
+        JOIN Courses c ON ls.course_id = c.id
+        LEFT JOIN Batches b ON b.id = ls.batch_id
+        JOIN Enrollments e ON e.course_id = c.id
+        WHERE e.user_id = ? AND e.status = 'active'
+        AND ls.status != 'ended'
+        AND date(ls.start_time, '+5 hours', '30 minutes') = date('now', '+5 hours', '30 minutes', '+1 day')
+        ORDER BY ls.start_time ASC
+      `,
+      ).bind(userId),
+
+      // 4. Available Courses (Not enrolled)
+      env.DB.prepare(
+        `
+        SELECT c.*, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        FROM Courses c
+        LEFT JOIN Categories cat ON c.category_id = cat.id
+        WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
+        ORDER BY c.created_at DESC
+      `,
+      ).bind(userId),
+
+      // 5. Enrolled Books (Direct + Course Linked)
+      env.DB.prepare(
+        `
+        SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
+               bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
+               bo.wallet_rupees, bo.is_standalone, bo.created_at,
+               MAX(cb.course_id) as course_id
+        FROM Books bo
+        JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
+        LEFT JOIN CourseBooks cb ON bo.id = cb.book_id
+        WHERE bo.id = e.book_id OR cb.course_id = e.course_id
+        GROUP BY bo.id
+        ORDER BY bo.created_at DESC
+      `,
+      ).bind(userId),
+    ]);
+
+    const walletBalance = await getWalletBalance(env, userId);
+    const aiCreditsAllowed = walletBalance.balance_rupees > 0 ? walletBalance.balance_rupees : 5;
+
+    return new Response(
+      JSON.stringify({
+        enrolledCourses: results[0].results,
+        todayLive: results[1].results,
+        tomorrowLive: results[2].results,
+        availableCourses: results[3].results,
+        enrolledBooks: results[4].results,
+        aiCredits: aiCreditsAllowed,
+        walletBalance,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Dashboard.Data", env, request);
+  }
+}
+
+
+function normalizeNonNegativeInt(value: any, fallback = 0): number {
+  const parsed = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+// Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
+function roundToTwo(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
+
+function normalizeGroupClassCreditUnit(value: any): string {
+  const unit = String(value || "fifteen_minute");
+  const valid = ["fifteen_minute", "per_class", "monthly", "per_minute"];
+  return valid.includes(unit) ? unit : "fifteen_minute";
+}
+
+function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
+  const safeRate = normalizeNonNegativeInt(rate);
+  if (safeRate <= 0) return 0;
+  const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
+  if (minutes === 0) return 0; // Don't charge for 0 minutes
+  const costPaise = Math.round((safeRate * minutes * 100) / 15);
+  return roundToTwo(costPaise / 100);
+}
+
+function calculateMaxAttendMinutes(balance: number, rate: any): number {
+  const safeRate = normalizeNonNegativeInt(rate);
+  if (safeRate <= 0) return -1;
+  if (balance <= 0) return 0;
+  return Math.floor((balance / safeRate) * 15);
+}
+
+function getUnitSeconds(): number {
+  return FIFTEEN_MIN_SECONDS;
+}
+
+async function getWalletBalance(env: Env, userId: string): Promise<{ balance_rupees: number; lifetime_deposits_rupees: number; lifetime_withdrawals_rupees: number }> {
+  const wallet = (await env.DB.prepare(
+    `SELECT balance_rupees, lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
+  )
+    .bind(userId)
+    .first()) as any;
+
+  return {
+    balance_rupees: Number(wallet?.balance_rupees || 0),
+    lifetime_deposits_rupees: Number(wallet?.lifetime_deposits_rupees || 0),
+    lifetime_withdrawals_rupees: Number(wallet?.lifetime_withdrawals_rupees || 0),
+  };
+}
+
+async function addToWallet(
+  env: Env,
+  userId: string,
+  amountInr: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ balance_rupees: number }> {
+  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
+  if (safeAmount <= 0) return await getWalletBalance(env, userId);
+
+  const walletId = generateCustomId("YA-CRW");
+  const ledgerId = generateCustomId("YA-CRL");
+
+  // Execute wallet update and ledger insert atomically via batch (D1 runs batch within a transaction).
+  // The balance_after is read from the same CreditWallets row updated by the first statement.
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id) DO UPDATE SET
+         balance_rupees = ROUND(balance_rupees + ?, 2),
+         lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(walletId, userId, safeAmount, safeAmount, safeAmount, safeAmount),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       LIMIT 1`,
+    ).bind(
+      ledgerId,
+      userId,
+      safeAmount,
+      userId,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    ),
+  ]);
+
+  await deductPendingChargesOnTopup(env, userId);
+
+  const currentBalance = roundToTwo(Number((await getWalletBalance(env, userId)).balance_rupees));
+
+  // Broadcast so all open client sessions stay in sync.
+  try {
+    await broadcastToUser(env, userId, "wallet", { balance_rupees: currentBalance });
+  } catch (e) {
+    console.error("[addToWallet] broadcast failed:", e);
+  }
+
+  return { balance_rupees: currentBalance };
+}
+
+async function deductFromWallet(
+  env: Env,
+  userId: string,
+  amountInr: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ ok: boolean; balance_rupees: number }> {
+  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
+  const before = await getWalletBalance(env, userId);
+  if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
+
+  // Ã°ÂÂÂ´ FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
+  // insert succeed or fail together Ã¢ÂÂ no inconsistent state.
+  const ledgerId = generateCustomId("YA-CRL");
+  const batchResult = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE CreditWallets
+       SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND balance_rupees >= ?`,
+    ).bind(safeAmount, safeAmount, userId, safeAmount),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, ROUND((SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), 2), ?, ?, ?
+       LIMIT 1`,
+    ).bind(
+      ledgerId,
+      userId,
+      -safeAmount,
+      userId,
+      reason,
+      referenceType || null,
+      referenceId || null,
+    ),
+  ]);
+
+  // Check if the UPDATE actually changed a row (sufficient balance)
+  const walletResult = batchResult[0] as any;
+  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
+    return { ok: false, balance_rupees: before.balance_rupees };
+  }
+
+  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
+  const after = await getWalletBalance(env, userId);
+  return { ok: true, balance_rupees: after.balance_rupees };
+}
+
+// ==========================================================
+// --- Prepaid Time Bank Helpers ---
+// ==========================================================
+
+async function getPrepaidSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT prepaid_seconds FROM PrepaidTimeBank WHERE user_id = ? AND session_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .first()) as any;
+  return Number(row?.prepaid_seconds || 0);
+}
+
+async function setPrepaidSeconds(env: Env, userId: string, sessionId: string, seconds: number): Promise<void> {
+  const safe = Math.max(0, Math.round(seconds));
+  await env.DB.prepare(
+    `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
+     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, session_id) DO UPDATE SET
+       prepaid_seconds = ?,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(userId, sessionId, safe, safe)
+    .run();
+}
+
+async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string): Promise<void> {
+  await env.DB.prepare(
+    `DELETE FROM PrepaidTimeBank WHERE user_id = ? AND session_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .run();
+
+
+async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
+  const nowIso = new Date().toISOString();
+
+  try {
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, ?)`
+    ).bind(sessionId, userId, nowIso).run();
+
+    if (inserted.meta?.changes === 1) {
+      return true;
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).first() as any;
+
+    if (!existing || !existing.locked_at) {
+      return false;
+    }
+
+    const rawTs = existing.locked_at;
+    const normalizedTs = rawTs.endsWith('Z') ? rawTs : `${rawTs}Z`;
+    const lockAgeMinutes = (Date.now() - new Date(normalizedTs).getTime()) / 60000;
+
+    if (lockAgeMinutes <= staleMinutes) {
+      return false;
+    }
+
+    const takeover = await env.DB.prepare(
+      `UPDATE CreditChargeLocks
+       SET locked_at = ?
+       WHERE session_id = ? AND user_id = ? AND locked_at = ?`
+    ).bind(nowIso, sessionId, userId, rawTs).run();
+
+    return takeover.meta?.changes === 1;
+  } catch (err: any) {
+    console.error('[Live.Charge] acquireLiveChargeLock failed', err);
+    throw err;
+  }
+}
+
+async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).run();
+  } catch (err) {
+    console.error('[Live.Charge] releaseLiveChargeLock failed', err);
+  }
+}
+}
+
+async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT COALESCE(SUM(
+       CAST((strftime('%s', COALESCE(left_at, CURRENT_TIMESTAMP)) - strftime('%s', joined_at)) AS INTEGER)
+     ), 0) as total_seconds
+     FROM Attendance
+     WHERE session_id = ? AND user_id = ?`,
+  )
+    .bind(sessionId, userId)
+    .first()) as any;
+  return Number(row?.total_seconds || 0);
+}
+
+async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
+  const row = (await env.DB.prepare(
+    `SELECT COALESCE(SUM(
+      CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking')
+           THEN ABS(change_rupees)
+           WHEN reason = 'live_class_refund'
+           THEN -ABS(change_rupees)
+           ELSE 0
+      END
+    ), 0) as total_charged
+     FROM CreditLedger
+     WHERE user_id = ? AND reference_type = 'live_session' AND reference_id = ?`,
+  )
+    .bind(userId, sessionId)
+    .first()) as any;
+  return Number(row?.total_charged || 0);
+}
+
+// ==========================================================
+
+async function handleWalletBalance(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const wallet = await getWalletBalance(env, payload.sub);
+    return new Response(JSON.stringify({
+      balance_rupees: wallet.balance_rupees,
+      lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+      lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.Balance", env, request);
+  }
+}
+
+async function handleCreditsLedger(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const targetUserId = url.searchParams.get("userId");
+    const isAdmin = payload.role === "admin" || payload.role === "teacher";
+    const ledgerUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
+    )
+      .bind(ledgerUserId)
+      .all();
+    return new Response(JSON.stringify({ ledger: results || [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.Ledger", env, request);
+  }
+}
+
+async function handleCreditsDeduct(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const role = (payload as any).role || (payload as any).custom_role;
+    if (role !== "admin" && role !== "teacher") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+    }
+    const body = (await request.json()) as any;
+    const { amount, reason, userId } = body;
+
+    if (!amount || amount <= 0) {
+      return new Response(JSON.stringify({ error: "Valid amount required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const allowedReasons = ["course_purchase", "book_purchase", "live_class_join", "manual_deduction", "individual_class_booking", "subscription_cancelled"];
+    const safeReason = allowedReasons.includes(reason) ? reason : "manual_deduction";
+
+    const targetUserId = userId && role === "admin" ? userId : payload.sub;
+    const result = await deductFromWallet(env, targetUserId, amount, safeReason, "manual", undefined);
+
+    if (!result.ok) {
+      return new Response(JSON.stringify({ error: "Insufficient balance" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true, balance_rupees: result.balance_rupees }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.Deduct", env, request);
+  }
+}
+
+async function handleCreditsAnalytics(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const targetUserId = url.searchParams.get("userId");
+    const isAdmin = payload.role === "admin" || payload.role === "teacher";
+    const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
+
+    const totalUsed = (await env.DB.prepare(
+      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0`,
+    ).bind(analyticsUserId).first()) as any;
+
+    const monthlyUsage = (await env.DB.prepare(
+      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0 AND created_at >= date('now', 'start of month')`,
+    ).bind(analyticsUserId).first()) as any;
+
+    const history = (await env.DB.prepare(
+      `SELECT change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+    ).bind(analyticsUserId).all()) as any;
+
+    const walletBalance = await getWalletBalance(env, analyticsUserId);
+
+    return new Response(JSON.stringify({
+      balance_rupees: walletBalance.balance_rupees,
+      lifetime_deposits_rupees: walletBalance.lifetime_deposits_rupees,
+      lifetime_withdrawals_rupees: walletBalance.lifetime_withdrawals_rupees,
+      total_used: Number(totalUsed?.total_used || 0),
+      monthly_used: Number(monthlyUsage?.monthly_used || 0),
+      history: history?.results || [],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.Analytics", env, request);
+  }
+}
+
+async function handleCreditPacks(request: Request, env: Env, adminMode = false): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const id = url.pathname.match(/\/api\/admin\/credit-packs\/([^/]+)\/?$/)?.[1] ?? "";
+
+    if (adminMode) await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const query = adminMode
+        ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
+        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
+      const { results } = await env.DB.prepare(query).all();
+      return new Response(JSON.stringify({ packs: results || [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!adminMode) return new Response("Method not allowed", { status: 405 });
+
+    if (request.method === "POST") {
+      const body = (await request.json()) as any;
+      const packId = generateCustomId("YA-CRP");
+      const amountInr = normalizeNonNegativeInt(body.amount_rupees);
+      if (!body.name || amountInr <= 0) {
+        return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
+      }
+      await env.DB.prepare(
+        `INSERT INTO CreditPacks (id, name, description, amount_rupees, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          packId,
+          body.name,
+          body.description || null,
+          amountInr,
+          body.is_active === 0 ? 0 : 1,
+        )
+        .run();
+      return new Response(JSON.stringify({ message: "Credit pack created", id: packId }), { status: 201 });
+    }
+
+    if (request.method === "PUT") {
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
+      }
+      const body = (await request.json()) as any;
+      await env.DB.prepare(
+        `UPDATE CreditPacks SET
+          name = COALESCE(?, name),
+          description = COALESCE(?, description),
+          amount_rupees = COALESCE(?, amount_rupees),
+          is_active = COALESCE(?, is_active)
+         WHERE id = ?`,
+      )
+        .bind(
+          body.name || null,
+          body.description ?? null,
+          body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
+          body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
+          id,
+        )
+        .run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    if (request.method === "DELETE") {
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
+      }
+      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired") {
+      return new Response(JSON.stringify({ error: error.message }), { status: error.message === "Forbidden" ? 403 : 401 });
+    }
+    return handleGlobalError(error, adminMode ? "Admin.CreditPacks" : "Credits.Packs", env, request);
+  }
+}
+
+async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<any> {
+  return (await env.DB.prepare(
+    `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
+            COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
+            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees,
+            COALESCE(b.live_class_cost_per_minute_rupees, 0) as live_class_cost_per_minute_rupees,
+            b.live_class_credit_unit
+     FROM LiveSessions ls
+     JOIN Courses c ON c.id = ls.course_id
+     LEFT JOIN Batches b ON b.id = ls.batch_id
+     WHERE ls.id = ?`,
+  )
+    .bind(sessionId)
+    .first()) as any;
+}
+
+async function chargeSelfStudyGroupClassIfNeeded(
+  env: Env,
+  userId: string,
+  sessionId: string,
+): Promise<{ allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string }> {
+  const session = await getGroupClassCreditPolicy(env, sessionId);
+  const wallet = await getWalletBalance(env, userId);
+
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
+  }
+
+  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
+
+  if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
+
+  const prepaid = await getPrepaidSeconds(env, userId, sessionId);
+  const openAttendance = await env.DB.prepare(
+    `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
+  )
+    .bind(sessionId, userId)
+    .first();
+  const alreadyChargedForSession = prepaid > 0 || openAttendance;
+
+  // Flat per-class pricing: charge once on join, do not reconcile by duration.
+  if (creditUnit === "per_class") {
+    if (alreadyChargedForSession) {
+      return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
+    }
+
+    const deduction = await deductFromWallet(
+      env,
+      userId,
+      rate,
+      "live_class_join",
+      "live_session",
+      sessionId,
+    );
+
+    if (!deduction.ok) {
+      return {
+        allowed: false,
+        requiredAmount: rate,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `Ã Â¤ÂÃ Â¤Â¸ flat-rate live class Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¥ÂÃ Â¤Â¡Ã Â¤Â¼Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã¢ÂÂ¹${rate} Ã Â¤ÂÃ Â¤Â¨Ã Â¤Â¿Ã Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¯ Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ balance recharge Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+      };
+    }
+
+    // Mark session as paid so rejoins do not double-charge.
+    await setPrepaidSeconds(env, userId, sessionId, 24 * 3600);
+    return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: -1 };
+  }
+
+  // Exact time-based ("per_minute") pricing: charge only for actual attended time on leave/end.
+  if (creditUnit === "per_minute") {
+    const paidValue = (prepaid / FIFTEEN_MIN_SECONDS) * rate;
+    const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+    const maxMinutes = Math.round(prepaid / 60) + Math.max(0, affordableMinutes);
+
+    if (wallet.balance_rupees + paidValue <= 0) {
+      return {
+        allowed: false,
+        requiredAmount: 0,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `Wallet mein balance khatam ho gaya hai. Kripya recharge karein.`,
+      };
+    }
+
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes, message: "" };
+  }
+
+  // fifteen_minute / monthly pricing (default 15-minute block behaviour)
+  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+  const prepaidMinutes = Math.floor(prepaid / 60);
+
+  if (alreadyChargedForSession) {
+    const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
+    if (totalMaxMinutes <= 0) {
+      return { allowed: false, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: 0, message: 'Balance khatam ho gaya hai. Kripya wallet recharge karein.' };
+    }
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
+  }
+
+  const deduction = await deductFromWallet(
+    env,
+    userId,
+    rate,
+    "live_class_join",
+    "live_session",
+    sessionId,
+  );
+
+  if (!deduction.ok) {
+    return {
+      allowed: false,
+      requiredAmount: rate,
+      availableBalance: wallet.balance_rupees,
+      maxMinutes: 0,
+      message: `Ã Â¤ÂÃ Â¤Â¸ credit-based live class Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¥ÂÃ Â¤Â¡Ã Â¤Â¼Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã¢ÂÂ¹${rate} Ã Â¤ÂÃ Â¤Â¨Ã Â¤Â¿Ã Â¤ÂµÃ Â¤Â¾Ã Â¤Â°Ã Â¥ÂÃ Â¤Â¯ Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ balance recharge Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ (Ã¢ÂÂ¹${rate} required to join this class. Please recharge your wallet.)`,
+    };
+  }
+
+  const unitSeconds = getUnitSeconds();
+  await env.DB.prepare(
+    `INSERT INTO PrepaidTimeBank (user_id, session_id, prepaid_seconds, updated_at)
+     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id, session_id) DO UPDATE SET
+       prepaid_seconds = prepaid_seconds + ?,
+       updated_at = CURRENT_TIMESTAMP`
+  ).bind(userId, sessionId, unitSeconds, unitSeconds).run();
+
+  const affordableMinutesAfter = calculateMaxAttendMinutes(deduction.balance_rupees, rate);
+  const finalMaxMinutes = 15 + Math.max(0, affordableMinutesAfter);
+
+  return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: finalMaxMinutes };
+}
+
+async function chargeAttendanceGroupClassCredits(
+  env: Env,
+  userId: string,
+  sessionId: string,
+  preloadedSession?: any,
+): Promise<void> {
+  const session = preloadedSession || await getGroupClassCreditPolicy(env, sessionId);
+  if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
+
+  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
+  if (rate <= 0) return;
+
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
+
+  const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
+  if (totalSeconds <= 0) return;
+
+  if (creditUnit === "per_class") return;
+
+  let requiredAmount = 0;
+
+  if (creditUnit === "per_minute") {
+    const perMinuteRate = normalizeNonNegativeInt(session.live_class_cost_per_minute_rupees) || rate;
+    requiredAmount = roundToTwo(perMinuteRate * totalSeconds / 60);
+  } else {
+    // fifteen_minute / monthly legacy behaviour: round up to next full minute
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+  }
+
+  if (requiredAmount <= 0) return;
+
+  const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
+  if (!lockAcquired) {
+    console.log(`[Live.Charge] Charge already in progress for user ${userId} session ${sessionId}; skipping.`);
+    return;
+  }
+
+  try {
+    const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
+    const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
+
+    let finalChargedAmount = alreadyCharged;
+
+    if (extraAmountNeeded > 0) {
+      const deduction = await deductFromWallet(
+        env,
+        userId,
+        extraAmountNeeded,
+        "live_class_duration",
+        "live_session",
+        sessionId,
+      );
+      if (!deduction.ok) {
+        console.error(`Failed to deduct Ã¢ÂÂ¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+        await env.DB.prepare(
+          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
+      } else {
+        finalChargedAmount += extraAmountNeeded;
+      }
+    } else if (extraAmountNeeded < 0) {
+      const refundAmount = Math.abs(extraAmountNeeded);
+      const roundedRefund = roundToTwo(refundAmount);
+      if (roundedRefund > 0) {
+        await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
+        finalChargedAmount -= roundedRefund;
+      }
+    }
+
+    const unitSeconds = getUnitSeconds();
+    const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
+    const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
+    await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  } finally {
+    await releaseLiveChargeLock(env, sessionId, userId);
+  }
+}
+
+async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
+  const session = await getGroupClassCreditPolicy(env, sessionId);
+  const rate = session ? normalizeNonNegativeInt(session.cost_per_class_rupees) : 0;
+
+  const result = await env.DB.prepare(
+    `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL`,
+  )
+    .bind(sessionId)
+    .run();
+  const closedCount = (result as any)?.meta?.changes ?? 0;
+  if (closedCount > 0) {
+    console.log(`[Live.EndSession] Closed ${closedCount} ghost attendance records for session ${sessionId}`);
+  }
+
+  const rows = (await env.DB.prepare(
+    `SELECT DISTINCT user_id FROM Attendance WHERE session_id = ?`,
+  )
+    .bind(sessionId)
+    .all()).results as any[];
+
+  // Batch: get total charged amounts for all attendees Ã¢ÂÂ chunked for D1 parameter limit
+  const userIds = rows.map((r: any) => r.user_id).filter(Boolean);
+  const chargedMap = new Map<string, number>();
+  for (const chunk of chunkArray(userIds, 50)) {
+    const phUsers = chunk.map(() => "?").join(",");
+    const chargedRows = await env.DB.prepare(
+      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
+    ).bind(sessionId, ...chunk).all();
+    for (const r of (chargedRows as any).results || []) chargedMap.set(r.user_id, Number(r.total_charged || 0));
+  }
+
+  for (const row of rows || []) {
+    const creditUnit = normalizeGroupClassCreditUnit(session?.live_class_credit_unit);
+    await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
+
+    // Read fresh remaining prepaid from DB Ã¢ÂÂ chargeAttendanceGroupClassCredits just updated it
+    if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
+      const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
+      if (finalPrepaid > 0) {
+        const refundAmount = (finalPrepaid * rate) / FIFTEEN_MIN_SECONDS;
+        const roundedRefund = Math.round(refundAmount * 100) / 100;
+        const totalCharged = chargedMap.get(row.user_id) || 0;
+        const safeRefund = Math.min(roundedRefund, totalCharged);
+        if (safeRefund > 0) {
+          await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
+          console.log(`[Live.EndSession] Refunded Ã¢ÂÂ¹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+        }
+      }
+    }
+    await clearPrepaidSeconds(env, row.user_id, sessionId);
+  }
+}
+
+// ==========================================================
+// --- Individual Class Booking Handlers ---
+// ==========================================================
+
+async function handleBookIndividualClass(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const userId = payload.sub;
+
+    const course = (await env.DB.prepare(
+      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_cost_rupees, individual_class_duration_minutes
+       FROM Courses WHERE id = ?`,
+    )
+      .bind(courseId)
+      .first()) as any;
+    if (!course) {
+      return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+    }
+    if (!course.individual_class_booking_enabled) {
+      return new Response(JSON.stringify({ error: "Individual booking not available for this course" }), { status: 400 });
+    }
+
+    // Verify student is enrolled in this course
+    const enrollment = await env.DB.prepare(
+      `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+    ).bind(userId, courseId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "You must be enrolled in this course to book individual classes" }), { status: 403 });
+    }
+
+    // Prefer dedicated individual class cost; fall back to legacy wallet_rupees field.
+    const creditCost = Number(course.individual_class_cost_rupees) || Number(course.wallet_rupees) || 0;
+    const durationMin = normalizeNonNegativeInt(course.individual_class_duration_minutes, 30);
+    if (creditCost <= 0) {
+      return new Response(JSON.stringify({ error: "Individual class cost not configured" }), { status: 400 });
+    }
+
+    const wallet = await getWalletBalance(env, userId);
+    if (wallet.balance_rupees < creditCost) {
+      return new Response(JSON.stringify({
+        error: "INSUFFICIENT_BALANCE",
+        message: `Individual class ke liye Ã¢ÂÂ¹${creditCost} chahiye. Aapke paas sirf Ã¢ÂÂ¹${wallet.balance_rupees} hain.`,
+      }), { status: 402 });
+    }
+
+    const meetingId = `ind-${courseId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const rtcRoomId = meetingId;
+
+    const bookingId = generateCustomId("YA-IBK");
+    const scheduledAt = new Date().toISOString();
+
+    const deduction = await deductFromWallet(
+      env, userId, creditCost, "individual_class_booking", "individual_booking", bookingId
+    );
+    if (!deduction.ok) {
+      return new Response(JSON.stringify({ error: "Insufficient balance" }), { status: 402 });
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_rupees)
+       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+    )
+      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, creditCost)
+      .run();
+
+    // Create LiveSession
+    const liveSessionId = generateCustomId("YA-LS");
+    await env.DB.prepare(
+      `INSERT INTO LiveSessions (id, course_id, teacher_id, title, start_time, rtc_room_id, status, is_free)
+       VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 0)`,
+    )
+      .bind(liveSessionId, courseId, course.teacher_id, `Individual Class - ${courseId}`, scheduledAt, rtcRoomId)
+      .run();
+
+    // Link booking to LiveSession
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET live_session_id = ? WHERE id = ?`,
+    )
+      .bind(liveSessionId, bookingId)
+      .run();
+
+    // Add prepaid seconds to TimeBank so student isn't charged again on join
+    const prepaidSeconds = durationMin * 60;
+    await setPrepaidSeconds(env, userId, liveSessionId, prepaidSeconds);
+
+    const endTime = new Date(new Date(scheduledAt).getTime() + durationMin * 60 * 1000);
+    syncEventToGoogle(env, "IndividualBookings", bookingId, `Individual Class: ${courseId}`, `Individual class booking for course ${courseId}`, scheduledAt, endTime.toISOString()).catch((e) => console.error("[GC] Booking sync failed", e));
+
+    return new Response(JSON.stringify({
+      success: true,
+      bookingId,
+      liveSessionId,
+      rtc_room_id: rtcRoomId,
+      meetingId: rtcRoomId,
+      amount_charged_rupees: creditCost,
+      duration_minutes: durationMin,
+      balance_rupees: deduction.balance_rupees,
+    }), { status: 201, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.Book", env, request);
+  }
+}
+
+async function handleGetMyIndividualBookings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT ib.*, c.title as course_title, c.title_hi as course_title_hi, ls.rtc_room_id
+       FROM IndividualBookings ib
+       JOIN Courses c ON c.id = ib.course_id
+       LEFT JOIN LiveSessions ls ON ls.id = ib.live_session_id
+       WHERE ib.student_id = ?
+       ORDER BY ib.created_at DESC`,
+    )
+      .bind(payload.sub)
+      .all();
+    return new Response(JSON.stringify({ bookings: results }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.MyBookings", env, request);
+  }
+}
+
+async function handleAdminListIndividualBookings(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { results } = await env.DB.prepare(
+      `SELECT ib.*, c.title as course_title, u.full_name as student_name, u.email as student_email
+       FROM IndividualBookings ib
+       JOIN Courses c ON c.id = ib.course_id
+       JOIN Users u ON u.id = ib.student_id
+       ORDER BY ib.created_at DESC`,
+    )
+      .all();
+    return new Response(JSON.stringify({ bookings: results }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.AdminList", env, request);
+  }
+}
+
+async function handleAdminCancelIndividualBooking(
+  request: Request,
+  env: Env,
+  bookingId: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const booking = (await env.DB.prepare(
+      `SELECT * FROM IndividualBookings WHERE id = ?`,
+    )
+      .bind(bookingId)
+      .first()) as any;
+    if (!booking) {
+      return new Response(JSON.stringify({ error: "Booking not found" }), { status: 404 });
+    }
+    if (booking.status !== "scheduled") {
+      return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
+    }
+
+    if (booking.amount_charged_rupees > 0 && !booking.amount_refunded_rupees) {
+      await addToWallet(
+        env, booking.student_id, booking.amount_charged_rupees,
+        "individual_class_refund", "individual_booking", bookingId,
+      );
+    }
+
+    // Cancel associated LiveSession if it exists
+    if (booking.live_session_id) {
+      await env.DB.prepare(
+        `UPDATE LiveSessions SET status = 'ended' WHERE id = ? AND status != 'ended'`
+      ).bind(booking.live_session_id).run();
+    }
+
+    await env.DB.prepare(
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_rupees = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    )
+      .bind(booking.amount_charged_rupees > 0 ? booking.amount_charged_rupees : 0, bookingId)
+      .run();
+
+    removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
+
+    return new Response(JSON.stringify({ success: true, message: "Booking cancelled, credits refunded" }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return handleGlobalError(error, "Individual.AdminCancel", env, request);
+  }
+}
+
+// ==========================================================
+
+async function handleRazorpayCreateTopupOrder(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const { pack_id, couponCode } = body;
+    const billingAddress = sanitizeBillingAddress(body.billingAddress);
+    const billingError = validateBillingAddress(billingAddress);
+    if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
+    let amount_paise = normalizeNonNegativeInt(body.amount_paise);
+    let amount_rupees = paiseToInr(amount_paise);
+    let relatedId = body.related_id || null;
+
+    if (pack_id) {
+      const pack = (await env.DB.prepare(
+        `SELECT * FROM CreditPacks WHERE id = ? AND is_active = 1`,
+      )
+        .bind(pack_id)
+        .first()) as any;
+      if (!pack) {
+        return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
+      }
+      amount_rupees = normalizeNonNegativeInt(pack.amount_rupees);
+      amount_paise = inrToPaise(amount_rupees);
+      relatedId = pack.id;
+    }
+
+    if (!amount_paise) {
+      return new Response(
+        JSON.stringify({ error: "Missing amount" }),
+        { status: 400 },
+      );
+    }
+
+    let quote;
+    try {
+      quote = await calculateCheckoutQuote(env, { itemType: "topup", itemId: relatedId || "custom", amount_paise, couponCode }, payload.sub);
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const original_amount_rupees = paiseToInr(amount_paise);
+
+    amount_paise = quote.total_paise;
+    amount_rupees = paiseToInr(amount_paise);
+
+    if (amount_paise === 0) {
+      const txId = generateCustomId("YA-TXN");
+      // Record actual amount paid (Ã¢ÂÂ¹0 for full coupon), not the original price
+      const discountedAmountRupees = paiseToInr(amount_paise);
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+        .run();
+      if (quote.coupon) {
+        await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "topup", relatedId || "custom", txId, quote.discount_paise, "successful")
+          .run();
+      }
+      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .run();
+
+      // Credit pack value goes to wallet (product is wallet balance)
+      await addToWallet(env, payload.sub, original_amount_rupees, "coupon_purchase", "transaction", txId);
+
+      return new Response(JSON.stringify({ freeCheckout: true, amount_rupees: original_amount_rupees, quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    const keyId = await getSecret(env, "RAZORPAY_KEY_ID", false);
+    const keySecret = await getSecret(env, "RAZORPAY_KEY_SECRET", false);
+
+    if (!keyId || !keySecret) {
+      return new Response(
+        JSON.stringify({ error: "Payment gateway not configured" }),
+        { status: 503 },
+      );
+    }
+
+    // Call Razorpay API to create order
+    const authHeader = "Basic " + btoa(`${keyId}:${keySecret}`);
+    const rzResponse = await fetchWithTimeout("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: amount_paise,
+        currency: "INR",
+        receipt: `receipt_${Date.now()}_${payload.sub}`,
+        notes: { couponCode: quote.coupon?.code || "", discount_paise: quote.discount_paise },
+      }),
+    }, 5000);
+
+    if (!rzResponse.ok) {
+      const errRes = await rzResponse.text();
+      console.error("Razorpay error", errRes);
+      return new Response(
+        JSON.stringify({ error: "Failed to create order with Razorpay" }),
+        { status: 500 },
+      );
+    }
+
+    const orderData = (await rzResponse.json()) as any;
+
+    const txId = generateCustomId("YA-TXN");
+    await env.DB.prepare(
+      `
+      INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+      .bind(
+        txId,
+        payload.sub,
+        amount_rupees,
+        "INR",
+        "credit_purchase",
+        "created",
+        orderData.id,
+        "razorpay",
+        relatedId,
+      )
+      .run();
+
+    if (quote.coupon) {
+      await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, "topup", relatedId || "custom", txId, quote.discount_paise, "created")
+        .run();
+    }
+    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .run();
+
+    return new Response(
+      JSON.stringify({
+        order_id: orderData.id,
+        amount: amount_paise,
+        key_id: keyId,
+        amount_rupees,
+        quote,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Razorpay.CreateTopupOrder", env, request);
+  }
+}
+
+async function handleRazorpayVerifyTopupPayment(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return new Response(
+        JSON.stringify({ error: "Incomplete payment details" }),
+        { status: 400 },
+      );
+    }
+
+    const keySecret = await getSecret(env, "RAZORPAY_KEY_SECRET", false);
+    if (!keySecret) {
+      return new Response(
+        JSON.stringify({ error: "Payment gateway not configured" }),
+        { status: 503 },
+      );
+    }
+
+    // Verify signature
+    const encoder = new TextEncoder();
+    const data = `${razorpay_order_id}|${razorpay_payment_id}`;
+
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(keySecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+
+    const isValid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      hexToBytes(razorpay_signature),
+      encoder.encode(data),
+    );
+
+    if (!isValid) {
+      // Do NOT mark the transaction as failed here; a wrong signature should not lock a valid order.
+      return new Response(
+        JSON.stringify({ error: "Invalid payment signature" }),
+        { status: 400 },
+      );
+    }
+
+    // Update Transaction Atomically
+    const tx = await env.DB.prepare(
+      `UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created' AND razorpay_payment_id IS NULL RETURNING *`,
+    )
+      .bind(razorpay_payment_id, razorpay_signature, razorpay_order_id)
+      .first();
+
+    if (!tx) {
+      return new Response(
+        JSON.stringify({ error: "Transaction not found or already processed" }),
+        { status: 400 },
+      );
+    }
+
+    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`)
+      .bind(razorpay_order_id)
+      .run();
+
+    const amountInr = Number((tx as any).amount_rupees || 0);
+    const wallet = await addToWallet(
+      env,
+      payload.sub,
+      amountInr,
+      "purchase",
+      (tx as any).related_id ? "credit_pack" : "razorpay_order",
+      (tx as any).related_id || razorpay_order_id,
+    );
+
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: wallet.balance_rupees });
+
+    return new Response(
+      JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.RazorpayVerify", env, request);
+  }
+}
+
+async function handleAdminCreateLiveSession(
+  request: Request,
+  env: Env,
+  courseId: string,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const course = await env.DB.prepare(
+        "SELECT id FROM Courses WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(courseId, auth.id)
+        .first();
+      if (!course)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this course.",
+          }),
+          { status: 403 },
+        );
+    }
+
+    const body = (await request.json()) as any;
+    let { start_time, rtc_room_id, title, is_free, batch_id, book_id } = body;
+
+    if (batch_id) {
+      const batch: any = await env.DB.prepare(
+        "SELECT id, class_start_time, class_end_time, class_days FROM Batches WHERE id = ? AND course_id = ?"
+      ).bind(batch_id, courseId).first();
+
+      if (!batch) {
+        return new Response(JSON.stringify({ error: "Batch does not belong to this course" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (!start_time && batch.class_start_time) {
+        const today = new Date().toISOString().slice(0, 10);
+        start_time = `${today}T${batch.class_start_time}:00.000Z`;
+      }
+    }
+
+    if (!start_time) {
+      return new Response(JSON.stringify({ error: "start_time is required (or provide batch_id with class_start_time set)" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    let finalRoomId = rtc_room_id;
+
+    // If batch_id + book_id provided, check for existing meeting
+    if (batch_id && book_id && !finalRoomId) {
+      const existing: any = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first();
+      if (existing && existing.rtc_room_id) {
+        finalRoomId = existing.rtc_room_id;
+      }
+    }
+
+    // Create Realtime Meeting if needed
+    if (!finalRoomId) {
+      const realtimeMeetingId = await createRealtimeMeeting(env, request, title);
+      if (realtimeMeetingId) {
+        finalRoomId = realtimeMeetingId;
+
+        if (batch_id && book_id) {
+           await env.DB.prepare("INSERT OR IGNORE INTO BatchBookMeetings (batch_id, book_id, rtc_room_id) VALUES (?, ?, ?)").bind(batch_id, book_id, finalRoomId).run();
+           
+           // Re-read canonical room ID in case of race condition
+           const canonicalMapping = await env.DB.prepare("SELECT rtc_room_id FROM BatchBookMeetings WHERE batch_id = ? AND book_id = ?").bind(batch_id, book_id).first() as any;
+           if (canonicalMapping && canonicalMapping.rtc_room_id) {
+             finalRoomId = canonicalMapping.rtc_room_id;
+           }
+        }
+      } else {
+        await sendRedAlert(
+          env,
+          "Live Session Creation Failed",
+          `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
+        );
+        return new Response(
+          JSON.stringify({ error: "Meeting room Ã Â¤Â¬Ã Â¤Â¨Ã Â¤Â¾Ã Â¤Â¨Ã Â¥Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤ÂµÃ Â¤Â¿Ã Â¤Â«Ã Â¤Â²Ã Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¨Ã Â¤Â Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¯Ã Â¤Â¾Ã Â¤Â¸ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤" }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    const id = generateCustomId("YA-LIV");
+    await env.DB.prepare(
+      "INSERT INTO LiveSessions (id, course_id, book_id, batch_id, teacher_id, title, start_time, rtc_room_id, status, is_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        id,
+        courseId,
+        book_id || null,
+        body.batch_id || null,
+        auth.id,
+        title || "Live Class",
+        start_time,
+        finalRoomId,
+        "scheduled",
+        is_free || 0,
+      )
+      .run();
+
+    ctx.waitUntil((async () => {
+      try {
+        const startDate = new Date(start_time);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        await syncEventToGoogle(env, "LiveSessions", id, title || "Live Class", `Live Class for course ${courseId}`, startDate.toISOString(), endDate.toISOString());
+      } catch (e) {
+        console.error("[LiveSession.Create] syncEventToGoogle failed:", e);
+      }
+    })());
+
+    // Notify Enrolled Students about new Live Class
+    ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "live_session", { sessionId: id, courseId, title, start_time }));
+
+    return new Response(JSON.stringify({ success: true, id }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.CreateLiveSession", env, request);
+  }
+}
+
+async function handleAdminUpdateLiveSession(
+  request: Request,
+  env: Env,
+  sessionId: string,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const session = await env.DB.prepare(
+        "SELECT id FROM LiveSessions WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(sessionId, auth.id)
+        .first();
+      if (!session)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this session.",
+          }),
+          { status: 403 },
+        );
+    }
+
+    const body = (await request.json()) as any;
+    const { title, start_time, status, rtc_room_id, is_free } = body;
+
+    // Fetch existing session to see what changed
+    const existingSession = (await env.DB.prepare(
+      "SELECT title, start_time, status, course_id, batch_id FROM LiveSessions WHERE id = ?",
+    )
+      .bind(sessionId)
+      .first()) as any;
+
+    await env.DB.prepare(
+      "UPDATE LiveSessions SET title = COALESCE(?, title), start_time = COALESCE(?, start_time), status = COALESCE(?, status), rtc_room_id = COALESCE(?, rtc_room_id), is_free = COALESCE(?, is_free) WHERE id = ?",
+    )
+      .bind(
+        title ?? null,
+        start_time ?? null,
+        status ?? null,
+        rtc_room_id ?? null,
+        is_free ?? null,
+        sessionId,
+      )
+      .run();
+
+    ctx.waitUntil((async () => {
+      try {
+        const finalTitle = title || existingSession?.title || "Live Class";
+        const finalStart = start_time || existingSession?.start_time;
+        if (finalStart) {
+          const startDate = new Date(finalStart);
+          const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+          await syncEventToGoogle(env, "LiveSessions", sessionId, finalTitle, `Live Class for course ${existingSession?.course_id || ""}`, startDate.toISOString(), endDate.toISOString());
+        }
+      } catch (e) {
+        console.error("[LiveSession.Update] syncEventToGoogle failed:", e);
+      }
+    })());
+
+    // Notify Enrolled Students about Live Class status update (e.g. started/completed)
+    if (existingSession && existingSession.course_id) {
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, existingSession.course_id, "live_session", { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }));
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateLiveSession", env, request);
+  }
+}
+
+async function handleAdminDeleteLiveSession(
+  request: Request,
+  env: Env,
+  sessionId: string,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role === "teacher") {
+      const session = await env.DB.prepare(
+        "SELECT id FROM LiveSessions WHERE id = ? AND teacher_id = ?",
+      )
+        .bind(sessionId, auth.id)
+        .first();
+      if (!session)
+        return new Response(
+          JSON.stringify({
+            error: "Access Denied: You do not own this session.",
+          }),
+          { status: 403 },
+        );
+    }
+    await removeEventFromGoogle(env, "LiveSessions", sessionId);
+    await env.DB.prepare("DELETE FROM LiveSessions WHERE id = ?")
+      .bind(sessionId)
+      .run();
+    await env.DB.prepare("DELETE FROM LiveSignaling WHERE session_id = ?")
+      .bind(sessionId)
+      .run();
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteLiveSession", env, request);
+  }
+}
+
+async function handleAdminListLiveSessions(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    const url = new URL(request.url);
+    const { page, limit, offset } = parsePagination(url, { page: 1, limit: 50, max: 100 });
+
+    const [rows, countRes] = await Promise.all([
+      env.DB.prepare(`
+        SELECT ls.*, c.title as course_title
+        FROM LiveSessions ls
+        LEFT JOIN Courses c ON ls.course_id = c.id
+        ORDER BY ls.created_at DESC
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset).all(),
+      env.DB.prepare("SELECT COUNT(*) as total FROM LiveSessions").first(),
+    ]);
+
+    return new Response(JSON.stringify({
+      sessions: rows.results,
+      total: Number((countRes as any)?.total || 0),
+      page,
+      limit,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ListLiveSessions", env, request);
+  }
+}
+
+// --- Live Class Signaling Handlers ---
+
+const ADMIN_SIGNAL_TYPES = new Set([
+  'whiteboard_clear',
+  'whiteboard_permission',
+  'whiteboard-history-response',
+]);
+
+/**
+ * Verify that an authenticated user may participate in a live session and,
+ * for admin-only signal types, that the user is the session teacher.
+ */
+async function verifyLiveSessionAccess(
+  env: Env,
+  sessionId: string,
+  userId: string,
+  role: string,
+  signalType?: string,
+): Promise<{ allowed: boolean; isTeacher: boolean; reason?: string }> {
+  const session: any = await env.DB.prepare(
+    `SELECT course_id, teacher_id, is_free FROM LiveSessions WHERE id = ?`
+  ).bind(sessionId).first();
+  if (!session) return { allowed: false, isTeacher: false, reason: "Session not found" };
+
+  const isTeacher = session.teacher_id === userId || role === 'admin';
+
+  if (signalType && ADMIN_SIGNAL_TYPES.has(signalType) && !isTeacher) {
+    return { allowed: false, isTeacher, reason: "Admin-only signal type" };
+  }
+
+  if (isTeacher) return { allowed: true, isTeacher: true };
+
+  // Students must be enrolled in the course or the session must be free.
+  if (role === 'student') {
+    const isEnrolled = await env.DB.prepare(
+      `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
+    ).bind(userId, session.course_id).first();
+    if (isEnrolled) return { allowed: true, isTeacher: false };
+    if (Number(session.is_free) === 1) return { allowed: true, isTeacher: false };
+  }
+
+  return { allowed: false, isTeacher: false, reason: "Not authorized for this session" };
+}
+
+async function handleLiveSignaling(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId");
+
+    if (!sessionId)
+      return new Response(JSON.stringify({ error: "sessionId required" }), {
+        status: 400,
+      });
+
+    if (request.method === "POST") {
+      const { type, data } = (await request.json()) as any;
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role, type);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      const id = generateCustomId("YA-SIG");
+      await env.DB.prepare(
+        "INSERT INTO LiveSignaling (id, session_id, user_id, type, data) VALUES (?, ?, ?, ?, ?)",
+      )
+        .bind(id, sessionId, payload.sub, type, JSON.stringify(data))
+        .run();
+
+      // Update Attendance if it's a student joining Ã¢ÂÂ atomic conditional insert prevents TOCTOU race
+      if (payload.role === "student" && type === "offer_request") {
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO Attendance (id, session_id, user_id)
+           VALUES (?, ?, ?)`
+        )
+          .bind(attId, sessionId, payload.sub)
+          .run();
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "GET") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.allowed) {
+        return new Response(JSON.stringify({ error: access.reason || "Access denied" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      const lastPoll = url.searchParams.get("lastPoll") || "1970-01-01";
+      // Student ko sirf teacher ke signals milein, doosre students ke nahi
+      if (payload.role === "student") {
+        const sessionInfo: any = await env.DB.prepare(
+          "SELECT teacher_id FROM LiveSessions WHERE id = ?",
+        ).bind(sessionId).first();
+        const teacherId = sessionInfo?.teacher_id || "none";
+        const { results } = await env.DB.prepare(
+          `SELECT * FROM LiveSignaling
+           WHERE session_id = ?
+           AND created_at > ?
+           AND user_id = ?`,
+        )
+          .bind(sessionId, lastPoll, teacherId)
+          .all();
+        return new Response(JSON.stringify({ signals: results }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM LiveSignaling
+         WHERE session_id = ?
+         AND created_at > ?
+         AND user_id != ?
+         ORDER BY created_at ASC`,
+      )
+        .bind(sessionId, lastPoll, payload.sub)
+        .all();
+
+      return new Response(JSON.stringify({ signals: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "DELETE") {
+      const access = await verifyLiveSessionAccess(env, sessionId, payload.sub, payload.role);
+      if (!access.isTeacher) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+      // Clear old signals
+      await env.DB.prepare(
+        'DELETE FROM LiveSignaling WHERE session_id = ? AND created_at < datetime("now", "-1 hour")',
+      )
+        .bind(sessionId)
+        .run();
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error) {
+    return handleGlobalError(error, "Live.Signaling", env, request);
+  }
+}
+
+async function handleGetCourseBatches(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
+              b.start_date, b.end_date, b.class_start_time, b.class_end_time,
+              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.live_class_credit_unit, b.credit_deduction_timing, b.status,
+              b.course_id, b.book_id,
+              bo.title as book_title
+       FROM Batches b
+       LEFT JOIN Books bo ON b.book_id = bo.id
+       WHERE b.course_id = ? AND b.status != 'completed'
+       ORDER BY b.start_date ASC`,
+    )
+      .bind(courseId)
+      .all();
+    return new Response(JSON.stringify({ batches: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Course.GetBatches", env, request);
+  }
+}
+
+async function handleGetBookBatches(
+  request: Request,
+  env: Env,
+  bookId: string,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
+              b.start_date, b.end_date, b.class_start_time, b.class_end_time,
+              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.live_class_credit_unit, b.credit_deduction_timing, b.status,
+              b.course_id, b.book_id
+       FROM Batches b
+       WHERE b.book_id = ? AND b.status != 'completed'
+       ORDER BY b.start_date ASC`,
+    )
+      .bind(bookId)
+      .all();
+    return new Response(JSON.stringify({ batches: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Book.GetBatches", env, request);
+  }
+}
+
+async function handleEnrollBookBatch(
+  request: Request,
+  env: Env,
+  bookId: string,
+  batchId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can enroll in book batches." }),
+        { status: 403 },
+      );
+    }
+
+    const book = await env.DB.prepare("SELECT id, title FROM Books WHERE id = ?")
+      .bind(bookId)
+      .first() as any;
+    if (!book) {
+      return new Response(JSON.stringify({ error: "Book not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const batch = await env.DB.prepare(
+      "SELECT id, book_id, name, cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
+    )
+      .bind(batchId)
+      .first() as any;
+    if (!batch) {
+      return new Response(JSON.stringify({ error: "Batch not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (batch.book_id !== bookId) {
+      return new Response(
+        JSON.stringify({ error: "Batch does not belong to this book." }),
+        { status: 400 },
+      );
+    }
+
+    const existingEnrollment = await env.DB.prepare(
+      "SELECT id FROM Enrollments WHERE user_id = ? AND book_id = ? AND batch_id = ? AND status IN ('active', 'completed')",
+    )
+      .bind(payload.sub, bookId, batchId)
+      .first();
+    if (existingEnrollment) {
+      return new Response(JSON.stringify({ error: "Already enrolled in this batch" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const requiredCost = normalizeNonNegativeInt(batch.cost_per_class_rupees);
+    if (requiredCost > 0) {
+      const balanceCheck = await getWalletBalance(env, payload.sub);
+      if (balanceCheck.balance_rupees < requiredCost) {
+        return new Response(
+          JSON.stringify({
+            error: "Insufficient balance",
+            required_cost: requiredCost,
+            available_balance: balanceCheck.balance_rupees,
+          }),
+          { status: 402, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      const tempRefId = generateCustomId("YA-REF");
+      const deduction = await deductFromWallet(
+        env, payload.sub, requiredCost,
+        "book_batch_enrollment", "enrollment", tempRefId
+      );
+      if (!deduction.ok) {
+        return new Response(
+          JSON.stringify({
+            error: "Insufficient balance",
+            required_cost: requiredCost,
+            available_balance: deduction.balance_rupees,
+          }),
+          { status: 402, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    const enrollmentId = generateCustomId("YA-ENR");
+    await env.DB.prepare(
+      "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status, payment_source) VALUES (?, ?, ?, ?, 'active', ?, ?)",
+    )
+      .bind(
+        enrollmentId,
+        payload.sub,
+        bookId,
+        batchId,
+        requiredCost > 0 ? "paid" : "free",
+        requiredCost > 0 ? "wallet" : "free",
+      )
+      .run();
+
+    await createNotification(
+      env, payload.sub,
+      "Book Batch Enrollment Successful",
+      `You joined the batch "${batch.name}" for book "${book.title}".`,
+      "success",
+    );
+
+    return new Response(
+      JSON.stringify({
+        message: "Successfully enrolled in book batch",
+        enrollmentId,
+        paymentStatus: requiredCost > 0 ? "paid" : "free",
+        requiredCost,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Book.EnrollBatch", env, request);
+  }
+}
+
+async function handleCancelEnrollment(
+  request: Request,
+  env: Env,
+  enrollmentId: string,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const enrollment: any = await env.DB.prepare(
+      "SELECT * FROM Enrollments WHERE id = ?",
+    ).bind(enrollmentId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Enrollment not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.user_id !== payload.sub) {
+      return new Response(JSON.stringify({ error: "You can only cancel your own enrollment" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.status === 'cancelled') {
+      return new Response(JSON.stringify({ error: "Enrollment is already cancelled" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (enrollment.status === 'completed') {
+      return new Response(JSON.stringify({ error: "Cannot cancel a completed enrollment" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    await env.DB.prepare(
+      "UPDATE Enrollments SET status = 'cancelled' WHERE id = ?"
+    ).bind(enrollmentId).run();
+    return new Response(JSON.stringify({ success: true, message: "Enrollment cancelled successfully" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error) {
+    return handleGlobalError(error, "Enrollment.Cancel", env, request);
+  }
+}
+
+async function handleEnrollWithCredits(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  console.log(`[EnrollWithCredits] called with courseId: ${courseId}`);
+  try {
+    const payload = await requireAuth(request, env);
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can enroll in courses." }),
+        { status: 403 },
+      );
+    }
+
+    const course = (await env.DB.prepare(
+      `SELECT id, title, wallet_rupees
+       FROM Courses WHERE id = ?`,
+    )
+      .bind(courseId)
+      .first()) as any;
+
+    if (!course) {
+      return new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const requiredCost = normalizeNonNegativeInt(course.wallet_rupees);
+    if (requiredCost <= 0) {
+      return new Response(
+        JSON.stringify({ error: "This course does not require payment. Use normal enrollment." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const balanceCheck = await getWalletBalance(env, payload.sub);
+    if (balanceCheck.balance_rupees < requiredCost) {
+      return new Response(
+        JSON.stringify({
+          error: "Insufficient balance",
+          required_cost: requiredCost,
+          available_balance: balanceCheck.balance_rupees,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Step 1: Create enrollment first (atomic INSERT ON CONFLICT DO NOTHING).
+    // This prevents duplicate enrollment rows from concurrent requests.
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId: payload.sub,
+      courseId,
+      status: "active",
+      paymentStatus: "paid",
+        paymentSource: "self_study_credits",
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+
+    if (!enrollmentResult.created) {
+      return new Response(JSON.stringify({ error: "Already enrolled" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Step 2: Deduct wallet AFTER enrollment is confirmed created.
+    // Atomic UPDATE with WHERE balance >= amount prevents double-spend.
+    const tempRefId = generateCustomId("YA-REF");
+    const deduction = await deductFromWallet(
+      env,
+      payload.sub,
+      requiredCost,
+      "course_unlock",
+      "enrollment",
+      tempRefId,
+    );
+
+    if (!deduction.ok) {
+      // Wallet deduction failed Ã¢ÂÂ clean up the enrollment we just created
+      try {
+        await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
+          .bind(enrollmentResult.id)
+          .run();
+      } catch (cleanupErr) {
+        console.error("[EnrollWithCredits] Failed to cleanup enrollment after deduction failure:", cleanupErr);
+      }
+      return new Response(
+        JSON.stringify({
+          error: "Insufficient balance",
+          required_cost: requiredCost,
+          available_balance: deduction.balance_rupees,
+        }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    await env.DB.prepare(
+      "UPDATE Enrollments SET payment_id = ? WHERE id = ?",
+    )
+      .bind(`wallet:${enrollmentResult.id}`, enrollmentResult.id)
+      .run();
+
+    await createNotification(
+      env,
+      payload.sub,
+      "Course Unlocked",
+      `You unlocked "${course.title}" using Ã¢ÂÂ¹${requiredCost} from wallet.`,
+      "success",
+    );
+
+    await broadcastToUser(env, payload.sub, "enrollment", { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees });
+    // Also broadcast wallet update so any open sessions refresh immediately.
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: deduction.balance_rupees });
+
+    return new Response(
+      JSON.stringify({
+        message: "Course unlocked with wallet balance",
+        enrollmentId: enrollmentResult.id,
+        paymentStatus: "paid",
+      paymentSource: "self_study_credits",
+        requiredCost,
+        balance_rupees: deduction.balance_rupees,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.EnrollWithCredits", env, request);
+  }
+}
+
+async function handleEnroll(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(
+        JSON.stringify({ error: "Unauthorized. Please log in." }),
+        { status: 401 },
+      );
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can enroll in courses." }),
+        { status: 403 },
+      );
+    }
+
+    const userId = payload.sub;
+    const course: any = await env.DB.prepare(
+      "SELECT id, title, price_rupees FROM Courses WHERE id = ?",
+    )
+      .bind(courseId)
+      .first();
+    if (!course)
+      return new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+      });
+
+    const profile = await getUserAccessProfile(userId, env);
+    const hasSubAccess = userAccessProfileAllowsCourse(profile, courseId);
+    const initialPaymentStatus = hasSubAccess ? "paid" : "unpaid";
+
+    const enrollmentResult = await ensureEnrollment(env, {
+      userId,
+      courseId,
+      status: "active",
+      paymentStatus: initialPaymentStatus,
+      paymentSource: hasSubAccess ? "subscription" : null,
+      preservePaidStatus: true,
+      updateExisting: false,
+    });
+    if (!enrollmentResult.created) {
+      return new Response(
+        JSON.stringify({
+          error: "Already enrolled",
+          enrollmentId: enrollmentResult.id,
+        }),
+        { status: 409 },
+      );
+    }
+    const enrollmentId = enrollmentResult.id;
+
+    await createNotification(
+      env,
+      userId,
+      "Enrollment Successful",
+      `You are now enrolled in "${course.title}". Happy learning!`,
+      "success",
+    );
+
+    // Send email to user & admin (fire and forget)
+    const user: any = await env.DB.prepare(
+      "SELECT email, full_name FROM Users WHERE id = ?",
+    )
+      .bind(userId)
+      .first();
+    const adminEmail =
+      (await getSecret(env, "ADMIN_CONTACT_EMAIL", false)) ||
+      "navasanganakah@gmail.com";
+    if (user?.email) {
+      const userHtml = `
+        <p style="font-size:16px;color:#334155;">Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+        <p style="font-size:16px;color:#334155;">Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â <strong>${course.title}</strong> Ã Â¤ÂÃ Â¤Â¾ <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â² Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!</p>
+        <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
+          <p style="margin:0;color:#5b21b6;font-weight:600;">Ã°ÂÂÂ Free lessons Ã Â¤ÂÃ Â¤Â­Ã Â¥Â Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">Ã°ÂÂÂ Premium access Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â course page Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>` : ""}
+        </div>
+      `;
+      const userText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â ${course.title} Ã Â¤ÂÃ Â¤Â¾ Free Preview Access Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â² Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!\nFree lessons Ã Â¤ÂÃ Â¤Â­Ã Â¥Â Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤ÂÃ Â¥Â¤\n${course.price_rupees > 0 ? "Premium access Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â course page Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤" : ""}`;
+      await safeSendEmail(
+        env,
+        user.email,
+        `Ã¢ÂÂ Enrollment Confirmed: ${course.title}`,
+        "Ã°ÂÂÂ Free Access Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â² Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾!",
+        userHtml,
+        userText,
+      );
+    }
+    const adminHtml = `<p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) Ã Â¤Â¨Ã Â¥Â <strong>${course.title}</strong> Ã Â¤Â®Ã Â¥ÂÃ Â¤Â <b>Free Enroll</b> Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p><p>Om!</p>`;
+    const adminText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â Admin,\n\n${user?.full_name || userId} (${user?.email}) Ã Â¤Â¨Ã Â¥Â ${course.title} Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Free Enroll Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤\n\nOm!`;
+    await safeSendEmail(
+      env,
+      adminEmail,
+      `[LMS] New Free Enrollment: ${course.title}`,
+      "New Free Enrollment",
+      adminHtml,
+      adminText,
+    );
+
+    await broadcastToUser(env, userId, "enrollment", { courseId, enrollmentId, status: "active" });
+
+    return new Response(
+      JSON.stringify({ message: "Enrolled successfully", enrollmentId }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.Enroll", env, request);
+  }
+}
+
+async function handleBookCompleteLesson(
+  request: Request,
+  env: Env,
+  bookId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(JSON.stringify({ error: "Unauthorized." }), { status: 401 });
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+    if (payload.role !== "student") {
+      return new Response(JSON.stringify({ error: "Only students can complete lessons." }), { status: 403 });
+    }
+
+    const userId = payload.sub;
+
+    // Check enrollment Ã¢ÂÂ user must be enrolled in this book (or a linked course)
+    const enrollment: any = await env.DB.prepare(
+      "SELECT id, progress FROM Enrollments WHERE user_id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?)) AND status IN ('active', 'completed') LIMIT 1",
+    ).bind(userId, bookId, bookId).first();
+    if (!enrollment) {
+      return new Response(JSON.stringify({ error: "Not enrolled in this book." }), { status: 403 });
+    }
+
+    // Verify lesson belongs to this book
+    const lesson: any = await env.DB.prepare(
+      "SELECT id, is_free FROM Lessons WHERE id = ? AND book_id = ?",
+    ).bind(lessonId, bookId).first();
+    if (!lesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found in this book." }), { status: 404 });
+    }
+
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.json();
+      if (body.timeSpentSeconds) {
+        timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+        if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
+      }
+    } catch (e) {
+      console.error("[BookLesson.Complete] Failed to parse timeSpentSeconds", e);
+    }
+
+    // Mark lesson as completed
+    try {
+      await env.DB.prepare(
+        "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+      ).bind(userId, lessonId, timeSpentSeconds).run();
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no column named time_spent_seconds")) {
+        console.error("[BookLesson.Complete] Fallback: Schema migration pending, missing time_spent_seconds column.", dbError);
+        // Fallback to old schema temporarily to prevent crashing
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+        ).bind(userId, lessonId).run();
+      } else {
+        throw dbError;
+      }
+    }
+
+    // Recalculate progress for this book
+    const totalRes = await env.DB.prepare(
+      "SELECT COUNT(id) as count FROM Lessons WHERE book_id = ?",
+    ).bind(bookId).first();
+    const totalLessons = (totalRes?.count as number) || 0;
+
+    const completedRes = await env.DB.prepare(
+      "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND L.book_id = ?",
+    ).bind(userId, bookId).first();
+    const completedLessons = (completedRes?.count as number) || 0;
+
+    const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const status = progress >= 100 ? "completed" : "active";
+
+    // Update enrollment progress Ã¢ÂÂ try book_id match first, then fallback to course_id
+    const updated = await env.DB.prepare(
+      "UPDATE Enrollments SET progress = ?, status = ? WHERE id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?))",
+    ).bind(progress, status, enrollment.id, bookId, bookId).run();
+
+    if (progress >= 100 && enrollment.progress < 100) {
+      const c: any = await env.DB.prepare(
+        "SELECT title FROM Books WHERE id = ?",
+      ).bind(bookId).first();
+      await createNotification(
+        env, userId, "Book Completed! Ã°ÂÂÂ",
+        `Congratulations on completing "${c?.title || "this book"}"!`,
+        "success",
+      );
+    }
+
+    return new Response(JSON.stringify({ success: true, progress, status }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Book.CompleteLesson", env, request);
+  }
+}
+
+async function handleCompleteLesson(
+  request: Request,
+  env: Env,
+  courseId: string,
+  lessonId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(JSON.stringify({ error: "Unauthorized." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can complete lessons." }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const userId = payload.sub;
+
+    const existingEnr: any = await env.DB.prepare(
+      "SELECT id, progress, status, batch_id FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(userId, courseId)
+      .first();
+    if (!existingEnr)
+      return new Response(
+        JSON.stringify({ error: "Not enrolled in this course." }),
+        { status: 403 },
+      );
+
+    // Access Check: Is the lesson free or is the user enrolled?
+    const lesson: any = await env.DB.prepare(
+      `SELECT l.id, l.is_free, l.type, c.sequential_unlock 
+       FROM Lessons l 
+       JOIN Courses c ON c.id = ? 
+       WHERE l.id = ? AND (l.course_id = ? OR l.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))`
+    )
+      .bind(courseId, lessonId, courseId, courseId)
+      .first();
+    if (!lesson) {
+      return new Response(JSON.stringify({ error: "Lesson not found in this course." }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (lesson.type === 'quiz') {
+      return new Response(JSON.stringify({ error: "Quizzes cannot be marked as complete manually. Submit the exam instead." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (lesson.sequential_unlock === 1) {
+      const allLessons = await env.DB.prepare(
+        "SELECT id FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?) ORDER BY order_index ASC"
+      ).bind(courseId, courseId).all();
+      
+      const lessonsList = allLessons.results as any[];
+      const currentIndex = lessonsList.findIndex(l => l.id === lessonId);
+      if (currentIndex > 0) {
+         const prevLessonId = lessonsList[currentIndex - 1].id;
+         const isCompleted = await env.DB.prepare("SELECT 1 FROM CompletedLessons WHERE user_id = ? AND lesson_id = ?").bind(userId, prevLessonId).first();
+         if (!isCompleted) {
+            return new Response(JSON.stringify({ error: "Cannot complete this lesson yet. Previous lesson is not completed." }), { 
+              status: 403, 
+              headers: { "Content-Type": "application/json" } 
+            });
+         }
+      }
+    }
+
+    const isEnrolled = await env.DB.prepare(
+      'SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND payment_status = "paid"',
+    )
+      .bind(userId, courseId)
+      .first();
+
+    if (lesson.is_free === 0 && !isEnrolled) {
+      return new Response(
+        JSON.stringify({
+          error: "Access Denied",
+          message:
+            "This is a premium lesson. Please enroll in the course to continue.",
+          requires_payment: true,
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    let timeSpentSeconds = 0;
+    try {
+      const body: any = await request.clone().json();
+      if (body.timeSpentSeconds) {
+        timeSpentSeconds = parseInt(body.timeSpentSeconds, 10);
+        if (isNaN(timeSpentSeconds)) timeSpentSeconds = 0;
+      }
+    } catch (e) {
+      console.error("[Lesson.Complete] Failed to parse timeSpentSeconds", e);
+    }
+
+    // Mark lesson as completed
+    try {
+      await env.DB.prepare(
+        "INSERT INTO CompletedLessons (user_id, lesson_id, time_spent_seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, lesson_id) DO UPDATE SET time_spent_seconds = time_spent_seconds + excluded.time_spent_seconds",
+      )
+        .bind(userId, lessonId, timeSpentSeconds)
+        .run();
+    } catch (dbError: any) {
+      if (dbError.message && dbError.message.includes("no column named time_spent_seconds")) {
+        console.error("[Lesson.Complete] Fallback: Schema migration pending, missing time_spent_seconds column.", dbError);
+        // Fallback to old schema temporarily to prevent crashing
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO CompletedLessons (user_id, lesson_id) VALUES (?, ?)",
+        )
+          .bind(userId, lessonId)
+          .run();
+      } else {
+        throw dbError;
+      }
+    }
+
+    // Recalculate progress (respect batch scoping if enrollment has a batch_id)
+    let totalLessons = 0;
+    let completedLessons = 0;
+
+    if (existingEnr.batch_id) {
+      const totalRes = await env.DB.prepare(
+        "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? AND (batch_id = ? OR batch_id IS NULL)",
+      )
+        .bind(courseId, existingEnr.batch_id)
+        .first();
+      totalLessons = (totalRes?.count as number) || 0;
+
+      const compRes = await env.DB.prepare(
+        "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND L.course_id = ? AND (L.batch_id = ? OR L.batch_id IS NULL)",
+      )
+        .bind(userId, courseId, existingEnr.batch_id)
+        .first();
+      completedLessons = (compRes?.count as number) || 0;
+    } else {
+      const totalRes = await env.DB.prepare(
+        "SELECT COUNT(id) as count FROM Lessons WHERE course_id = ? OR book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?)",
+      )
+        .bind(courseId, courseId)
+        .first();
+      totalLessons = (totalRes?.count as number) || 0;
+
+      const compRes = await env.DB.prepare(
+        "SELECT COUNT(CL.lesson_id) as count FROM CompletedLessons CL JOIN Lessons L ON CL.lesson_id = L.id WHERE CL.user_id = ? AND (L.course_id = ? OR L.book_id IN (SELECT book_id FROM CourseBooks WHERE course_id = ?))",
+      )
+        .bind(userId, courseId, courseId)
+        .first();
+      completedLessons = (compRes?.count as number) || 0;
+    }
+
+    let progress = 0;
+    if (totalLessons > 0) {
+      progress = Math.round((completedLessons / totalLessons) * 100);
+    }
+
+    let status = "active";
+    if (progress >= 100) {
+      status = "completed";
+    }
+
+    // Check if paid enrollment Ã¢ÂÂ set certificate_eligible
+    const paidEnrollment: any = await env.DB.prepare(
+      "SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(userId, courseId)
+      .first();
+    const isPaid = paidEnrollment?.payment_status === "paid";
+
+    await env.DB.prepare(
+      "UPDATE Enrollments SET progress = ?, status = ?, certificate_eligible = ? WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(
+        progress,
+        status,
+        progress >= 100 && isPaid ? 1 : 0,
+        userId,
+        courseId,
+      )
+      .run();
+
+    if (progress >= 100 && existingEnr.status !== "completed") {
+      const c: any = await env.DB.prepare(
+        "SELECT title FROM Courses WHERE id = ?",
+      )
+        .bind(courseId)
+        .first();
+      await createNotification(
+        env,
+        userId,
+        "Course Completed! Ã°ÂÂÂ",
+        `Congratulations on completing "${c?.title}"!${isPaid ? " Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤Â¬ Certificate Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â eligible Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â!" : ""}`,
+        "success",
+      );
+
+      const user: any = await env.DB.prepare(
+        "SELECT email, full_name FROM Users WHERE id = ?",
+      )
+        .bind(userId)
+        .first();
+      if (user?.email) {
+        let emailHtml = `
+          <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+          <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â <strong>${c?.title}</strong> course 100% Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â° Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â! Ã°ÂÂÂ</p>
+        `;
+        let emailText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â ${c?.title} course 100% Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â° Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â! Ã°ÂÂÂ\n`;
+
+        if (isPaid) {
+          emailHtml += `
+            <div style="background:#fffbeb;padding:16px;border-radius:12px;border:1px solid #fde68a;margin-top:16px;">
+              <p style="color:#92400e;font-weight:600;margin:0;">Ã°ÂÂÂ Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤Â¬ Certificate Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â eligible Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ Admin Ã Â¤ÂÃ Â¤Â²Ã Â¥ÂÃ Â¤Â¦ Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ certificate issue Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¾Ã Â¥Â¤</p>
+            </div>
+          `;
+          emailText += `\nÃ°ÂÂÂ Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤Â¬ Certificate Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â eligible Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ Admin Ã Â¤ÂÃ Â¤Â²Ã Â¥ÂÃ Â¤Â¦ Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ certificate issue Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¾Ã Â¥Â¤`;
+        } else {
+          emailHtml += `
+            <div style="background:#f0fdf4;padding:16px;border-radius:12px;border:1px solid #bbf7d0;margin-top:16px;">
+              <p style="color:#166534;font-weight:600;margin:0;">Ã¢ÂÂ¨ Certificate Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¤ Ã Â¤ÂÃ Â¤Â°Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Premium Enrollment Ã Â¤Â®Ã Â¥ÂÃ Â¤Â upgrade Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+            </div>
+          `;
+          emailText += `\nÃ¢ÂÂ¨ Certificate Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â¤ Ã Â¤ÂÃ Â¤Â°Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Premium Enrollment Ã Â¤Â®Ã Â¥ÂÃ Â¤Â upgrade Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`;
+        }
+
+        await safeSendEmail(
+          env,
+          user.email,
+          `Course Completed: ${c?.title}`,
+          "Ã°ÂÂÂ Course Completed!",
+          emailHtml,
+          emailText,
+        );
+      }
+    }
+
+    await broadcastToUser(env, userId, "progress", { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 });
+
+    return new Response(
+      JSON.stringify({
+        message: "Lesson marked complete.",
+        progress,
+        certificate_eligible: progress >= 100 && isPaid ? 1 : 0,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.CompleteLesson", env, request);
+  }
+}
+
+async function handleUpdateProgress(
+  request: Request,
+  env: Env,
+  courseId: string,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(
+        JSON.stringify({ error: "Unauthorized. Please log in." }),
+        { status: 401 },
+      );
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+
+    if (payload.role !== "student") {
+      return new Response(
+        JSON.stringify({ error: "Only students can update progress." }),
+        { status: 403 },
+      );
+    }
+
+    const { progress } = (await request.json()) as any;
+
+    if (typeof progress !== "number" || progress < 0 || progress > 100) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid progress value. Must be a number between 0 and 100.",
+        }),
+        { status: 400 },
+      );
+    }
+
+    const userId = payload.sub;
+
+    const existing: any = await env.DB.prepare(
+      "SELECT id, progress, status FROM Enrollments WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(userId, courseId)
+      .first();
+    if (!existing)
+      return new Response(
+        JSON.stringify({ error: "Not enrolled in this course." }),
+        { status: 403 },
+      );
+
+    let status = "active";
+    if (progress === 100) {
+      status = "completed";
+    }
+
+    await env.DB.prepare(
+      "UPDATE Enrollments SET progress = ?, status = ? WHERE user_id = ? AND course_id = ?",
+    )
+      .bind(progress, status, userId, courseId)
+      .run();
+
+    if (progress === 100 && existing.status !== "completed") {
+      const c: any = await env.DB.prepare(
+        "SELECT title FROM Courses WHERE id = ?",
+      )
+        .bind(courseId)
+        .first();
+      await createNotification(
+        env,
+        userId,
+        "Course Completed!",
+        `Congratulations! You have completed "${c?.title}".`,
+        "success",
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        message: "Progress updated successfully",
+        progress,
+        status,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Course.UpdateProgress", env, request);
+  }
+}
+
+
+function normalizeCouponCode(code: any): string {
+  return String(code || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+}
+
+function parseJsonList(value: any): string[] {
+  if (!value) return [];
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.map((v) => String(v).trim()).filter(Boolean) : [];
+  } catch (_) {
+    return String(value).split(/[\n,]+/).map((v) => v.trim()).filter(Boolean);
+  }
+}
+
+function sanitizeBillingAddress(value: any): any {
+  const address = value && typeof value === "object" ? value : {};
+  const pick = (key: string) => String(address[key] || "").trim().slice(0, 250);
+  return {
+    full_name: pick("full_name"),
+    email: pick("email").toLowerCase(),
+    phone: pick("phone"),
+    line1: pick("line1"),
+    line2: pick("line2"),
+    city: pick("city"),
+    state: pick("state"),
+    pincode: pick("pincode"),
+    country: pick("country") || "India",
+  };
+}
+
+export function validateBillingAddress(address: any): string | null {
+  const required = ["full_name", "email", "phone", "line1", "city", "state", "pincode"];
+  const missing = required.filter((key) => !address?.[key]);
+  if (missing.length) return `Billing address missing: ${missing.join(", ")}`;
+  return null;
+}
+
+async function calculateCheckoutQuote(env: Env, input: any, userId: string): Promise<any> {
+  const amountPaise = normalizeNonNegativeInt(input.amount_paise ?? input.amountPaise);
+  const itemType = String(input.itemType || input.item_type || "").trim();
+  const itemId = input.itemId || input.item_id || null;
+  const couponCode = normalizeCouponCode(input.couponCode || input.coupon_code);
+  const baseQuote = { subtotal_paise: amountPaise, discount_paise: 0, total_paise: amountPaise, coupon: null, message: "" };
+  if (!couponCode) return baseQuote;
+
+  const [userBatch, couponBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(userId),
+    env.DB.prepare(`SELECT * FROM Coupons WHERE code = ? AND is_active = 1`).bind(couponCode)
+  ]);
+  const user = userBatch.results?.[0] as any;
+  const coupon = couponBatch.results?.[0] as any;
+  const email = String(user?.email || "").trim().toLowerCase();
+  if (!coupon) throw new Error("Coupon code valid nahi hai ya inactive hai");
+
+  const now = Date.now();
+  if (coupon.starts_at && new Date(coupon.starts_at).getTime() > now) throw new Error("Coupon abhi start nahi hua hai");
+  if (coupon.ends_at && new Date(coupon.ends_at).getTime() < now) throw new Error("Coupon expire ho gaya hai");
+  if (amountPaise < normalizeNonNegativeInt(coupon.min_order_paise)) throw new Error("Order amount coupon ke minimum amount se kam hai");
+
+  const appliesTo = parseJsonList(coupon.applies_to_json);
+  if (appliesTo.length && !appliesTo.includes("all") && !appliesTo.includes(itemType)) throw new Error("Ye coupon is item par applicable nahi hai");
+
+  const targetIds = parseJsonList(coupon.target_ids_json);
+  if (targetIds.length && itemId && !targetIds.includes(String(itemId))) throw new Error("Ye coupon selected item ke liye allowed nahi hai");
+
+  const allowedEmails = parseJsonList(coupon.allowed_emails_json).map((v) => v.toLowerCase());
+  const excludedEmails = parseJsonList(coupon.excluded_emails_json).map((v) => v.toLowerCase());
+  if (allowedEmails.length && !allowedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye allowed nahi hai");
+  if (excludedEmails.includes(email)) throw new Error("Ye coupon aapke email ke liye blocked hai");
+
+  // Cleanup stale reservations before counting so abandoned quotes don't permanently
+  // block a coupon. Then count both successful and in-flight ('created') redemptions
+  // to prevent concurrent checkouts from exceeding the limit.
+  await env.DB.prepare(
+    "DELETE FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status = 'created' AND created_at < datetime('now', '-30 minutes')"
+  ).bind(coupon.id, userId).run();
+
+  const [usedBatch, userUsedBatch] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND status IN ('successful', 'created')").bind(coupon.id),
+    env.DB.prepare("SELECT COUNT(*) as count FROM CouponRedemptions WHERE coupon_id = ? AND user_id = ? AND status IN ('successful', 'created')").bind(coupon.id, userId)
+  ]);
+  const used = usedBatch.results?.[0] as any;
+  const userUsed = userUsedBatch.results?.[0] as any;
+
+  if (coupon.usage_limit && Number(used?.count || 0) >= Number(coupon.usage_limit)) throw new Error("Coupon usage limit complete ho chuki hai");
+  if (coupon.per_user_limit && Number(userUsed?.count || 0) >= Number(coupon.per_user_limit)) throw new Error("Aap is coupon ki per-user limit use kar chuke hain");
+
+  let discount = 0;
+  const value = normalizeNonNegativeInt(coupon.discount_value);
+  if (coupon.discount_type === "percent") {
+    discount = Math.floor((amountPaise * Math.min(value, 100)) / 100);
+    const maxDiscount = normalizeNonNegativeInt(coupon.max_discount_paise);
+    if (maxDiscount > 0) discount = Math.min(discount, maxDiscount);
+  } else {
+    discount = value;
+  }
+  discount = Math.min(Math.max(0, discount), amountPaise);
+  return {
+    subtotal_paise: amountPaise,
+    discount_paise: discount,
+    total_paise: amountPaise - discount,
+    coupon: { id: coupon.id, code: coupon.code, label: coupon.name || coupon.code },
+    message: discount > 0 ? `${coupon.code} coupon apply ho gaya` : `${coupon.code} coupon valid hai`,
+  };
+}
+
+async function handleCheckoutQuote(request: Request, env: Env): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+    const quote = await calculateCheckoutQuote(env, body, payload.sub);
+    return new Response(JSON.stringify({ quote }), { status: 200, headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || "Coupon quote failed" }), { status: 400, headers: { "Content-Type": "application/json" } });
+  }
+}
+
+async function handleAdminCoupons(request: Request, env: Env): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(`SELECT * FROM Coupons ORDER BY created_at DESC`).all();
+      return new Response(JSON.stringify({ coupons: results || [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (request.method === "POST") {
+      const body = (await request.json()) as any;
+      const code = normalizeCouponCode(body.code);
+      if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
+      const couponId = generateCustomId("YA-CPN");
+      await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, adminId)
+        .run();
+      return new Response(JSON.stringify({ message: "Coupon created", id: couponId }), { status: 201 });
+    }
+
+    if (request.method === "PUT") {
+      const id = url.pathname.match(/\/api\/admin\/coupons\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Coupon ID is required in URL path" }), { status: 400 });
+      }
+      const body = (await request.json()) as any;
+      await env.DB.prepare(`UPDATE Coupons SET code = COALESCE(?, code), name = COALESCE(?, name), discount_type = COALESCE(?, discount_type), discount_value = COALESCE(?, discount_value), max_discount_paise = COALESCE(?, max_discount_paise), min_order_paise = COALESCE(?, min_order_paise), applies_to_json = COALESCE(?, applies_to_json), target_ids_json = COALESCE(?, target_ids_json), allowed_emails_json = COALESCE(?, allowed_emails_json), excluded_emails_json = COALESCE(?, excluded_emails_json), usage_limit = COALESCE(?, usage_limit), per_user_limit = COALESCE(?, per_user_limit), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(body.code ? normalizeCouponCode(body.code) : null, body.name || null, body.discount_type || null, body.discount_value == null ? null : normalizeNonNegativeInt(body.discount_value), body.max_discount_paise == null ? null : normalizeNonNegativeInt(body.max_discount_paise), body.min_order_paise == null ? null : normalizeNonNegativeInt(body.min_order_paise), body.applies_to == null ? null : JSON.stringify(parseJsonList(body.applies_to)), body.target_ids == null ? null : JSON.stringify(parseJsonList(body.target_ids)), body.allowed_emails == null ? null : JSON.stringify(parseJsonList(body.allowed_emails).map((v) => v.toLowerCase())), body.excluded_emails == null ? null : JSON.stringify(parseJsonList(body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit == null ? null : normalizeNonNegativeInt(body.per_user_limit), body.starts_at || null, body.ends_at || null, body.is_active == null ? null : body.is_active ? 1 : 0, id)
+        .run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    if (request.method === "DELETE") {
+      const id = url.pathname.match(/\/api\/admin\/coupons\/([^/]+)$/)?.[1];
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Coupon ID is required in URL path" }), { status: 400 });
+      }
+      await env.DB.prepare("DELETE FROM Coupons WHERE id = ?").bind(id).run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message || "Coupon admin failed" }), { status: error.message === "Forbidden" ? 403 : 500 });
+  }
+}
+
+// --- Razorpay Payment Handlers ---
+
+async function handlePaymentStatus(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+    const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+    const isConfigured = !!(razorpayKey && razorpaySecret);
+    return new Response(JSON.stringify({ configured: isConfigured }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ configured: false }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
+async function handleCreatePaymentOrder(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const body = (await request.json()) as any;
+
+    const itemType = body.itemType || "course";
+    const itemId = body.itemId || body.courseId;
+    const couponCode = body.couponCode;
+
+    if (!itemId) {
+      return new Response(JSON.stringify({ error: "Item ID missing" }), { status: 400 });
+    }
+
+    const billingAddress = sanitizeBillingAddress(body.billingAddress);
+    const billingError = validateBillingAddress(billingAddress);
+    if (billingError) return new Response(JSON.stringify({ error: billingError }), { status: 400 });
+
+    let title = "";
+    let price_rupees = 0;
+
+    if (itemType === "course") {
+      const course: any = await env.DB.prepare("SELECT price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
+      if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
+      title = course.title;
+      price_rupees = course.price_rupees || 0;
+    } else if (itemType === "book") {
+      const book: any = await env.DB.prepare("SELECT price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
+      if (!book) return new Response(JSON.stringify({ error: "Book not found" }), { status: 404 });
+      title = book.title;
+      price_rupees = book.price_rupees || 0;
+    } else {
+      return new Response(JSON.stringify({ error: "Invalid itemType" }), { status: 400 });
+    }
+
+    // Check if user already has subscription access to this item (prevents unnecessary payment)
+    if (itemType === "course") {
+      const hasAccess = await userHasSubscriptionCourseAccess(payload.sub, itemId, env);
+      if (hasAccess) {
+        return new Response(
+          JSON.stringify({
+            error: "Aapke subscription mein ye course already unlock hai. Payment ki zaroorat nahi hai.",
+            code: "ALREADY_ACCESSIBLE_VIA_SUBSCRIPTION",
+          }),
+          { status: 409 },
+        );
+      }
+    }
+
+    const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+    const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+    if (!razorpayKey || !razorpaySecret) {
+      return new Response(
+        JSON.stringify({ error: "Payment gateway is not configured. Please contact the administrator.", code: "PAYMENT_NOT_CONFIGURED" }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    let quote;
+    try {
+      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_rupees * 100, couponCode }, payload.sub);
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const amount = quote.total_paise; // In paise after coupon discount
+
+    if (amount === 0) {
+      const txId = generateCustomId("YA-TXN");
+
+      const enrollPayload: any = { userId: payload.sub, status: "active", paymentStatus: "paid", paymentSource: "coupon", paymentId: txId, preservePaidStatus: true };
+      if (itemType === "course") enrollPayload.courseId = itemId;
+      if (itemType === "book") enrollPayload.bookId = itemId;
+
+      await ensureEnrollment(env, enrollPayload);
+
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
+        .run();
+
+      if (quote.coupon) {
+        await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+          .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, itemType, itemId, txId, quote.discount_paise, "successful")
+          .run();
+      }
+
+      await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+        .run();
+
+      return new Response(JSON.stringify({ freeCheckout: true, quote }), { status: 200 });
+    }
+
+    const receipt = generateCustomId("YA-RCP");
+
+    const response = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount,
+        currency: "INR",
+        receipt,
+        notes: { itemType, itemId, userId: payload.sub, couponCode: quote.coupon?.code || "", discount_paise: quote.discount_paise },
+      }),
+    });
+
+    const order = (await response.json()) as any;
+
+    // Step 1: Create Transaction FIRST Ã¢ÂÂ prevents orphaned enrollment if Transaction INSERT fails
+    const txId = generateCustomId("YA-TXN");
+    await env.DB.prepare(
+      `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .run();
+
+    // Step 2: Create Enrollment Ã¢ÂÂ uses ON CONFLICT DO NOTHING to prevent duplicates
+    const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
+    if (itemType === "course") enrollPayload.courseId = itemId;
+    if (itemType === "book") enrollPayload.bookId = itemId;
+    await ensureEnrollment(env, enrollPayload);
+
+    if (quote.coupon) {
+      await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(generateCustomId("YA-CPR"), quote.coupon.id, payload.sub, itemType, itemId, txId, quote.discount_paise, "created")
+        .run();
+    }
+    await env.DB.prepare(`INSERT INTO BillingAddresses (id, user_id, transaction_id, full_name, email, phone, line1, line2, city, state, pincode, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(generateCustomId("YA-BILL"), payload.sub, txId, billingAddress.full_name, billingAddress.email, billingAddress.phone, billingAddress.line1, billingAddress.line2, billingAddress.city, billingAddress.state, billingAddress.pincode, billingAddress.country)
+      .run();
+
+    return new Response(JSON.stringify({ order, key: razorpayKey, quote }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Payments.CreateOrder", env, request);
+  }
+}
+
+
+async function handleVerifyPayment(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = (await request.json()) as any;
+    const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+    if (!razorpaySecret) throw new Error("Razorpay Secret missing.");
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${razorpay_order_id}|${razorpay_payment_id}`);
+    const key = await crypto.subtle.importKey("raw", encoder.encode(razorpaySecret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+    const isValid = await crypto.subtle.verify("HMAC", key, hexToBytes(razorpay_signature), data);
+
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: "Payment verification failed" }), { status: 400 });
+    }
+
+    const orderOwner: any = await env.DB.prepare(`SELECT e.user_id, e.course_id, e.book_id FROM Enrollments e WHERE e.payment_id = ?`).bind(razorpay_order_id).first();
+
+    if (!orderOwner) {
+      return new Response(JSON.stringify({ error: "Order not found" }), { status: 404 });
+    }
+
+    if (orderOwner.user_id !== payload.sub) {
+      return new Response(JSON.stringify({ error: "Forbidden: This order does not belong to you" }), { status: 403 });
+    }
+
+    let title = "Item";
+    let price_rupees = 0;
+
+    if (orderOwner.course_id) {
+      const c: any = await env.DB.prepare("SELECT title, price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
+      if (c) { title = c.title; price_rupees = c.price_rupees; }
+    } else if (orderOwner.book_id) {
+      const b: any = await env.DB.prepare("SELECT title, price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
+      if (b) { title = b.title; price_rupees = b.price_rupees; }
+    }
+
+    const txForAmount: any = await env.DB.prepare("SELECT amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
+    const amountPaid = txForAmount?.amount_rupees ?? price_rupees ?? 0;
+
+    const enrollmentUpdate = await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"').bind(amountPaid, razorpay_order_id).run() as any;
+    if (Number(enrollmentUpdate?.meta?.changes || enrollmentUpdate?.changes || 0) === 0) {
+      return new Response(JSON.stringify({ error: "Payment already processed" }), { status: 400 });
+    }
+
+    await env.DB.prepare(`UPDATE Transactions SET status = 'successful', razorpay_payment_id = ?, razorpay_signature = ? WHERE razorpay_order_id = ? AND status = 'created'`).bind(razorpay_payment_id, razorpay_signature, razorpay_order_id).run();
+
+    await env.DB.prepare(`UPDATE CouponRedemptions SET status = 'successful', redeemed_at = CURRENT_TIMESTAMP WHERE status = 'created' AND transaction_id IN (SELECT id FROM Transactions WHERE razorpay_order_id = ?)`).bind(razorpay_order_id).run();
+
+    try {
+      const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(orderOwner.user_id).first();
+      if (user?.email) {
+        const userHtml = `
+          <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+          <p><strong>${title}</strong> Ã Â¤ÂÃ Â¤Â¾ <b>Premium Access</b> Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â² Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!</p>
+          <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
+            <p style="margin:0;color:#166534;font-weight:600;">Ã°ÂÂÂ Course Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â°Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Âª Certificate Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â eligible Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¤ÂÃ Â¥Â!</p>
+          </div>
+        `;
+        const userText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}\n\n${title} Ã Â¤ÂÃ Â¤Â¾ Premium Access Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â² Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!\n\nOm!`;
+        await safeSendEmail(env, user.email, `Ã°ÂÂÂ Premium Access Confirmed: ${title}`, "Ã°ÂÂÂ Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²!", userHtml, userText);
+        await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
+      }
+    } catch (e) {
+      console.error("Post-payment notification error");
+      try {
+        await sendRedAlert(env, `Post-payment notification failed: ${e instanceof Error ? e.message : e}`, "Payment.Notification");
+      } catch (alertError) {
+        console.error("Failed to send red alert for post-payment notification failure:", alertError);
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Payments.Verify", env, request);
+  }
+}
+
+
+
+
+// =============================================
+// --- Subscription & Webhook Handlers ---
+// =============================================
+
+// ==========================================================
+// --- Core Access Profile & AI Credit System ---
+// ==========================================================
+
+interface UserAccessProfile {
+  hasActiveSub: boolean;
+  subscriptionId: string | null;
+  planId: string | null;
+  courseAccessType: "none" | "all" | "static" | "user_choice";
+  allowedCourseIds: string[];
+  batchAccessType: "none" | "static" | "user_choice";
+  allowedBatchIds: string[];
+  liveSessionAccess: boolean;
+}
+
+async function getUserAccessProfile(
+  userId: string,
+  env: Env,
+): Promise<UserAccessProfile> {
+  const empty: UserAccessProfile = {
+    hasActiveSub: false,
+    subscriptionId: null,
+    planId: null,
+    courseAccessType: "none",
+    allowedCourseIds: [],
+    batchAccessType: "none",
+    allowedBatchIds: [],
+    liveSessionAccess: false,
+  };
+
+  const sub: any = await env.DB.prepare(
+    `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
+            p.wallet_amount_rupees, p.live_session_access
+     FROM Subscriptions s
+     JOIN SubscriptionPlans p ON s.plan_id = p.id
+     WHERE s.user_id = ? AND s.status = 'active'
+       AND (s.current_period_end IS NULL OR s.current_period_end > datetime('now'))
+     ORDER BY s.created_at DESC LIMIT 1`,
+  )
+    .bind(userId)
+    .first();
+
+  if (!sub) return empty;
+
+  const profile: UserAccessProfile = {
+    hasActiveSub: true,
+    subscriptionId: sub.id,
+    planId: sub.plan_id,
+    courseAccessType: sub.course_access_type || "none",
+    allowedCourseIds: [],
+    batchAccessType: sub.batch_access_type || "none",
+    allowedBatchIds: [],
+    liveSessionAccess: sub.live_session_access === 1,
+  };
+
+  // Resolve course IDs based on access type
+  if (profile.courseAccessType === "static") {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND access_mode = 'static'`,
+    )
+      .bind(sub.plan_id)
+      .all();
+    profile.allowedCourseIds = results.map((r: any) => r.item_id);
+  } else if (profile.courseAccessType === "user_choice") {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM UserSubscriptionSelections WHERE subscription_id = ? AND item_type = 'course'`,
+    )
+      .bind(sub.id)
+      .all();
+    profile.allowedCourseIds = results.map((r: any) => r.item_id);
+  }
+
+  // Resolve batch IDs
+  if (profile.batchAccessType === "static") {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'batch' AND access_mode = 'static'`,
+    )
+      .bind(sub.plan_id)
+      .all();
+    profile.allowedBatchIds = results.map((r: any) => r.item_id);
+  } else if (profile.batchAccessType === "user_choice") {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id FROM UserSubscriptionSelections WHERE subscription_id = ? AND item_type = 'batch'`,
+    )
+      .bind(sub.id)
+      .all();
+    profile.allowedBatchIds = results.map((r: any) => r.item_id);
+  }
+
+  return profile;
+}
+
+// Returns { allowed: true } or { allowed: false, reason, retryAfter? }
+async function checkAndConsumeAICredit(
+  userId: string,
+  env: Env,
+): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
+  const deduction = await getAICreditDeductionPerRequest(env);
+
+  const deductionResult = await deductFromWallet(
+    env,
+    userId,
+    deduction,
+    "ai_usage",
+    "ai_request",
+    generateCustomId("YA-REF"),
+  );
+
+  if (!deductionResult.ok) {
+    return {
+      allowed: false,
+      reason: `Balance Ã Â¤ÂÃ Â¤Â® Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤ Ã Â¤ÂÃ Â¤Â¸ action Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã¢ÂÂ¹${deduction} Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¹Ã Â¤Â¿Ã Â¤ÂÃ Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ wallet recharge Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤ (Insufficient balance. Ã¢ÂÂ¹${deduction} required. Please recharge your wallet.)`,
+      remaining: deductionResult.balance_rupees,
+    };
+  }
+
+  return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
+}
+
+async function searchCourseContent(
+  env: Env,
+  query: string,
+  topK = 5
+): Promise<string> {
+  try {
+    if (!env.AI_SEARCH) {
+      console.warn("[Search] AI_SEARCH binding missing");
+      return "";
+    }
+
+    const instance = env.AI_SEARCH.get("ya-lms");
+    const response = await instance.search({
+      query,
+      ai_search_options: { top_k: topK },
+    });
+
+    const results = response?.results || [];
+    if (results.length === 0) return "";
+
+    const formatted = results
+      .map((r: any) => {
+        const meta = r.metadata || {};
+        return `[Source: ${meta.title || "Unknown"}]\n${r.content || ""}`;
+      })
+      .join("\n\n");
+
+    return `\n[AI SEARCH RESULTS from ya-lms]:\n${formatted}\n`;
+  } catch (e) {
+    console.error("[Search Error]", e);
+    return "";
+  }
+}
+
+async function handleAdminAIReindex(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext | undefined,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Only admins can reindex" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const lessons = await env.DB.prepare(
+      "SELECT id, course_id, title, type, chapter_title, text_content, text_content_hi, order_index FROM Lessons WHERE text_content IS NOT NULL AND text_content != ''",
+    ).all();
+
+    const rows = lessons.results || [];
+    if (rows.length === 0) {
+      return new Response(JSON.stringify({ success: true, indexed: 0, message: "No lessons to index" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Process sequentially to avoid rate limits
+    let indexed = 0;
+    for (const lesson of rows) {
+      await indexLessonToAISearch(env, lesson);
+      indexed++;
+    }
+
+    return new Response(JSON.stringify({ success: true, indexed, total: rows.length }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AIReindex", env, request);
+  }
+}
+
+async function checkHourlyLimit(
+  env: Env,
+  userId: string,
+  service = "ai",
+): Promise<{ allowed: boolean; reason?: string }> {
+  const limit = (await env.DB.prepare(
+    "SELECT window_start, window_used, rate_limit FROM RateLimits WHERE user_id = ? AND service = ?",
+  )
+    .bind(userId, service)
+    .first()) as any;
+
+  const windowStart = limit?.window_start ? new Date(limit.window_start) : new Date(0);
+  const windowUsed = Number(limit?.window_used || 0);
+  const rateLimit = limit?.rate_limit != null ? Number(limit.rate_limit) : 60;
+  const now = new Date();
+  const diffMs = now.getTime() - windowStart.getTime();
+
+  if (diffMs > 3600000) {
+    await env.DB.prepare(
+      `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit)
+       VALUES (?, ?, ?, 1, ?)
+       ON CONFLICT(user_id, service) DO UPDATE SET window_start = ?, window_used = 1`,
+    )
+      .bind(userId, service, now.toISOString(), rateLimit, now.toISOString())
+      .run();
+    return { allowed: true };
+  }
+
+  if (rateLimit > 0 && windowUsed >= rateLimit) {
+    const resetMin = Math.ceil((3600000 - diffMs) / 60000);
+    return {
+      allowed: false,
+      reason: `Rate limit exceeded (${rateLimit}/hour). ${resetMin} Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â¨Ã Â¤Â Ã Â¤Â¬Ã Â¤Â¾Ã Â¤Â¦ try Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+    };
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit)
+     VALUES (?, ?, ?, 1, ?)
+     ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1`,
+  )
+    .bind(userId, service, now.toISOString(), rateLimit)
+    .run();
+  return { allowed: true };
+}
+
+function userAccessProfileAllowsCourse(
+  profile: UserAccessProfile,
+  courseId: string,
+): boolean {
+  if (!profile.hasActiveSub) return false;
+  if (profile.courseAccessType === "all") return true;
+  return profile.allowedCourseIds.includes(courseId);
+}
+
+async function userHasSubscriptionCourseAccess(
+  userId: string,
+  courseId: string,
+  env: Env,
+): Promise<boolean> {
+  const profile = await getUserAccessProfile(userId, env);
+  return userAccessProfileAllowsCourse(profile, courseId);
+}
+
+// Backward compat helper
+async function userHasActiveSubscription(
+  userId: string,
+  env: Env,
+): Promise<boolean> {
+  const profile = await getUserAccessProfile(userId, env);
+  return profile.hasActiveSub;
+}
+
+// GET /api/subscription/plans Ã¢ÂÂ Public list of active plans
+async function handleListSubscriptionPlans(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+              course_access_type, max_course_selection,
+              batch_access_type, max_batch_selection,
+              book_access_type, max_book_selection,
+              wallet_amount_rupees,
+              live_session_access, live_class_amount_rupees,
+              is_lifetime, lifetime_price_rupees
+       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
+    ).all();
+    return new Response(JSON.stringify({ plans: results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.ListPlans", env, request);
+  }
+}
+
+// GET /api/subscription/me Ã¢ÂÂ User ka current subscription status
+async function handleGetUserSubscription(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    // Priority: active/authenticated first, then created/halted
+    let sub: any = await env.DB.prepare(
+      `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+       FROM Subscriptions s
+       JOIN SubscriptionPlans p ON s.plan_id = p.id
+       WHERE s.user_id = ? AND s.status IN ('active', 'authenticated')
+       ORDER BY s.created_at DESC LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+
+    if (!sub) {
+      sub = await env.DB.prepare(
+        `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+         FROM Subscriptions s
+         JOIN SubscriptionPlans p ON s.plan_id = p.id
+         WHERE s.user_id = ? AND s.status IN ('created', 'halted')
+         ORDER BY s.created_at DESC LIMIT 1`,
+      )
+        .bind(payload.sub)
+        .first();
+    }
+    if (sub && sub.status !== "cancelled" && Number(sub.cancellation_requested || 0) === 1) {
+      sub.status = "cancel_pending";
+    }
+    return new Response(JSON.stringify({ subscription: sub || null }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Token expired") {
+      return new Response(
+        JSON.stringify({ subscription: null, error: "Unauthorized" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleGlobalError(error, "Subscription.GetMine", env, request);
+  }
+}
+
+// POST /api/subscription/create Ã¢ÂÂ Create Razorpay subscription & save to DB
+async function handleCreateSubscription(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const { planId } = (await request.json()) as any;
+
+    const plan: any = await env.DB.prepare(
+      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+    )
+      .bind(planId)
+      .first();
+    if (!plan)
+      return new Response(
+        JSON.stringify({ error: "Subscription plan not found" }),
+        { status: 404 },
+      );
+    if (!plan.razorpay_plan_id)
+      return new Response(
+        JSON.stringify({
+          error: "This plan is not yet linked to Razorpay. Contact admin.",
+        }),
+        { status: 503 },
+      );
+
+    // Check if user already has an active or created subscription
+    const existingActiveSub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (existingActiveSub) {
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
+      );
+    }
+
+    const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+    const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+    if (!razorpayKey || !razorpaySecret) {
+      return new Response(
+        JSON.stringify({
+          error: "Payment gateway is not configured.",
+          code: "PAYMENT_NOT_CONFIGURED",
+        }),
+        { status: 503 },
+      );
+    }
+
+    // Get user email for Razorpay customer
+    const user: any = await env.DB.prepare(
+      "SELECT email, full_name FROM Users WHERE id = ?",
+    )
+      .bind(payload.sub)
+      .first();
+
+    // TOCTOU fix: Razorpay API call se PEHLE dubara check karo
+    const preFlightCheck: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (preFlightCheck) {
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
+      );
+    }
+
+    const rzpBody: any = {
+      plan_id: plan.razorpay_plan_id,
+      total_count: 12, // Allow up to 12 billing cycles (auto-renews until cancelled)
+      quantity: 1,
+      customer_notify: 1,
+      notes: { userId: payload.sub, planId },
+    };
+
+    const rzpRes = await fetch("https://api.razorpay.com/v1/subscriptions", {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(rzpBody),
+    });
+
+    const rzpData = (await rzpRes.json()) as any;
+    if (!rzpRes.ok) {
+      console.error("Razorpay subscription create error:", rzpData);
+      return new Response(
+        JSON.stringify({
+          error: rzpData.error?.description || "Failed to create subscription",
+        }),
+        { status: 502 },
+      );
+    }
+
+    // Safety check: re-check for active subscription (closes TOCTOU race between the first check and Razorpay API call)
+    const secondCheck: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated', 'created') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+    if (secondCheck) {
+      // Attempt to cancel the Razorpay subscription since we can't use it
+      try {
+        await fetch(`https://api.razorpay.com/v1/subscriptions/${rzpData.id}/cancel`, {
+          method: "POST",
+          headers: {
+            Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+          },
+        });
+      } catch (_cancelErr) {
+        // Best-effort cancel; log and continue
+        console.error("Failed to cancel Razorpay subscription after race:", _cancelErr);
+      }
+      return new Response(
+        JSON.stringify({
+          error: "Aapke paas already ek active subscription hai. Pehle use cancel karke naya subscribe karein.",
+          code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        }),
+        { status: 409 },
+      );
+    }
+
+    // Save subscription record to D1 Ã¢ÂÂ reuse pre-select created subscription if available
+    const existingCreatedSub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' AND razorpay_subscription_id IS NULL ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind(payload.sub, planId)
+      .first();
+
+    let subId: string;
+    if (existingCreatedSub) {
+      subId = existingCreatedSub.id as string;
+      await env.DB.prepare(
+        "UPDATE Subscriptions SET razorpay_subscription_id = ?, is_lifetime = ? WHERE id = ?",
+      )
+        .bind(rzpData.id, plan.is_lifetime || 0, subId)
+        .run();
+    } else {
+      subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees is intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
+      // Setting it now would cause double-counting on first activation.
+      await env.DB.prepare(
+        "INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+        .bind(subId, payload.sub, planId, rzpData.id, "created", plan.is_lifetime || 0)
+        .run();
+    }
+
+    // Send Official Email Notification
+    if (user?.email) {
+      const subject = `Your New Subscription: ${plan.name}`;
+      const title = "Subscription Created";
+      const htmlBody = `
+        <p>Namaste <strong>${user.full_name || "Student"}</strong>,</p>
+        <p>You have successfully initiated a new subscription: <strong>${plan.name}</strong>.</p>
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
+          <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
+          <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
+          <p style="margin: 4px 0 0 0;">Amount: Ã¢ÂÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+        </div>
+        <p>Please complete the payment in the checkout window to activate your subscription.</p>
+        <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
+      `;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: Ã¢ÂÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+
+      await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+    }
+
+    await broadcastToUser(env, payload.sub, "subscription", {
+      plan_name: plan.name,
+      plan_amount: plan.amount_rupees,
+      razorpay_subscription_id: rzpData.id,
+    });
+
+    return new Response(
+      JSON.stringify({
+        subscription_id: rzpData.id,
+        key: razorpayKey,
+        plan: { name: plan.name, amount_rupees: plan.amount_rupees },
+        user: { email: user?.email, name: user?.full_name },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.Create", env, request);
+  }
+}
+
+// POST /api/subscription/cancel Ã¢ÂÂ Request cancellation of active subscription
+async function handleCancelSubscription(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const sub: any = await env.DB.prepare(
+      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+
+    if (!sub)
+      return new Response(
+        JSON.stringify({ error: "No active subscription found" }),
+        { status: 404 },
+      );
+
+    const isCreatedStatus = sub.status === "created";
+
+    // For already-active subscriptions, mark a cancellation request instead of
+    // cancelling status immediately. Razorpay sends subscription.cancelled at
+    // the end of the current period, and only then do we flip status to 'cancelled'.
+    // This preserves access until the period end.
+    if (!isCreatedStatus && Number(sub.cancellation_requested || 0) === 1) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Cancellation already requested. Access will remain until the end of the current period.",
+          status: "cancel_pending",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // For 'created' subscriptions, skip Razorpay API call (subscription never activated)
+    if (!isCreatedStatus) {
+      const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+      const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+      if (razorpayKey && razorpaySecret && sub.razorpay_subscription_id) {
+        // Cancel at Razorpay (cancel_at_cycle_end = 1 means cancel gracefully at end of period)
+        const rzpCancelRes = await fetch(
+          `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+          },
+        );
+
+        if (!rzpCancelRes.ok) {
+          const rzpErr = await rzpCancelRes.json() as any;
+          console.error("[Cancel] Razorpay cancel failed:", rzpErr);
+          return new Response(
+            JSON.stringify({
+              error: rzpErr.error?.description || "Razorpay par cancel fail ho gaya. Baad mein try karein.",
+            }),
+            { status: 502 },
+          );
+        }
+      }
+    }
+
+    if (isCreatedStatus) {
+      // Never-activated subscriptions can be marked cancelled immediately
+      await env.DB.prepare(
+        "UPDATE Subscriptions SET status = 'cancelled', cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      )
+        .bind(sub.id)
+        .run();
+      await createNotification(
+        env,
+        payload.sub,
+        "Subscription Cancelled",
+        "Aapka subscription cancel ho gaya hai.",
+        "info",
+      );
+      await broadcastToUser(env, payload.sub, "subscription", { status: "cancelled" });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Subscription cancelled.",
+          status: "cancelled",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Active / authenticated subscriptions: keep status active, set cancellation flag
+    await env.DB.prepare(
+      "UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    )
+      .bind(sub.id)
+      .run();
+    await createNotification(
+      env,
+      payload.sub,
+      "Cancellation Requested",
+      "Aapne subscription cancel karne ki request bhej di hai. Current period end tak access active rahega.",
+      "info",
+    );
+
+    await broadcastToUser(env, payload.sub, "subscription", { cancellation_requested: true, status: "active" });
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message:
+          "Cancellation requested. Access will remain until end of current period.",
+        status: "cancel_pending",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.Cancel", env, request);
+  }
+}
+
+// =============================================================
+// --- Plan Content Pool Management (Admin) ---
+// =============================================================
+
+// GET/POST/DELETE /api/admin/subscription/plans/:id/pool
+async function handleAdminPlanPool(
+  request: Request,
+  env: Env,
+  planId: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        `SELECT pcp.*, c.title as course_title, b.name as batch_name, bo.title as book_title
+         FROM PlanContentPool pcp
+         LEFT JOIN Courses c ON pcp.item_type = 'course' AND pcp.item_id = c.id
+         LEFT JOIN Batches b ON pcp.item_type = 'batch' AND pcp.item_id = b.id
+         LEFT JOIN Books bo ON pcp.item_type = 'book' AND pcp.item_id = bo.id
+         WHERE pcp.plan_id = ? ORDER BY pcp.item_type, pcp.access_mode`,
+      )
+        .bind(planId)
+        .all();
+      return new Response(JSON.stringify({ pool: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "POST") {
+      const items: Array<{
+        item_type: string;
+        item_id: string;
+        access_mode: string;
+      }> = (await request.json()) as any;
+      if (!Array.isArray(items) || items.length === 0) {
+        return new Response(JSON.stringify({ error: "items array required" }), {
+          status: 400,
+        });
+      }
+      const stmts = items.map((item) =>
+        env.DB.prepare(
+          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).bind(
+          generateCustomId("YA-PCP"),
+          planId,
+          item.item_type,
+          item.item_id,
+          item.access_mode,
+        ),
+      );
+      await env.DB.batch(stmts);
+      return new Response(
+        JSON.stringify({ success: true, added: items.length }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (request.method === "DELETE") {
+      const { item_type, item_id } = (await request.json()) as any;
+      await env.DB.prepare(
+        "DELETE FROM PlanContentPool WHERE plan_id = ? AND item_type = ? AND item_id = ?",
+      )
+        .bind(planId, item_type, item_id)
+        .run();
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.PlanPool", env, request);
+  }
+}
+
+// GET /api/subscription/plans/:id/pool Ã¢ÂÂ Student sees what they can choose from
+async function handleStudentPlanPool(
+  request: Request,
+  env: Env,
+  planId: string,
+): Promise<Response> {
+  try {
+    const plan: any = await env.DB.prepare(
+      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+    )
+      .bind(planId)
+      .first();
+    if (!plan)
+      return new Response(JSON.stringify({ error: "Plan not found" }), {
+        status: 404,
+      });
+
+    const { results: courses } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, c.title, c.description, c.price_rupees
+       FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`,
+    )
+      .bind(planId)
+      .all();
+
+    const { results: batches } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, b.name, b.start_date, b.end_date, b.status
+       FROM PlanContentPool pcp JOIN Batches b ON pcp.item_id = b.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'batch'`,
+    )
+      .bind(planId)
+      .all();
+
+    const { results: books } = await env.DB.prepare(
+      `SELECT pcp.item_id, pcp.access_mode, bo.title, bo.description
+       FROM PlanContentPool pcp JOIN Books bo ON pcp.item_id = bo.id
+       WHERE pcp.plan_id = ? AND pcp.item_type = 'book'`,
+    )
+      .bind(planId)
+      .all();
+
+    return new Response(
+      JSON.stringify({
+        plan: {
+          id: plan.id,
+          name: plan.name,
+          amount_rupees: plan.amount_rupees,
+          course_access_type: plan.course_access_type,
+          max_course_selection: plan.max_course_selection,
+          batch_access_type: plan.batch_access_type,
+          max_batch_selection: plan.max_batch_selection,
+          book_access_type: plan.book_access_type,
+          max_book_selection: plan.max_book_selection,
+          wallet_amount_rupees: plan.wallet_amount_rupees,
+          live_session_access: plan.live_session_access,
+          live_class_amount_rupees: plan.live_class_amount_rupees,
+        },
+        courses,
+        batches,
+        books,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.StudentPool", env, request);
+  }
+}
+
+// POST /api/subscription/pre-select Ã¢ÂÂ Student saves selection before payment
+async function handleStudentPreSelect(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const {
+      planId,
+      selectedCourseIds = [],
+      selectedBatchIds = [],
+      selectedBookIds = [],
+    } = (await request.json()) as any;
+
+    const plan: any = await env.DB.prepare(
+      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+    )
+      .bind(planId)
+      .first();
+    if (!plan)
+      return new Response(JSON.stringify({ error: "Plan not found" }), {
+        status: 404,
+      });
+
+    // Validate selections against pool and limits
+    if (plan.course_access_type === "user_choice") {
+      if (selectedCourseIds.length > plan.max_course_selection) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${plan.max_course_selection} courses select kar sakte hain`,
+          }),
+          { status: 400 },
+        );
+      }
+      if (selectedCourseIds.length < Math.min(plan.max_course_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 course chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      // Verify all courses are in pool (Optimized: Single query instead of N+1)
+      if (selectedCourseIds.length > 0) {
+        const placeholders = selectedCourseIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'course' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedCourseIds)
+          .all();
+
+        const foundCourseIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const cId of selectedCourseIds) {
+          if (!foundCourseIds.has(cId))
+            return new Response(
+              JSON.stringify({
+                error: `Course ${cId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
+    }
+
+    if (plan.batch_access_type === "user_choice") {
+      if (selectedBatchIds.length > plan.max_batch_selection) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${plan.max_batch_selection} batches select kar sakte hain`,
+          }),
+          { status: 400 },
+        );
+      }
+      if (selectedBatchIds.length < Math.min(plan.max_batch_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 batch chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      if (selectedBatchIds.length > 0) {
+        const placeholders = selectedBatchIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'batch' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedBatchIds)
+          .all();
+        const foundBatchIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const bId of selectedBatchIds) {
+          if (!foundBatchIds.has(bId))
+            return new Response(
+              JSON.stringify({
+                error: `Batch ${bId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
+    }
+
+    if (plan.book_access_type === "user_choice") {
+      if (selectedBookIds.length > plan.max_book_selection) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${plan.max_book_selection} books select kar sakte hain`,
+          }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length < Math.min(plan.max_book_selection, 1)) {
+        return new Response(
+          JSON.stringify({ error: "Kam se kam 1 book chunna zaroori hai" }),
+          { status: 400 },
+        );
+      }
+      if (selectedBookIds.length > 0) {
+        const placeholders = selectedBookIds.map(() => "?").join(",");
+        const inPoolResults: any = await env.DB.prepare(
+          `SELECT item_id FROM PlanContentPool WHERE plan_id = ? AND item_type = 'book' AND item_id IN (${placeholders})`,
+        )
+          .bind(planId, ...selectedBookIds)
+          .all();
+
+        const foundBookIds = new Set(
+          inPoolResults.results.map((r: any) => r.item_id),
+        );
+        for (const bId of selectedBookIds) {
+          if (!foundBookIds.has(bId))
+            return new Response(
+              JSON.stringify({
+                error: `Book ${bId} is not in this plan's pool`,
+              }),
+              { status: 400 },
+            );
+        }
+      }
+    }
+
+    // Get or create a pending subscription record for this pre-selection
+    let sub: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind(payload.sub, planId)
+      .first();
+
+    if (!sub) {
+      const subId = generateCustomId("YA-SUB");
+      // NOTE: live_class_amount_rupees intentionally NOT set here.
+      // The subscription.activated webhook initializes it + credits the wallet atomically.
+      await env.DB.prepare(
+        "INSERT INTO Subscriptions (id, user_id, plan_id, status, is_lifetime) VALUES (?, ?, ?, ?, ?)",
+      )
+        .bind(subId, payload.sub, planId, "created", plan.is_lifetime || 0)
+        .run();
+      sub = { id: subId };
+    }
+
+    // Clear old selections for this subscription
+    await env.DB.prepare(
+      "DELETE FROM UserSubscriptionSelections WHERE subscription_id = ?",
+    )
+      .bind(sub.id)
+      .run();
+
+    // Insert new selections
+    const stmts = [
+      ...selectedCourseIds.map((cId: string) =>
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
+        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "course", cId),
+      ),
+      ...selectedBatchIds.map((bId: string) =>
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
+        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "batch", bId),
+      ),
+      ...selectedBookIds.map((bId: string) =>
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO UserSubscriptionSelections (id, user_id, subscription_id, item_type, item_id) VALUES (?, ?, ?, ?, ?)",
+        ).bind(generateCustomId("YA-SEL"), payload.sub, sub.id, "book", bId),
+      ),
+    ];
+    if (stmts.length > 0) await env.DB.batch(stmts);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        subscription_id: sub.id,
+        selected_courses: selectedCourseIds.length,
+        selected_batches: selectedBatchIds.length,
+        selected_books: selectedBookIds.length,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.PreSelect", env, request);
+  }
+}
+
+// GET /api/subscription/my-selections Ã¢ÂÂ Get student's locked selections
+async function handleGetMySelections(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const sub: any = await env.DB.prepare(
+      `SELECT s.id, s.plan_id FROM Subscriptions s WHERE s.user_id = ? AND s.status IN ('active', 'authenticated', 'created') ORDER BY s.created_at DESC LIMIT 1`,
+    )
+      .bind(payload.sub)
+      .first();
+
+    if (!sub)
+      return new Response(
+        JSON.stringify({ selections: { courses: [], batches: [] } }),
+        { status: 200 },
+      );
+
+    const { results: courses } = await env.DB.prepare(
+      `SELECT uss.item_id, c.title, c.description, c.price_rupees
+       FROM UserSubscriptionSelections uss JOIN Courses c ON uss.item_id = c.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'course'`,
+    )
+      .bind(sub.id)
+      .all();
+
+    const { results: batches } = await env.DB.prepare(
+      `SELECT uss.item_id, b.name, b.start_date, b.status
+       FROM UserSubscriptionSelections uss JOIN Batches b ON uss.item_id = b.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'batch'`,
+    )
+      .bind(sub.id)
+      .all();
+
+    const { results: books } = await env.DB.prepare(
+      `SELECT uss.item_id, bo.title, bo.description
+       FROM UserSubscriptionSelections uss JOIN Books bo ON uss.item_id = bo.id
+       WHERE uss.subscription_id = ? AND uss.item_type = 'book'`,
+    )
+      .bind(sub.id)
+      .all();
+
+    return new Response(JSON.stringify({ selections: { courses, batches, books } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Subscription.MySelections", env, request);
+  }
+}
+
+// GET /api/subscription/ai-credits Ã¢ÂÂ Get student's current wallet balance
+async function handleGetMyWalletBalance(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const payload = await requireAuth(request, env);
+    const wallet = await getWalletBalance(env, payload.sub);
+    // Return consistent format matching /api/wallet/balance
+    return new Response(
+      JSON.stringify({
+        balance_rupees: wallet.balance_rupees,
+        lifetime_deposits_rupees: wallet.lifetime_deposits_rupees,
+        lifetime_withdrawals_rupees: wallet.lifetime_withdrawals_rupees,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Wallet.Get", env, request);
+  }
+}
+
+// GET+POST+PUT+DELETE /api/admin/subscription/plans Ã¢ÂÂ Admin: Manage plans (with Razorpay auto-creation)
+async function handleAdminSubscriptionPlans(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const url = new URL(request.url);
+    const planId = url.pathname.split("/").pop();
+    const isSpecificPlan = planId && planId !== "plans";
+
+    // GET Ã¢ÂÂ List all plans
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
+      ).all();
+      return new Response(JSON.stringify({ plans: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // POST Ã¢ÂÂ Create plan (auto-creates in Razorpay first, then saves to DB)
+    if (request.method === "POST") {
+      const {
+        name,
+        interval,
+        interval_count,
+        amount_rupees,
+        description,
+        course_access_type = "none",
+        max_course_selection = 0,
+        batch_access_type = "none",
+        max_batch_selection = 0,
+        book_access_type = "none",
+        max_book_selection = 0,
+        wallet_amount_rupees = 0,
+        live_session_access = 0,
+        live_class_credits,  // backward compat
+        live_class_amount_rupees: raw_live_class_amount_rupees,
+        lifetime_price_rupees = 0,
+        is_lifetime = 0,
+      } = (await request.json()) as any;
+      const live_class_amount_rupees = raw_live_class_amount_rupees != null
+        ? Number(raw_live_class_amount_rupees)
+        : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : 0);
+      if (!name || !interval || !amount_rupees) {
+        return new Response(
+          JSON.stringify({ error: "name, interval, amount_rupees required" }),
+          { status: 400 },
+        );
+      }
+
+      const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+      const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+      let razorpayPlanId: string | null = null;
+
+      // Auto-create plan in Razorpay if credentials are available
+      if (razorpayKey && razorpaySecret) {
+        // Razorpay interval mapping
+        const rzpPeriodMap: Record<string, string> = {
+          monthly: "monthly",
+          quarterly: "monthly", // Razorpay uses monthly with count=3
+          yearly: "yearly",
+        };
+        const rzpCountMap: Record<string, number> = {
+          monthly: 1,
+          quarterly: 3,
+          yearly: 12,
+        };
+
+        const rzpBody = {
+          period: rzpPeriodMap[interval] || "monthly",
+          interval: interval_count || rzpCountMap[interval] || 1,
+          item: {
+            name: name,
+            description: description || `${name} Subscription Plan`,
+            amount: inrToPaise(amount_rupees), // Convert rupees to paise for Razorpay
+            currency: "INR",
+          },
+          notes: {
+            created_by: "Yagya LMS Admin Panel",
+            interval_type: interval,
+          },
+        };
+
+        const rzpRes = await fetch("https://api.razorpay.com/v1/plans", {
+          method: "POST",
+          headers: {
+            Authorization: "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(rzpBody),
+        });
+
+        const rzpData = (await rzpRes.json()) as any;
+        if (!rzpRes.ok) {
+          console.error("[Admin Plan] Razorpay plan create error:", rzpData);
+          return new Response(
+            JSON.stringify({
+              error: `Razorpay Plan creation failed: ${rzpData.error?.description || "Unknown error"}`,
+              razorpay_error: rzpData.error,
+            }),
+            { status: 502, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        razorpayPlanId = rzpData.id; // e.g. "plan_XXXXXXXXXX"
+        console.log(`[Admin Plan] Razorpay plan created: ${razorpayPlanId}`);
+      }
+
+      // Save to D1 with all benefit fields
+      const id = generateCustomId("YA-PLN");
+      await env.DB.prepare(
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+         course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
+         wallet_amount_rupees, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          id,
+          name,
+          interval,
+          interval_count || 1,
+          amount_rupees,
+          razorpayPlanId,
+          course_access_type,
+          max_course_selection,
+          batch_access_type,
+          max_batch_selection,
+          book_access_type,
+          max_book_selection,
+          wallet_amount_rupees,
+          live_session_access ? 1 : 0,
+          live_class_amount_rupees,
+          is_lifetime ? 1 : 0,
+          lifetime_price_rupees,
+        )
+        .run();
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          id,
+          razorpay_plan_id: razorpayPlanId,
+          message: razorpayPlanId
+            ? `Plan created successfully and linked to Razorpay (${razorpayPlanId})`
+            : "Plan saved to DB. Razorpay keys not configured Ã¢ÂÂ plan not created in Razorpay.",
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // PUT Ã¢ÂÂ Update plan (all fields updateable)
+    if (request.method === "PUT" && isSpecificPlan) {
+      const {
+        name, interval, interval_count, amount_rupees, razorpay_plan_id,
+        course_access_type, max_course_selection,
+        batch_access_type, max_batch_selection,
+        book_access_type, max_book_selection,
+        wallet_amount_rupees,
+        live_session_access, live_class_credits,  // backward compat
+        live_class_amount_rupees: raw_live_class_amount_rupees,
+        is_lifetime, lifetime_price_rupees, is_active,
+      } = (await request.json()) as any;
+      const live_class_amount_rupees = raw_live_class_amount_rupees != null
+        ? Number(raw_live_class_amount_rupees)
+        : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : null);
+
+      const existingPlan: any = await env.DB.prepare(
+        "SELECT amount_rupees, interval, interval_count, razorpay_plan_id FROM SubscriptionPlans WHERE id = ?"
+      ).bind(planId).first();
+      if (!existingPlan) {
+        return new Response(JSON.stringify({ error: "Plan not found" }), { status: 404 });
+      }
+
+      // Pricing changes while active subscriptions exist would create a mismatch between
+      // what subscribers pay and the plan they signed up for. Razorpay plans are immutable,
+      // so block direct edits. Admin can create a new plan instead.
+      const isPricingChange =
+        (amount_rupees !== undefined && Number(amount_rupees) !== Number(existingPlan.amount_rupees)) ||
+        (interval !== undefined && interval !== existingPlan.interval) ||
+        (interval_count !== undefined && Number(interval_count) !== Number(existingPlan.interval_count));
+
+      if (isPricingChange) {
+        const activeSubCount: any = await env.DB.prepare(
+          `SELECT COUNT(*) as cnt FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`
+        ).bind(planId).first();
+        if (activeSubCount && activeSubCount.cnt > 0) {
+          return new Response(
+            JSON.stringify({
+              error: "Is plan ke active subscriptions hain. Amount/interval change nahi kar sakte. Naya plan banayein.",
+              code: "ACTIVE_SUBSCRIPTIONS_BLOCK_PRICE_CHANGE",
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      await env.DB.prepare(
+        `UPDATE SubscriptionPlans SET
+         name = COALESCE(?, name),
+         interval = COALESCE(?, interval),
+         interval_count = COALESCE(?, interval_count),
+         amount_rupees = COALESCE(?, amount_rupees),
+         razorpay_plan_id = COALESCE(?, razorpay_plan_id),
+         course_access_type = COALESCE(?, course_access_type),
+         max_course_selection = COALESCE(?, max_course_selection),
+         batch_access_type = COALESCE(?, batch_access_type),
+         max_batch_selection = COALESCE(?, max_batch_selection),
+         book_access_type = COALESCE(?, book_access_type),
+         max_book_selection = COALESCE(?, max_book_selection),
+         wallet_amount_rupees = COALESCE(?, wallet_amount_rupees),
+         live_session_access = COALESCE(?, live_session_access),
+         live_class_amount_rupees = COALESCE(?, live_class_amount_rupees),
+         is_lifetime = COALESCE(?, is_lifetime),
+         lifetime_price_rupees = COALESCE(?, lifetime_price_rupees),
+         is_active = COALESCE(?, is_active)
+         WHERE id = ?`,
+      )
+        .bind(
+          name || null,
+          interval || null,
+          interval_count != null ? interval_count : null,
+          amount_rupees != null ? amount_rupees : null,
+          razorpay_plan_id || null,
+          course_access_type || null,
+          max_course_selection != null ? max_course_selection : null,
+          batch_access_type || null,
+          max_batch_selection != null ? max_batch_selection : null,
+          book_access_type || null,
+          max_book_selection != null ? max_book_selection : null,
+          wallet_amount_rupees != null ? wallet_amount_rupees : null,
+          live_session_access != null ? live_session_access : null,
+          live_class_amount_rupees != null ? live_class_amount_rupees : null,
+          is_lifetime != null ? is_lifetime : null,
+          lifetime_price_rupees != null ? lifetime_price_rupees : null,
+          is_active !== undefined ? is_active : null,
+          planId,
+        )
+        .run();
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+      // DELETE Ã¢ÂÂ Deactivate plan (soft delete Ã¢ÂÂ keeps existing subscriptions intact)
+    if (request.method === "DELETE" && isSpecificPlan) {
+      const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
+      const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+      // 1. Mark plan as inactive FIRST to prevent new subscriptions during cleanup
+      await env.DB.prepare(
+        "UPDATE SubscriptionPlans SET is_active = 0 WHERE id = ?",
+      )
+        .bind(planId)
+        .run();
+
+      // 2. Find all active subscriptions for this plan
+      const activeSubs = await env.DB.prepare(
+        `SELECT id, razorpay_subscription_id FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`,
+      )
+        .bind(planId)
+        .all();
+
+      const results = activeSubs.results as any[];
+
+      // 3. If Razorpay is configured, cancel all active subscriptions there.
+      // Only mark subscriptions as cancelled in our DB when Razorpay confirms the cancellation.
+      const cancelledSubIds: string[] = [];
+      const failedSubIds: string[] = [];
+
+      if (razorpayKey && razorpaySecret && results.length > 0) {
+        console.log(
+          `[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`,
+        );
+        const auth = "Basic " + btoa(`${razorpayKey}:${razorpaySecret}`);
+
+        await Promise.all(
+          results.map(async (sub) => {
+            if (!sub.razorpay_subscription_id) {
+              cancelledSubIds.push(sub.id);
+              return;
+            }
+            try {
+              const rzpRes = await fetch(
+                `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: auth,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+                },
+              );
+              if (rzpRes.ok) {
+                cancelledSubIds.push(sub.id);
+              } else {
+                const rzpErr = await rzpRes.json().catch(() => ({}));
+                console.error(
+                  `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
+                  rzpErr,
+                );
+                failedSubIds.push(sub.id);
+              }
+            } catch (e) {
+              console.error(
+                `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
+                e,
+              );
+              failedSubIds.push(sub.id);
+            }
+          }),
+        );
+
+        // Update DB status only for successfully cancelled subscriptions.
+        // Failures get cancellation_requested=1 so they can be retried or reconciled later.
+        if (cancelledSubIds.length > 0) {
+          const cancelledPlaceholders = cancelledSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id IN (${cancelledPlaceholders})`,
+          )
+            .bind(...cancelledSubIds)
+            .run();
+        }
+        if (failedSubIds.length > 0) {
+          const failedPlaceholders = failedSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${failedPlaceholders})`,
+          )
+            .bind(...failedSubIds)
+            .run();
+        }
+      }
+
+      // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
+      await cleanupPlanIfEmpty(planId as string, env);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          cancelled_count: cancelledSubIds.length,
+          failed_count: failedSubIds.length,
+          message:
+            results.length > 0
+              ? `Plan deactivated. ${cancelledSubIds.length} subscription(s) cancelled successfully${failedSubIds.length > 0 ? `, ${failedSubIds.length} failed/marked for retry` : ""}. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
+              : "Plan deleted permanently.",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response("Method not allowed", { status: 405 });
+  } catch (error: any) {
+    if (error.message === "Unauthorized" || error.message === "Forbidden" || error.message === "Token expired")
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.message === "Forbidden" ? 403 : 401,
+      });
+    return handleGlobalError(error, "Admin.SubscriptionPlans", env, request);
+  }
+}
+
+// Helper to get or create Razorpay customer
+async function getOrCreateRazorpayCustomer(
+  user: any,
+  env: Env,
+): Promise<string> {
+  if (user.razorpay_customer_id) return user.razorpay_customer_id;
+
+  const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
+  const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+  if (!rzpKey || !rzpSecret) {
+    throw new Error("Razorpay not configured: Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET");
+  }
+
+  const res = await fetch("https://api.razorpay.com/v1/customers", {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + btoa(`${rzpKey}:${rzpSecret}`),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: user.full_name || "Student",
+      email: user.email,
+      contact: user.phone || undefined,
+      notes: { userId: user.id },
+    }),
+  });
+
+  const data = (await res.json()) as any;
+  if (res.ok && data.id) {
+    await env.DB.prepare(
+      "UPDATE Users SET razorpay_customer_id = ? WHERE id = ?",
+    )
+      .bind(data.id, user.id)
+      .run();
+    return data.id;
+  }
+  throw new Error(
+    data.error?.description || "Failed to create Razorpay customer",
+  );
+}
+
+// POST /api/admin/subscription/assign Ã¢ÂÂ Admin: Manually assign plan to user (sends Razorpay link)
+async function handleAdminAssignSubscription(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const { userId, planId } = (await request.json()) as any;
+
+    if (!userId || !planId) {
+      return new Response(
+        JSON.stringify({ error: "userId and planId required" }),
+        {
+          status: 400,
+        },
+      );
+    }
+
+    // 1. Fetch Plan & User
+    const plan: any = await env.DB.prepare(
+      "SELECT * FROM SubscriptionPlans WHERE id = ?",
+    )
+      .bind(planId)
+      .first();
+    const user: any = await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?")
+      .bind(userId)
+      .first();
+
+    if (!plan || !user) {
+      return new Response(JSON.stringify({ error: "Plan or User not found" }), {
+        status: 404,
+      });
+    }
+
+    if (!plan.razorpay_plan_id) {
+      return new Response(
+        JSON.stringify({ error: "Plan is not linked to Razorpay" }),
+        { status: 400 },
+      );
+    }
+
+    // Check: user ke paas already active subscription na ho
+    const existingActive: any = await env.DB.prepare(
+      `SELECT id FROM Subscriptions WHERE user_id = ? AND status IN ('active', 'authenticated') AND (current_period_end IS NULL OR current_period_end > datetime('now')) LIMIT 1`,
+    )
+      .bind(userId)
+      .first();
+    if (existingActive) {
+      return new Response(
+        JSON.stringify({ error: "User already has an active subscription. Cancel it first." }),
+        { status: 409 },
+      );
+    }
+
+    const rzpKey = await getSecret(env, "RAZORPAY_KEY_ID");
+    const rzpSecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
+
+    if (!rzpKey || !rzpSecret) {
+      return new Response(
+        JSON.stringify({ error: "Razorpay credentials not configured" }),
+        { status: 503 },
+      );
+    }
+
+    // 2. Create Razorpay Subscription directly (as used in student portal)
+    const rzpBody: any = {
+      plan_id: plan.razorpay_plan_id,
+      total_count: 12,
+      quantity: 1,
+      customer_notify: true,
+      notes: { userId, planId, admin_assigned: "true" },
+      notify_info: {
+        notify_email: user.email,
+        notify_phone: user.phone || undefined,
+      },
+    };
+
+    const rzpRes = await fetch("https://api.razorpay.com/v1/subscriptions", {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa(`${rzpKey}:${rzpSecret}`),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(rzpBody),
+    });
+
+    const rzpData = (await rzpRes.json()) as any;
+    if (!rzpRes.ok) {
+      console.error("[Admin Assign] RZP Subscription Error:", rzpData);
+      return new Response(
+        JSON.stringify({
+          error: rzpData.error?.description || "Razorpay subscription failure",
+        }),
+        { status: 502 },
+      );
+    }
+
+    const rzpSubscriptionId = rzpData.id;
+    const rzpPaymentLink = rzpData.short_url;
+
+    // 3. Save to DB
+    const subId = generateCustomId("YA-SUB");
+    await env.DB.prepare(
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_rupees, is_lifetime)
+       VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
+    )
+      .bind(
+        subId,
+        userId,
+        planId,
+        rzpSubscriptionId,
+        rzpPaymentLink,
+        plan.live_class_amount_rupees || 0,
+        plan.is_lifetime || 0,
+      )
+      .run();
+
+    // 4. Send Official Email Notification
+    if (user.email) {
+      const subject = `New Subscription Plan: ${plan.name}`;
+      const title = "New Subscription Assigned";
+      const htmlBody = `
+        <p>Namaste <strong>${user.full_name || "Student"}</strong>,</p>
+        <p>An administrator has assigned a new subscription plan to your account: <strong>${plan.name}</strong>.</p>
+        <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
+          <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
+          <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
+          <p style="margin: 4px 0 0 0;">Amount: Ã¢ÂÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+        </div>
+        <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
+        <p style="text-align: center; margin: 32px 0;">
+          <a href="${rzpPaymentLink}" style="background: #4f46e5; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">Activate Subscription Now</a>
+        </p>
+        <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
+      `;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: Ã¢ÂÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+
+      await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        subscription_id: rzpSubscriptionId,
+        payment_link: rzpPaymentLink,
+        message: `Subscription created and official email sent to ${user.email}`,
+      }),
+      { status: 201, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AssignSubscription", env, request);
+  }
+}
+// POST /api/payment/webhook Ã¢ÂÂ Razorpay Webhook (server-side event processing)
+async function handleRazorpayWebhook(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const webhookSecret = await getSecret(env, "RAZORPAY_WEBHOOK_SECRET");
+    if (!webhookSecret) {
+      console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET not configured in KV");
+      return new Response("Webhook not configured", { status: 503 });
+    }
+
+    // 1. Verify Razorpay signature
+    const razorpaySignature = request.headers.get("X-Razorpay-Signature") || "";
+    const rawBody = await request.text();
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(webhookSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+    const isValid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      hexToBytes(razorpaySignature),
+      encoder.encode(rawBody),
+    );
+
+    if (!isValid) {
+      console.error("[Webhook] Signature mismatch Ã¢ÂÂ possible forgery attempt");
+      return new Response(
+        JSON.stringify({ error: "Invalid webhook signature" }),
+        { status: 400 },
+      );
+    }
+
+    // 2. Parse event
+    let event: any;
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    const eventType: string = event.event;
+    console.log(`[Webhook] Received event: ${eventType}`);
+
+    // 3. Idempotency guard Ã¢ÂÂ insert the event ID up front. If another concurrent
+    // delivery already inserted it, we skip. If processing later throws, we delete
+    // the row so Razorpay can retry transient failures.
+    const eventId = event.id || request.headers.get("x-razorpay-event-id");
+    let idempotencyInserted = false;
+    if (eventId) {
+      const insertResult: any = await env.DB.prepare(
+        "INSERT OR IGNORE INTO ProcessedWebhookEvents (event_id, event_type, razorpay_entity_id) VALUES (?, ?, ?)"
+      ).bind(
+        eventId,
+        eventType,
+        event.payload?.payment?.entity?.id || event.payload?.subscription?.entity?.id || null,
+      ).run();
+      if (Number(insertResult?.meta?.changes || 0) === 0) {
+        console.log(`[Webhook] Event ${eventId} already processed, skipping.`);
+        return new Response("OK", { status: 200 });
+      }
+      idempotencyInserted = true;
+    }
+
+    try {
+      // 4. Handle events
+    if (eventType === "payment.captured") {
+      // One-time course payment
+      const payment = event.payload?.payment?.entity;
+      const orderId = payment?.order_id;
+      if (orderId) {
+        // Use actual captured amount from Razorpay (in paise), not listed course price
+        // This ensures discounted/coupon payments record the correct amount_paid
+        const actualAmountPaise = payment?.amount ?? 0;
+        const actualAmountInr = actualAmountPaise / 100;
+
+        // Fallback: fetch from Transactions table if Razorpay amount unavailable
+        const txForAmount: any = await env.DB.prepare(
+          "SELECT id, amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
+        )
+          .bind(orderId)
+          .first();
+        // actualAmountInr paiseÃ¢ÂÂrupees conversion ke baad INR mein hai
+        const amountPaid = actualAmountInr || txForAmount?.amount_rupees || 0;
+
+        await env.DB.prepare(
+          'UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"',
+        )
+          .bind(amountPaid, orderId)
+          .run();
+
+        // Update Transaction to 'successful'
+        await env.DB.prepare(
+          `UPDATE Transactions SET status = 'successful' WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase') AND status = 'created'`,
+        )
+          .bind(orderId)
+          .run();
+
+        if (txForAmount?.id) {
+          await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(txForAmount.id).run();
+        }
+
+        // Notify the student
+        const enrollment: any = await env.DB.prepare(
+          "SELECT e.user_id, COALESCE(c.title, b.title) as title FROM Enrollments e LEFT JOIN Courses c ON e.course_id = c.id LEFT JOIN Books b ON e.book_id = b.id WHERE e.payment_id = ?",
+        )
+          .bind(orderId)
+          .first();
+        if (enrollment) {
+          await createNotification(
+            env,
+            enrollment.user_id,
+            "Payment Successful! Ã°ÂÂÂ",
+            `"${enrollment.title}" course ka access unlock ho gaya hai.`,
+            "success",
+          );
+        }
+
+        // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
+        // D1 (SQLite-based) RETURNING clause support nahi karta Ã¢ÂÂ do step mein karte hain
+        const creditTxFind: any = await env.DB.prepare(
+          "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+        )
+          .bind(orderId)
+          .first();
+        let creditTxUpdate: any = null;
+        if (creditTxFind && creditTxFind.amount_rupees > 0) {
+          const updateResult = await env.DB.prepare(
+            "UPDATE Transactions SET status = 'successful' WHERE id = ? AND status = 'created'",
+          )
+            .bind(creditTxFind.id)
+            .run();
+          if ((updateResult as any)?.meta?.changes > 0) {
+            creditTxUpdate = creditTxFind;
+          }
+        }
+        if (creditTxUpdate && creditTxUpdate.amount_rupees > 0) {
+          await addToWallet(env, creditTxUpdate.user_id, creditTxUpdate.amount_rupees, "purchase", "credit_pack", creditTxUpdate.related_id || orderId);
+          await env.DB.prepare("UPDATE CouponRedemptions SET status = 'successful' WHERE transaction_id = ?").bind(creditTxUpdate.id).run();
+          await createNotification(
+            env,
+            creditTxUpdate.user_id,
+            "Balance Added! Ã°ÂÂÂ",
+            `Ã¢ÂÂ¹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
+            "success",
+          );
+        }
+      }
+    } else if (eventType === "subscription.activated") {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        // Idempotency check Ã¢ÂÂ skip if already active (prevents double AI credit allocation on webhook retry)
+        const existingSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
+        )
+          .bind(sub.id)
+          .first();
+        if (existingSub?.status === "active") {
+          console.log(`[Webhook] subscription.activated already processed for ${sub.id}, skipping`);
+        } else {
+          const periodEnd = sub.current_end
+            ? new Date(sub.current_end * 1000).toISOString()
+            : null;
+          const periodStart = sub.current_start
+            ? new Date(sub.current_start * 1000).toISOString()
+            : null;
+          const updateResult = await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ? AND status != 'active'`,
+          )
+            .bind(periodStart, periodEnd, sub.id)
+            .run();
+
+          // Only proceed with side effects if the UPDATE actually changed a row (prevents race with concurrent webhook retry)
+          if (Number((updateResult as any)?.meta?.changes || 0) === 0) {
+            console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
+          } else {
+            const dbSub: any = await env.DB.prepare(
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
+             FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
+             WHERE s.razorpay_subscription_id = ?`,
+          )
+            .bind(sub.id)
+            .first();
+
+          if (dbSub) {
+            // Add wallet topup based on plan
+            if ((dbSub.wallet_amount_rupees || 0) > 0) {
+              await addToWallet(
+                env,
+                dbSub.user_id,
+                Number(dbSub.wallet_amount_rupees),
+                "wallet_topup",
+                "subscription",
+                dbSub.id,
+              );
+            }
+            if (dbSub.live_class_amount_rupees > 0) {
+              const renewalAmount = dbSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                // Ã°ÂÂÂ´ FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
+                // Previously: status update, then addToWallet, then tracking field update
+                // were 3 separate calls. If the worker crashed after status update
+                // but before wallet credit, retry would see status='active' and
+                // skip the entire block Ã¢ÂÂ permanently losing the credit.
+                // Now they execute in one DB transaction Ã¢ÂÂ all succeed or none.
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Status update (no-op if already active Ã¢ÂÂ safe for retry)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
+                  ).bind(periodStart, periodEnd, dbSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, dbSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                  // Accumulate tracking field Ã¢ÂÂ add plan value to existing balance (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, dbSub.id),
+                ];
+                await env.DB.batch(batchStmts);
+              }
+            }
+            await createNotification(
+              env,
+              dbSub.user_id,
+              "Subscription Active! Ã¢ÂÂ",
+              "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
+              "success",
+            );
+
+            // Send email notification to user
+            const user: any = await env.DB.prepare(
+              "SELECT email, full_name FROM Users WHERE id = ?",
+            )
+              .bind(dbSub.user_id)
+              .first();
+            if (user?.email) {
+              const userHtml = `
+                <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+                <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ subscription Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â activate Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!</p>
+                <p>Ã Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â selected courses Ã Â¤ÂÃ Â¤Â° AI credits Ã Â¤ÂÃ Â¤Â¾ Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+              `;
+              const userText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${user.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ subscription Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â activate Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â!\nÃ Â¤ÂÃ Â¤Âª Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â selected courses Ã Â¤ÂÃ Â¤Â° AI credits Ã Â¤ÂÃ Â¤Â¾ Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â° Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¤Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤\n\nOm!`;
+              await safeSendEmail(
+                env,
+                user.email,
+                "Subscription Activated",
+                "Ã¢ÂÂ Subscription Active!",
+                userHtml,
+                userText,
+              );
+            }
+          }
+          }
+        }
+      }
+    } else if (eventType === "subscription.authenticated") {
+      // Payment authenticated by user Ã¢ÂÂ update status to 'authenticated' (payment captured separately)
+      const authSub = event.payload?.subscription?.entity;
+      if (authSub?.id) {
+        const existingAuthSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
+        )
+          .bind(authSub.id)
+          .first();
+        if (!existingAuthSub) {
+          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (not found)`);
+        } else if (existingAuthSub.status === "active") {
+          console.log(`[Webhook] subscription.authenticated skipped for ${authSub.id} (already active)`);
+        } else {
+          await env.DB.prepare(
+            "UPDATE Subscriptions SET status = 'authenticated', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ? AND status IN ('created', 'authenticated')",
+          )
+            .bind(authSub.id)
+            .run();
+          console.log(`[Webhook] subscription.authenticated: ${authSub.id} -> authenticated`);
+        }
+      }
+    } else if (eventType === "subscription.charged") {
+      // Renewal Ã¢ÂÂ update period dates and refill live_class_amount_rupees
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        const periodEnd = sub.current_end
+          ? new Date(sub.current_end * 1000).toISOString()
+          : null;
+        const periodStart = sub.current_start
+          ? new Date(sub.current_start * 1000).toISOString()
+          : null;
+
+        const existingSub: any = await env.DB.prepare(
+          "SELECT status, current_period_end FROM Subscriptions WHERE razorpay_subscription_id = ?"
+        ).bind(sub.id).first();
+
+        // If the period hasn't changed, we've already allocated credits for this charge
+        // Use numeric compare to avoid ISO string formatting differences
+        const existingPeriodEnd = existingSub?.current_period_end ? new Date(existingSub.current_period_end).getTime() : 0;
+        const newPeriodEnd = periodEnd ? new Date(periodEnd).getTime() : 0;
+        const alreadyProcessedPeriod = existingSub && Math.abs(existingPeriodEnd - newPeriodEnd) < 1000;
+
+        const updateResult = await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`
+        )
+          .bind(periodStart, periodEnd, sub.id)
+          .run();
+
+        if (Number((updateResult as any)?.meta?.changes || 0) === 0 || alreadyProcessedPeriod) {
+          console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
+        } else {
+          const chargedSub: any = await env.DB.prepare(
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
+             FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
+          )
+            .bind(sub.id)
+            .first();
+          if (chargedSub) {
+            if (chargedSub.live_class_amount_rupees > 0) {
+              // Ã°ÂÂÂ´ FIX: Atomic batch for status update, wallet credit, tracking field.
+              // Prevents permanent credit loss if worker crashes mid-way.
+              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
+              if (renewalAmount > 0) {
+                const walletId = generateCustomId("YA-CRW");
+                const ledgerId = generateCustomId("YA-CRL");
+                const batchStmts = [
+                  // Update period dates
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                  ).bind(periodStart, periodEnd, chargedSub.id),
+                  // Credit wallet
+                  env.DB.prepare(
+                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                       balance_rupees = ROUND(balance_rupees + ?, 2),
+                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, chargedSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  // Ledger entry
+                  env.DB.prepare(
+                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalAmount, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                  // Accumulate tracking field (rollover)
+                  env.DB.prepare(
+                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
+                  ).bind(renewalAmount, chargedSub.id),
+                ];
+                await env.DB.batch(batchStmts);
+              }
+            }
+            if ((chargedSub.wallet_amount_rupees || 0) > 0) {
+              await addToWallet(
+                env,
+                chargedSub.user_id,
+                Number(chargedSub.wallet_amount_rupees),
+                "wallet_topup",
+                "subscription",
+                chargedSub.id,
+              );
+            }
+            await createNotification(
+              env,
+              chargedSub.user_id,
+              "Subscription Renewed! Ã¢ÂÂ»Ã¯Â¸Â",
+              "Aapka subscription renew ho gaya hai aur wallet me paise add ho gaye hain.",
+              "success",
+            );
+          }
+        }
+      }
+    } else if (eventType === "subscription.halted") {
+      // Payment failed Ã¢ÂÂ halt subscription
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        // Check previous status to avoid duplicate notifications on retry
+        const prevSub: any = await env.DB.prepare(
+          "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
+        )
+          .bind(sub.id)
+          .first();
+
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'halted', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .run();
+
+        // Only send notifications if this is a status CHANGE (not a retry)
+        if (prevSub && prevSub.status !== 'halted') {
+          const dbSub: any = await env.DB.prepare(
+            "SELECT user_id FROM Subscriptions WHERE razorpay_subscription_id = ?",
+          )
+            .bind(sub.id)
+            .first();
+          if (dbSub) {
+            await createNotification(
+              env,
+              dbSub.user_id,
+              "Subscription Payment Failed Ã¢ÂÂ Ã¯Â¸Â",
+              "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
+              "alert",
+            );
+            // Send email notification for halted subscription
+            const haltedUser: any = await env.DB.prepare(
+              "SELECT email, full_name FROM Users WHERE id = ?",
+            )
+              .bind(dbSub.user_id)
+              .first();
+            if (haltedUser?.email) {
+              const haltedHtml = `
+                <p>Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â <strong>${haltedUser.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"}</strong>,</p>
+                <p>Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â subscription Ã Â¤ÂÃ Â¤Â¾ Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤ÂµÃ Â¤Â¿Ã Â¤Â«Ã Â¤Â² Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤</p>
+                <p>Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Razorpay dashboard Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â° Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â payment method Ã Â¤ÂÃ Â¥Â update Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂÃ Â¤Â¿ Ã Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¤Â¾ subscription Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â°Ã Â¥Â Ã Â¤Â°Ã Â¤Â¹ Ã Â¤Â¸Ã Â¤ÂÃ Â¥ÂÃ Â¥Â¤</p>
+                <p>Ã Â¤ÂÃ Â¤ÂÃ Â¤Â° Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â Ã Â¤Â¯Ã Â¤Â¹ Ã Â¤Â¨Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥Â Ã Â¤Â¤Ã Â¥Â Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¸ Ã Â¤Â¸Ã Â¤ÂÃ Â¤Â¦Ã Â¥ÂÃ Â¤Â¶ Ã Â¤ÂÃ Â¥Â Ã Â¤ÂÃ Â¤Â¨Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¾ Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+              `;
+              const haltedText = `Ã Â¤Â¨Ã Â¤Â®Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â¤Ã Â¥Â ${haltedUser.full_name || "Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°"},\n\nÃ Â¤ÂÃ Â¤ÂªÃ Â¤ÂÃ Â¥Â subscription Ã Â¤ÂÃ Â¤Â¾ Ã Â¤Â­Ã Â¥ÂÃ Â¤ÂÃ Â¤Â¤Ã Â¤Â¾Ã Â¤Â¨ Ã Â¤ÂµÃ Â¤Â¿Ã Â¤Â«Ã Â¤Â² Ã Â¤Â¹Ã Â¥Â Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤\nÃ Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Razorpay dashboard Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Â¾Ã Â¤ÂÃ Â¤Â° Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¨Ã Â¥Â payment method Ã Â¤ÂÃ Â¥Â update Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤\n\nOm!`;
+              await safeSendEmail(
+                env,
+                haltedUser.email,
+                "Subscription Payment Failed",
+                "Ã¢ÂÂ Ã¯Â¸Â Subscription Payment Failed",
+                haltedHtml,
+                haltedText,
+              );
+            }
+          }
+        }
+      }
+    } else if (eventType === "subscription.cancelled") {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .run();
+      }
+    } else if (eventType === "subscription.completed") {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .run();
+      }
+    } else if (eventType === "subscription.expired") {
+      const sub = event.payload?.subscription?.entity;
+      if (sub?.id) {
+        await env.DB.prepare(
+          `UPDATE Subscriptions SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE razorpay_subscription_id = ?`,
+        )
+          .bind(sub.id)
+          .run();
+      }
+    }
+
+    // Cleanup logic: After any cancellation or completion, check if we can delete an inactive plan
+    const subEntity = event.payload?.subscription?.entity;
+    if (
+      subEntity?.id &&
+      [
+        "subscription.cancelled",
+        "subscription.completed",
+        "subscription.expired",
+      ].includes(eventType)
+    ) {
+      const dbSub: any = await env.DB.prepare(
+        "SELECT plan_id FROM Subscriptions WHERE razorpay_subscription_id = ?",
+      )
+        .bind(subEntity.id)
+        .first();
+      if (dbSub?.plan_id) {
+        await cleanupPlanIfEmpty(dbSub.plan_id, env);
+      }
+    }
+
+    } catch (processingError) {
+      // Allow retry on transient failures by removing the idempotency guard we inserted.
+      if (idempotencyInserted && eventId) {
+        await env.DB.prepare("DELETE FROM ProcessedWebhookEvents WHERE event_id = ?")
+          .bind(eventId)
+          .run()
+          .catch((e) => console.error("[Webhook] Idempotency cleanup failed:", e));
+      }
+      throw processingError;
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("[Webhook] Processing error:", error);
+    // Return 500 so Razorpay retries the webhook. Side-effect updates above are
+    // mostly idempotent (status guards), so a retry is safe.
+    return new Response(
+      JSON.stringify({ received: false, error: "Internal processing error" }),
+      { status: 500 },
+    );
+  }
+}
+
+async function cleanupPlanIfEmpty(planId: string, env: Env) {
+  try {
+    // Check if plan is inactive (marked for deletion/cleanup)
+    const plan: any = await env.DB.prepare(
+      "SELECT is_active FROM SubscriptionPlans WHERE id = ?",
+    )
+      .bind(planId)
+      .first();
+    if (!plan || plan.is_active === 1) return;
+
+    // Check for any remaining active subscribers
+    const activeSubCount: any = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`,
+    )
+      .bind(planId)
+      .first();
+
+    if (!activeSubCount || activeSubCount.count === 0) {
+      console.log(
+        `[Cleanup] No active subscribers left for inactive plan ${planId}. Deleting permanently.`,
+      );
+      await env.DB.prepare("DELETE FROM PlanContentPool WHERE plan_id = ?")
+        .bind(planId)
+        .run();
+      await env.DB.prepare("DELETE FROM SubscriptionPlans WHERE id = ?")
+        .bind(planId)
+        .run();
+    }
+  } catch (e) {
+    console.error(`[Cleanup] Error cleaning up plan ${planId}:`, e);
+  }
+}
+
+async function handleSeed(request: Request, env: Env): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+
+    const teacherId = generateCustomId("YA-USR");
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO Users (id, email, role) VALUES (?, ?, ?)",
+    )
+      .bind(teacherId, "teacher@example.com", "teacher")
+      .run();
+
+    const courseId = generateCustomId("YA-CRS");
+    await env.DB.prepare(
+      "INSERT INTO Courses (id, title, description, teacher_id, price_rupees) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(
+        courseId,
+        "Advanced Cloudflare Workers",
+        "Learn how to build edge applications.",
+        teacherId,
+        4900,
+      )
+      .run();
+
+    return new Response(
+      JSON.stringify({ message: "Database seeded with a test course." }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "Dev.Seed", env, request);
+  }
+}
+
+let _dbInitialized = false;
+
+async function initDbAndSeed(env: Env) {
+  if (_dbInitialized) return;
+  try {
+    const { runAutoMigration } = await import('../db-migrate');
+    await runAutoMigration(env.DB);
+    _dbInitialized = true;
+  } catch (e) {
+    console.error('[initDbAndSeed] Auto-migration failed', e);
+    // Reset flag so the next scheduled run retries migrations (e.g. transient D1 connection issue).
+    _dbInitialized = false;
+  }
+}
+
+// --- AI Gateway Integration ---
+
+export function sanitizeJson(text: string): string {
+  if (!text) return "{}";
+
+  // Replace smart/curly quotes with standard quotes
+  let sanitized = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+
+  // Remove markdown blocks
+  sanitized = sanitized
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  // Extract JSON string
+  const firstBrace = sanitized.indexOf("{");
+  const lastBrace = sanitized.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    sanitized = sanitized.substring(firstBrace, lastBrace + 1);
+  } else {
+    // If AI hallucinates plain text instead of JSON, wrap it safely
+    // so JSON.parse doesn't crash downstream.
+    return JSON.stringify({ reply: text.trim() });
+  }
+
+  // Safest for AI output that is just simple JSON is to remove newlines completely.
+  sanitized = sanitized
+    .replace(/\n/g, " ")
+    .replace(/\r/g, " ")
+    .replace(/\t/g, " ");
+  sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+  return sanitized;
+}
+
+interface AiModel {
+  id: string;
+  name: string;
+  provider: string;
+  endpoint: string;
+  system_prompt?: string | null;
+  fallback_model_ids?: string | null;
+  is_active: number;
+  is_default: number;
+}
+
+async function getAiModelConfig(env: Env, modelId?: string | null): Promise<AiModel[]> {
+  const db = env.DB;
+  let model: AiModel | null = null;
+  
+  if (modelId) {
+    model = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(modelId).first<AiModel>();
+  }
+  
+  if (!model) {
+    model = await db.prepare("SELECT * FROM AiModels WHERE is_default = 1 AND is_active = 1").first<AiModel>();
+  }
+  
+  if (!model) {
+    return [{
+      id: "@cf/meta/llama-3.1-8b-instruct",
+      name: "Meta Llama 3.1 8B",
+      provider: "workers-ai",
+      endpoint: "chat/completions",
+      is_active: 1,
+      is_default: 1
+    }];
+  }
+
+  const models: AiModel[] = [model];
+  
+  if (model.fallback_model_ids) {
+    try {
+      const fallbackIds: string[] = JSON.parse(model.fallback_model_ids);
+      for (const fId of fallbackIds) {
+        const fallback = await db.prepare("SELECT * FROM AiModels WHERE id = ? AND is_active = 1").bind(fId).first<AiModel>();
+        if (fallback) models.push(fallback);
+      }
+    } catch (e) {
+      console.error("Failed to parse fallback_model_ids", e);
+    }
+  }
+  
+  return models;
+}
+
+function applySystemPrompt(messages: any[], systemPrompt?: string | null) {
+  if (!systemPrompt) return messages;
+  const newMessages = [...messages];
+  if (newMessages.length > 0 && newMessages[0].role === "system") {
+    newMessages[0].content = systemPrompt + "\n" + newMessages[0].content;
+  } else {
+    newMessages.unshift({ role: "system", content: systemPrompt });
+  }
+  return newMessages;
+}
+
+export async function generateAIContent(
+  messages: any[],
+  env: Env,
+  forceJson: boolean = false,
+  modelId?: string | null,
+): Promise<string> {
+  const accountId = await getSecret(env, "CLOUDFLARE_ACCOUNT_ID");
+  const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
+  const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
+  const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
+  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
+
+  if (!accountId || !aigToken || aigToken === "null") {
+    throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
+  }
+
+  const models = await getAiModelConfig(env, modelId);
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
+
+  let lastError: Error | null = null;
+
+  for (const m of models) {
+    try {
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
+
+      const reqQuery: any = {
+        model: m.id,
+        messages: applySystemPrompt(messages, m.system_prompt),
+        max_tokens: 4000,
+      };
+      if (forceJson) reqQuery.response_format = { type: "json_object" };
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: reqQuery,
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const gRes = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      const resText = await gRes.text();
+
+      if (!gRes.ok) {
+        throw new Error(
+          `Gateway request failed (${gRes.status}): ${resText.substring(0, 200)}`,
+        );
+      }
+
+      if (!resText || resText.trim() === "") {
+        throw new Error("Gateway returned EMPTY response");
+      }
+
+      try {
+        const aiResponse = JSON.parse(resText);
+        if (aiResponse.choices?.[0]?.message?.content) {
+          const c = aiResponse.choices[0].message.content;
+          return forceJson ? sanitizeJson(c) : c;
+        }
+        if (typeof aiResponse === "string")
+          return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+        throw new Error("JSON parsed but structure unknown");
+      } catch (parseError) {
+        if (!forceJson && resText) return resText;
+        throw new Error(
+          `Gateway returned non-JSON structure: ${resText.substring(0, 100)}`,
+        );
+      }
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Gateway] Model ${m.id} failed:`, lastError.message);
+    }
+  }
+
+  throw new Error(`AI Gateway Request Failed: ${lastError?.message || "All models failed"}`);
+}
+
+async function fetchAIStream(messages: any[], env: Env, modelId?: string | null): Promise<Response> {
+  const accountId = await getSecret(env, "CLOUDFLARE_ACCOUNT_ID");
+  const cfToken = await getSecret(env, "CLOUDFLARE_API_TOKEN");
+  const aigToken = (await getSecret(env, "CF_AIG_TOKEN")) || cfToken;
+  const gatewayId = (await getSecret(env, "AI_GATEWAY_ID")) || "vertexai";
+  const openaiKey = await getSecret(env, "OPENAI_API_KEY");
+
+  if (!accountId || !aigToken || aigToken === "null") {
+    throw new Error("AI Setup Incomplete: Missing Cloudflare Credentials.");
+  }
+
+  const models = await getAiModelConfig(env, modelId);
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
+
+  let lastError: Error | null = null;
+
+  for (const m of models) {
+    try {
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: {
+          model: m.id,
+          messages: applySystemPrompt(messages, m.system_prompt),
+          max_tokens: 4000,
+          stream: true,
+        },
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errText = await response.text();
+      if (!response.ok) {
+        console.warn(`[AI Stream] Model ${m.id} returned error ${response.status}:`, errText.substring(0, 200));
+        throw new Error(`Gateway stream failed (${response.status})`);
+      }
+
+      return new Response(response.body, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Stream] Model ${m.id} failed:`, lastError.message);
+    }
+  }
+
+  throw new Error(`AI Stream Request Failed: ${lastError?.message || "All models failed"}`);
+}
+
+function transformWorkersAIStreamToOpenAI(
+  input: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const reader = input.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === "data: [DONE]") continue;
+
+            // Accept both bare JSON lines and `data: {...}` SSE frames.
+            const jsonLine = trimmed.startsWith("data:")
+              ? trimmed.slice(5).trim()
+              : trimmed;
+            if (!jsonLine) continue;
+
+            let parsed: any;
+            try {
+              parsed = JSON.parse(jsonLine);
+            } catch {
+              continue; // partial frame, wait for more data
+            }
+
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          }
+        }
+
+        // Flush any trailing partial JSON line
+        const tail = buffer.trim();
+        if (tail && tail !== "data: [DONE]") {
+          try {
+            const jsonLine = tail.startsWith("data:")
+              ? tail.slice(5).trim()
+              : tail;
+            const parsed = JSON.parse(jsonLine);
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          } catch { /* ignore malformed tail */ }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (e) {
+        console.error("[AI Chat] Student stream transform error:", e);
+      } finally {
+        try {
+          controller.close();
+        } catch { /* already closed */ }
+      }
+    },
+  });
+}
+
+// --- AI Assistant Helpers ---
+
+async function getAIGlobalContext(
+  env: Env,
+  role: string,
+  userId: string | null,
+  prompt: string,
+  lessonId?: string,
+) {
+  try {
+    let context = "";
+    if (role === "admin") {
+      // Ã¢ÂÂ¡ Bolt: Batch independent queries to execute concurrently instead of sequentially
+      const [statsResult, recentEnrollments, courseList] = await env.DB.batch([
+        env.DB.prepare(
+          `
+          SELECT
+            (SELECT COUNT(*) FROM Users) as user_count,
+            (SELECT COUNT(*) FROM Courses) as course_count,
+            (SELECT COUNT(*) FROM Enrollments) as enroll_count
+        `,
+        ),
+        env.DB.prepare(
+          `
+          SELECT u.email, c.title as course, e.progress, e.purchased_at
+          FROM Enrollments e
+          JOIN Users u ON e.user_id = u.id
+          JOIN Courses c ON e.course_id = c.id
+          ORDER BY e.purchased_at DESC LIMIT 5
+        `,
+        ),
+        env.DB.prepare("SELECT id, title FROM Courses"),
+      ]);
+      const stats = (statsResult.results?.[0] || {}) as any;
+
+      context = `
+[ADMIN CONTEXT]
+Stats: ${stats.user_count} users, ${stats.course_count} courses, ${stats.enroll_count} enrollments.
+Recent Activity: ${JSON.stringify(recentEnrollments.results)}
+Courses: ${JSON.stringify(courseList.results)}
+
+Actions:
+1. create_course: { title, description, price, category_id? }
+2. edit_course: { id, title?, description?, price?, category_id? }
+3. delete_course: { id }
+4. add_lesson: { course_id, chapter_title, title, type, content_url, text_content, text_content_hi }
+5. edit_lesson: { lesson_id, title?, chapter_title?, type?, content_url?, text_content?, text_content_hi? }
+6. delete_lesson: { lesson_id }
+7. add_student: { email, full_name? }
+8. edit_student: { email, full_name?, role? }
+9. delete_student: { email }
+10. assign_course: { email, course_id, batch_id? }
+11. delete_enrollment: { email, course_id }
+12. get_student_details: { email }
+13. query_users: { filter: 'all' | 'enrolled_all' | 'enrolled_course' | 'subscribers', course_id?: string }
+14. bulk_draft_email: { recipients: string[], subject: string, body: string, isHtml: boolean }
+15. create_form_and_draft_email: { form_title, form_description, form_fields_json, to, subject, email_body, theme?, confirmation_email_body? }
+16. get_detailed_stats: {}
+17. read_lesson: { lesson_id }
+18. send_email: { to, subject, body, isHtml }
+`;
+    } else if (userId) {
+      // Ã¢ÂÂ¡ Bolt: Batch independent user context queries
+      const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
+        env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?").bind(userId),
+        env.DB.prepare(
+          `
+          SELECT c.id as course_id, c.title, e.progress, e.status
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          WHERE e.user_id = ?
+        `,
+        ).bind(userId),
+        env.DB.prepare("SELECT id, title, price_rupees FROM Courses"),
+        env.DB.prepare(
+          "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
+        ).bind(userId),
+        env.DB.prepare("SELECT score, total_marks as max_score, passed FROM ExamAttempts WHERE user_id = ? ORDER BY submitted_at DESC LIMIT 3").bind(userId)
+      ]);
+
+      const user = userResult.results?.[0] as any;
+
+      const isProfileIncomplete =
+        !user?.full_name ||
+        !user?.phone ||
+        !user?.birth_date ||
+        !user?.father_name ||
+        !user?.mother_name ||
+        !user?.grand_father_name;
+
+      context = `[STUDENT PROFILE]
+Email: ${user?.email}
+Name: ${user?.full_name || "N/A"}
+Phone: ${user?.phone || "N/A"}
+Birth Date: ${user?.birth_date || "N/A"}
+Father: ${user?.father_name || "N/A"}
+Mother: ${user?.mother_name || "N/A"}
+Grandfather: ${user?.grand_father_name || "N/A"}
+Location: ${user?.district || "N/A"}, ${user?.state || "N/A"}, ${user?.country || "IN"} (${user?.pincode || "N/A"})
+Bio: ${user?.bio || "N/A"}
+Joined: ${user?.created_at}
+[PROFILE STATUS] ${isProfileIncomplete ? "INCOMPLETE - Please ask the user to fill their profile details." : "COMPLETE"}
+[STUDENT ENROLLMENTS] ${JSON.stringify(enrollments.results)}
+[PLATFORM CATALOG] ${JSON.stringify(library.results)}
+[RECENT NOTIFICATIONS] ${JSON.stringify(recentNotifications.results)}
+[RECENT EXAM/QUIZ SCORES] ${JSON.stringify(examProgress?.results || [])}
+`;
+
+      // Deep lesson titles for enrolled courses
+      const enrolledCourses = (enrollments.results as any[]) || [];
+      if (enrolledCourses.length > 0) {
+        // Ã¢ÂÂ¡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
+        const lessonQueries = enrolledCourses.map((enrolled) =>
+          env.DB.prepare("SELECT id, title, type FROM Lessons WHERE course_id = ?").bind(enrolled.course_id)
+        );
+        const lessonResults = await env.DB.batch(lessonQueries);
+
+        for (let i = 0; i < enrolledCourses.length; i++) {
+          const enrolled = enrolledCourses[i];
+          const lessons = lessonResults[i];
+          context += `\n[LESSONS: ${enrolled.title}] ${JSON.stringify(lessons.results)}`;
+        }
+      }
+    }
+
+    // Direct Lesson Context if provided
+    if (lessonId) {
+      const l = (await env.DB.prepare(
+        `
+        SELECT l.title, l.type, l.text_content, l.text_content_hi, l.chapter_title, c.title as course_title, c.description as course_desc
+        FROM Lessons l
+        JOIN Courses c ON l.course_id = c.id
+        WHERE l.id = ?
+      `,
+      )
+        .bind(lessonId)
+        .first()) as any;
+
+      if (l) {
+        let transcript = "";
+        if (l.text_content_hi && l.text_content) {
+          transcript = `English: ${l.text_content.substring(0, 4000)}\nHindi: ${l.text_content_hi.substring(0, 4000)}`;
+        } else {
+          transcript = l.text_content ? l.text_content.substring(0, 8500) : `No transcript/summary provided for this ${l.type}. Please use the course overview to provide high-quality educational guidance.`;
+        }
+
+        context += `\n[ACTIVE LESSON CONTEXT]
+Course: ${l.course_title}
+Course Overview: ${l.course_desc}
+Chapter: ${l.chapter_title}
+Lesson Title: ${l.title}
+Lesson Type: ${l.type} (Analysis Mode Active)
+Content Summary/Transcript: ${transcript}
+
+Instructions for ${l.type} Analysis:
+- If Video: Explain concepts as if you've seen the lecture. Use the transcript if available.
+- If PDF/Docs: Summarize the key findings or detailed sections provided in the preview.
+- If Image: Describe the visual learning material based on the provided text description.
+- If Article: Provide a deep-dive into the written content.
+`;
+      }
+    }
+
+    // Proactive Content Fetch: If prompt mentions a lesson title, pull its content (backup)
+    if (!lessonId) {
+      const mentionCheck = await env.DB.prepare(
+        'SELECT id, title, type, text_content, text_content_hi FROM Lessons WHERE type = "article" AND text_content IS NOT NULL',
+      ).all();
+      for (const l of (mentionCheck.results as any[]) || []) {
+        if (prompt.includes(l.title)) {
+          context += `\n[CONTENT] Lesson "${l.title}" Content: ${l.text_content.substring(0, 2000)}`;
+          if (l.text_content_hi) context += `\nHindi Content: ${l.text_content_hi.substring(0, 2000)}`;
+        }
+      }
+    }
+
+    return context;
+  } catch (e) {
+    return "";
+  }
+}
+
+// sendEmailViaBinding removed, using safeSendEmail instead.
+
+async function handleAdminSendEmail(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { to, subject, body, isHtml, otp } = (await request.json()) as any;
+
+    if (!to || !subject || !body) {
+      return new Response(
+        JSON.stringify({ error: "To, Subject, and Body are required" }),
+        { status: 400 },
+      );
+    }
+
+    // Require OTP confirmation for admin email sends (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send email as admin" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const adminUser: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!adminUser?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, adminUser.email, otp);
+    if (otpResponse) return otpResponse;
+
+    // Per-admin rate limit: max 10 emails per hour
+    const rateCheck = await checkRateLimit(env.DB, `admin_email:${adminId}`, 10, 60);
+    if (!rateCheck.allowed) {
+      return new Response(JSON.stringify({
+        error: "Email rate limit exceeded. Try again later.",
+        retryAfterMs: rateCheck.retryAfterMs,
+      }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": String(Math.ceil((rateCheck.retryAfterMs || 3600000) / 1000)) },
+      });
+    }
+
+    let textFallback = "Please view this email in an HTML compatible client.";
+    let htmlContent = body;
+    if (!isHtml) {
+      textFallback = body;
+      htmlContent = `<p>${body}</p>`;
+    }
+    const success = await safeSendEmail(
+      env,
+      to,
+      subject,
+      subject,
+      htmlContent,
+      textFallback,
+    );
+    if (success) {
+      return new Response(
+        JSON.stringify({ success: true, message: "Email sent successfully" }),
+        { status: 200 },
+      );
+    } else {
+      return new Response(JSON.stringify({ error: "Failed to send email" }), {
+        status: 500,
+      });
+    }
+  } catch (error) {
+    return handleGlobalError(error, "Admin.SendEmail", env, request);
+  }
+}
+
+
+type ReleaseAutomationPayload = {
+  sourceBranch?: string;
+  targetBranch?: string;
+  scheduleAt?: string;
+  sendEmail?: any;
+  postSocial?: any;
+  socialPlatforms?: string[];
+  mode?: "preview" | "merge";
+};
+
+function buildReleaseContent(options: {
+  sourceBranch: string;
+  targetBranch: string;
+  commits: any[];
+  files: any[];
+  compareUrl?: string;
+  mergedSha?: string | null;
+}) {
+  const commitTitles = options.commits
+    .map((commit: any) => String(commit?.commit?.message || commit?.message || "").split("\n")[0])
+    .filter(Boolean)
+    .slice(0, 8);
+  const fileNames = options.files
+    .map((file: any) => file?.filename)
+    .filter(Boolean)
+    .slice(0, 10);
+  const summaryLines = [
+    `Branch ${options.sourceBranch} Ã Â¤Â¸Ã Â¥Â ${options.targetBranch} Ã Â¤Â®Ã Â¥ÂÃ Â¤Â release changes Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â¾Ã Â¤Â° Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+    commitTitles.length ? `Ã Â¤Â®Ã Â¥ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â¯ commits: ${commitTitles.join("; ")}` : "GitHub compare Ã Â¤Â®Ã Â¥ÂÃ Â¤Â commit details Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â²Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â§ Ã Â¤Â¨Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â²Ã Â¥ÂÃ Â¥Â¤",
+    fileNames.length ? `Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¤Â­Ã Â¤Â¾Ã Â¤ÂµÃ Â¤Â¿Ã Â¤Â¤ files: ${fileNames.join(", ")}` : "File level changes Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â²Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â§ Ã Â¤Â¨Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â²Ã Â¥ÂÃ Â¥Â¤",
+  ];
+  if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
+  const changeSummary = summaryLines.join("\n");
+  const subject = `Ã Â¤Â¨Ã Â¤Â Ã Â¤ÂµÃ Â¥ÂÃ Â¤Â¬Ã Â¤Â¸Ã Â¤Â¾Ã Â¤ÂÃ Â¤Â Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¡Ã Â¥ÂÃ Â¤Â: ${options.sourceBranch} Ã¢ÂÂ ${options.targetBranch}`;
+  const body = `Namaste,\n\nÃ Â¤Â¹Ã Â¤Â®Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂµÃ Â¥ÂÃ Â¤Â¬Ã Â¤Â¸Ã Â¤Â¾Ã Â¤ÂÃ Â¤Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¨Ã Â¤Â Ã Â¤Â¬Ã Â¤Â¦Ã Â¤Â²Ã Â¤Â¾Ã Â¤Âµ publish Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const html = `
+    <p>Namaste,</p>
+    <p>Ã Â¤Â¹Ã Â¤Â®Ã Â¤Â¨Ã Â¥Â Ã Â¤ÂµÃ Â¥ÂÃ Â¤Â¬Ã Â¤Â¸Ã Â¤Â¾Ã Â¤ÂÃ Â¤Â Ã Â¤Â®Ã Â¥ÂÃ Â¤Â Ã Â¤Â¨Ã Â¤Â Ã Â¤Â¬Ã Â¤Â¦Ã Â¤Â²Ã Â¤Â¾Ã Â¤Âµ publish Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â¯Ã Â¥Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
+    <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare Ã Â¤Â¦Ã Â¥ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â</a></p>` : ""}
+    <p><strong>Article API integration:</strong> Coming soon.</p>
+    <p>Om!</p>
+  `;
+  const social = [
+    "Ã°ÂÂÂ Website Update Published",
+    `${options.sourceBranch} Ã¢ÂÂ ${options.targetBranch}`,
+    "",
+    commitTitles.length ? commitTitles.map((title: string) => `Ã¢ÂÂ¢ ${title}`).join("\n") : "Ã Â¤Â¨Ã Â¤Â Ã Â¤Â¸Ã Â¥ÂÃ Â¤Â§Ã Â¤Â¾Ã Â¤Â° Ã Â¤ÂÃ Â¤Â° changes live Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤",
+    "",
+    "Article: Coming soon",
+    "#Adityanveshan #WebsiteUpdate #YagyaAshram",
+  ].join("\n");
+  return { changeSummary, subject, body, html, social };
+}
+
+async function fetchGitHubReleaseCompare(
+  env: Env,
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const compareRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(targetBranch)}...${encodeURIComponent(sourceBranch)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "ya-lms-release-automation",
+      },
+    },
+  );
+  const compareData = await compareRes.json() as any;
+  if (!compareRes.ok) {
+    throw new Error(compareData?.message || "GitHub compare failed");
+  }
+  return compareData;
+}
+
+async function mergeGitHubBranch(
+  owner: string,
+  repo: string,
+  token: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<any> {
+  const mergeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/merges`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "ya-lms-release-automation",
+    },
+    body: JSON.stringify({
+      base: targetBranch,
+      head: sourceBranch,
+      commit_message: `Admin release merge: ${sourceBranch} into ${targetBranch}`,
+    }),
+  });
+  const mergeData = await mergeRes.json() as any;
+  if (!mergeRes.ok && mergeRes.status !== 204) {
+    throw new Error(mergeData?.message || "GitHub merge failed");
+  }
+  return mergeData || {};
+}
+
+async function sendReleaseEmails(
+  env: Env,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<{ attempted: number; sent: number }> {
+  const recipients = await getAnnouncementRecipients(env, "subscribers");
+  let sent = 0;
+  for (const recipient of recipients) {
+    const ok = await safeSendEmail(env, recipient, subject, "Website Update", html, text);
+    if (ok) sent += 1;
+  }
+  return { attempted: recipients.length, sent };
+}
+
+async function postReleaseSocial(
+  env: Env,
+  message: string,
+  platforms: string[],
+): Promise<Record<string, string>> {
+  return postToSocialChannels(
+    env,
+    {
+      kind: "course",
+      title: "Website Update",
+      description: message,
+    },
+    platforms,
+  );
+}
+
+async function handleAdminReleaseAutomation(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM ReleaseCampaigns ORDER BY created_at DESC LIMIT 25",
+      ).all();
+      return new Response(JSON.stringify({ campaigns: results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const payload = (await request.json()) as ReleaseAutomationPayload;
+    const sourceBranch = String(payload.sourceBranch || "").trim();
+    const targetBranch = String(payload.targetBranch || "verified").trim();
+    const mode = payload.mode || "preview";
+
+    if (!sourceBranch || !targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches are required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (sourceBranch === targetBranch) {
+      return new Response(JSON.stringify({ error: "Source and target branches must be different" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const [token, owner, repo] = await Promise.all([
+      getSecret(env, "GITHUB_TOKEN", false),
+      getSecret(env, "GITHUB_OWNER", false),
+      getSecret(env, "GITHUB_REPO", false),
+    ]);
+
+    if (!token || !owner || !repo) {
+      return new Response(
+        JSON.stringify({ error: "GitHub integration is not configured. Add GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO secrets." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const compareData = await fetchGitHubReleaseCompare(env, owner, repo, token, sourceBranch, targetBranch);
+    let mergeData: any = null;
+    if (mode === "merge") {
+      mergeData = await mergeGitHubBranch(owner, repo, token, sourceBranch, targetBranch);
+    }
+
+    const content = buildReleaseContent({
+      sourceBranch,
+      targetBranch,
+      commits: compareData.commits || [],
+      files: compareData.files || [],
+      compareUrl: compareData.html_url,
+      mergedSha: mergeData?.sha || null,
+    });
+
+    let emailResult = { attempted: 0, sent: 0 };
+    let socialResult: Record<string, string> = {};
+    const scheduleAt = payload.scheduleAt ? new Date(payload.scheduleAt) : null;
+    const shouldDeferSocial = Boolean(scheduleAt && scheduleAt.getTime() > Date.now());
+    const status = mode === "merge" ? (shouldDeferSocial ? "scheduled" : "completed") : "draft";
+
+    if (mode === "merge" && normalizeBoolean(payload.sendEmail)) {
+      emailResult = await sendReleaseEmails(env, content.subject, content.html, content.body);
+    }
+
+    if (mode === "merge" && normalizeBoolean(payload.postSocial)) {
+      if (shouldDeferSocial) {
+        socialResult = { scheduled: `Social post queued for ${scheduleAt!.toISOString()}` };
+      } else {
+        socialResult = await postReleaseSocial(env, content.social, payload.socialPlatforms || []);
+      }
+    }
+
+    const id = generateCustomId("YA-REL");
+    await env.DB.prepare(`
+      INSERT INTO ReleaseCampaigns (
+        id, source_branch, target_branch, merge_sha, status, change_summary,
+        email_subject, email_body, social_post, article_status, social_platforms,
+        scheduled_at, email_sent_count, social_result, admin_id, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'coming_soon', ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      sourceBranch,
+      targetBranch,
+      mergeData?.sha || null,
+      status,
+      content.changeSummary,
+      content.subject,
+      content.body,
+      content.social,
+      JSON.stringify(payload.socialPlatforms || []),
+      scheduleAt ? scheduleAt.toISOString() : null,
+      emailResult.sent,
+      JSON.stringify(socialResult),
+      adminId,
+      mode === "merge" && !shouldDeferSocial ? getUTCNow() : null,
+    ).run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      id,
+      status,
+      articleStatus: "coming_soon",
+      compare: {
+        aheadBy: compareData.ahead_by,
+        behindBy: compareData.behind_by,
+        totalCommits: compareData.total_commits,
+        url: compareData.html_url,
+      },
+      mergeSha: mergeData?.sha || null,
+      content,
+      email: emailResult,
+      social: socialResult,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.ReleaseAutomation", env, request);
+  }
+}
+
+// Helper: send browser push to a single user's all devices (without in-app DB record)
+async function sendPushToUser(
+  env: Env,
+  userId: string,
+  title: string,
+  body: string,
+  clickUrl: string,
+  tag: string,
+): Promise<void> {
+  try {
+    await sendPush(env, { userId, title, body, data: { clickUrl, tag } });
+  } catch (e) {
+    console.error("sendPushToUser error:", e);
+  }
+}
+
+async function handleAdminBroadcast(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const bodyJson = (await request.json()) as any;
+    const {
+      target,
+      targetId,
+      subject,
+      message,
+      sendEmail,
+      sendNotification,
+      sendPush,
+      customEmails,
+      pushAudience,
+      otp,
+    } = bodyJson;
+
+    // Require OTP confirmation for broadcast sends to all users (high impact)
+    if (!otp || typeof otp !== "string" || otp.length < 4) {
+      return new Response(JSON.stringify({ error: "OTP is required to send broadcast" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const admin: any = await env.DB.prepare("SELECT email FROM Users WHERE id = ?").bind(adminId).first();
+    if (!admin?.email) {
+      return new Response(JSON.stringify({ error: "Admin email not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const otpResponse = await consumeOtp(env, admin.email, otp);
+    if (otpResponse) return otpResponse;
+
+    if (!target || !message) {
+      return new Response(
+        JSON.stringify({ error: "Target and Message are required" }),
+        { status: 400 },
+      );
+    }
+
+    let users: { id: string | null; email: string }[] = [];
+    if (target === "all") {
+      const res = await env.DB.prepare(
+        'SELECT id, email FROM Users WHERE role = "student"',
+      ).all();
+      users = res.results as any[];
+    } else if (target === "course" && targetId) {
+      const res = await env.DB.prepare(
+        "SELECT DISTINCT u.id, u.email FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?",
+      )
+        .bind(targetId)
+        .all();
+      users = res.results as any[];
+    } else if (target === "batch" && targetId) {
+      const res = await env.DB.prepare(
+        "SELECT DISTINCT u.id, u.email FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.batch_id = ?",
+      )
+        .bind(targetId)
+        .all();
+      users = res.results as any[];
+    } else if (target === "custom" && customEmails) {
+      const emailsList = Array.from(
+        new Set(
+          customEmails
+            .split(",")
+            .map((e: string) => e.trim().toLowerCase())
+            .filter((e: string) => e),
+        ),
+      ) as string[];
+      if (emailsList.length > 0) {
+        // Fetch users that exist to get their IDs for notifications
+        // Chunk the query to avoid hitting D1 parameter limits (e.g. 100 max)
+        const chunkSize = 50;
+        const existingUsers = [];
+        for (let i = 0; i < emailsList.length; i += chunkSize) {
+          const chunk = emailsList.slice(i, i + chunkSize);
+          const placeholders = chunk.map(() => "?").join(",");
+          const existingUsersQuery = `SELECT id, email FROM Users WHERE email IN (${placeholders})`;
+          const res = await env.DB.prepare(existingUsersQuery)
+            .bind(...chunk)
+            .all();
+          existingUsers.push(...(res.results as any[]));
+        }
+
+        const existingEmailMap = new Map(
+          existingUsers.map((u) => [u.email, u.id]),
+        );
+
+        users = emailsList.map((email: string) => ({
+          id: existingEmailMap.get(email) || null,
+          email: email,
+        }));
+      }
+    }
+
+    if (users.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error: "No recipients found for the selected target",
+        }),
+        { status: 404 },
+      );
+    }
+
+    let emailCount = 0;
+    let ntfCount = 0;
+
+    // Batch insert notifications instead of per-user createNotification calls
+    if (sendNotification) {
+      const userIds = users.filter((u) => u.id).map((u) => u.id as string);
+      if (userIds.length > 0) {
+        const BATCH_SIZE = 50;
+        const notifTitle = subject || "New Update";
+        const notifMsg = message;
+        for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+          const chunk = userIds.slice(i, i + BATCH_SIZE);
+          const stmts = chunk.map((uid) =>
+            env.DB.prepare(
+              "INSERT INTO Notifications (id, user_id, title, message, type) VALUES (?, ?, ?, ?, 'info')",
+            ).bind(generateCustomId("YA-NTF"), uid, notifTitle, notifMsg),
+          );
+          await env.DB.batch(stmts);
+        }
+        ntfCount = userIds.length;
+      }
+    }
+    if (sendEmail) {
+      for (const user of users) {
+        if (user.email) {
+          await safeSendEmail(
+            env, user.email,
+            subject || "Update from Adityanveshan",
+            subject || "Important Update",
+            `<p>${message}</p>`, message,
+          );
+          emailCount++;
+        }
+      }
+    }
+
+    // Send FCM push using centralized executor
+    let pushSent = 0, pushFailed = 0, pushSkipped = 0;
+    let pushErrors: { status?: number; error: string }[] = [];
+    if (sendPush && pushAudience) {
+       const pushResult = await executePushBroadcast(env, {
+          title: subject || "Adityanveshan",
+          body: message,
+          audience: pushAudience
+       });
+       pushSent = pushResult.sent;
+       pushFailed = pushResult.failed;
+       pushSkipped = pushResult.skipped;
+       pushErrors = pushResult.errors;
+
+       // Note: BroadcastLog insertion is intentionally handled by the callers (like handleSendPush or here)
+       // and is not performed inside executePushBroadcast, keeping it purely functional for sending.
+    }
+
+    const id = generateCustomId("YA-BRD");
+    await env.DB.prepare(
+      `INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id, sent_at)
+       VALUES (?, ?, ?, 'history', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    ).bind(
+      id, subject || "", message, target, targetId || "", customEmails || "",
+      sendEmail ? 1 : 0, sendNotification ? 1 : 0, sendPush ? 1 : 0, pushAudience || "all", adminId,
+    ).run();
+
+    if (sendPush) {
+      const bcId = generateCustomId("YA-BRC");
+      await env.DB.prepare(
+        `INSERT INTO BroadcastLog (id, sent_by, audience, title, body, data_json, sent_count, failed_count, skip_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(bcId, adminId, pushAudience, subject || "Adityanveshan", message, null, pushSent, pushFailed, pushSkipped).run();
+    }
+
+    const parts: string[] = [`Recipients: ${users.length}`];
+    if (emailCount > 0) parts.push(`Emails: ${emailCount}`);
+    if (ntfCount > 0) parts.push(`In-App: ${ntfCount}`);
+    if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
+
+    const broadcastUserIds = users.filter((u) => u.id).map((u) => u.id as string);
+    ctx?.waitUntil(broadcastToUsers(env, broadcastUserIds, "broadcast", { title: subject || "New Update", message }));
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Broadcast completed. ${parts.join(". ")}`,
+      pushResult: sendPush ? { sent: pushSent, failed: pushFailed, skipped: pushSkipped, errors: pushErrors } : undefined,
+    }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.Broadcast", env, request);
+  }
+}
+
+async function handleAdminBroadcastDrafts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+
+    if (request.method === "GET") {
+      const url = new URL(request.url);
+      const type = url.searchParams.get("type") || "draft"; // draft or history
+
+      const results = await env.DB.prepare(
+        "SELECT * FROM BroadcastDrafts WHERE type = ? ORDER BY created_at DESC",
+      )
+        .bind(type)
+        .all();
+
+      return new Response(JSON.stringify(results.results), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } else if (request.method === "POST") {
+      const {
+        subject,
+        message,
+        target,
+        targetId,
+        customEmails,
+        sendEmail,
+        sendNotification,
+        sendPush,
+        pushAudience,
+      } = (await request.json()) as any;
+
+      if (!message) {
+        return new Response(JSON.stringify({ error: "Message is required" }), {
+          status: 400,
+        });
+      }
+
+      const id = generateCustomId("YA-BRD");
+      await env.DB.prepare(
+        `
+        INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, send_email, send_notification, send_push, push_audience, admin_id)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      )
+        .bind(
+          id,
+          subject || "",
+          message,
+          target || "all",
+          targetId || "",
+          customEmails || "",
+          sendEmail ? 1 : 0,
+          sendNotification ? 1 : 0,
+          sendPush ? 1 : 0,
+          pushAudience || "all",
+          adminId,
+        )
+        .run();
+
+      return new Response(JSON.stringify({ success: true, id }), {
+        status: 200,
+      });
+    }
+
+    return new Response("Method Not Allowed", { status: 405 });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.BroadcastDrafts", env, request);
+  }
+}
+
+async function handleGetEmailDrafts(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const drafts = await env.DB.prepare(
+      "SELECT * FROM EmailDrafts ORDER BY created_at DESC",
+    ).all();
+    return new Response(JSON.stringify(drafts.results), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.GetEmailDrafts", env, request);
+  }
+}
+
+async function handleSaveEmailDraft(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const adminId = await requireAdmin(request, env);
+    const { recipient, subject, body, is_html } = (await request.json()) as any;
+
+    if (!recipient || !subject || !body) {
+      return new Response(
+        JSON.stringify({ error: "Recipient, Subject, and Body are required" }),
+        { status: 400 },
+      );
+    }
+
+    const id = generateCustomId("YA-EML");
+    await env.DB.prepare(
+      "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        id,
+        recipient,
+        subject,
+        body,
+        is_html !== undefined ? (is_html ? 1 : 0) : 1,
+        adminId,
+      )
+      .run();
+
+    return new Response(JSON.stringify({ success: true, id }), { status: 201 });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.SaveEmailDraft", env, request);
+  }
+}
+
+async function handleUpdateEmailDraft(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const bodyArgs = (await request.json()) as any;
+
+    // Convert undefined to null for D1 binding
+    const recipient =
+      bodyArgs.recipient !== undefined ? bodyArgs.recipient : null;
+    const subject = bodyArgs.subject !== undefined ? bodyArgs.subject : null;
+    const body = bodyArgs.body !== undefined ? bodyArgs.body : null;
+    const is_html =
+      bodyArgs.is_html !== undefined ? (bodyArgs.is_html ? 1 : 0) : null;
+    const status = bodyArgs.status !== undefined ? bodyArgs.status : null;
+
+    await env.DB.prepare(
+      "UPDATE EmailDrafts SET recipient = COALESCE(?, recipient), subject = COALESCE(?, subject), body = COALESCE(?, body), is_html = COALESCE(?, is_html), status = COALESCE(?, status) WHERE id = ?",
+    )
+      .bind(recipient, subject, body, is_html, status, id)
+      .run();
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.UpdateEmailDraft", env, request);
+  }
+}
+
+async function handleDeleteEmailDraft(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    await env.DB.prepare("DELETE FROM EmailDrafts WHERE id = ?").bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.DeleteEmailDraft", env, request);
+  }
+}
+
+async function replaceDynamicVariables(
+  text: string,
+  recipientEmail: string,
+  env: Env,
+): Promise<string> {
+  if (!text) return text;
+
+  const user = (await env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE email = ?")
+    .bind(recipientEmail)
+    .first()) as any;
+  if (!user) return text;
+
+  const enrollment = (await env.DB.prepare(
+    `
+    SELECT e.*, c.title as course_title, c.price_rupees as course_price
+    FROM Enrollments e
+    JOIN Courses c ON e.course_id = c.id
+    WHERE e.user_id = ?
+    ORDER BY e.purchased_at DESC LIMIT 1
+  `,
+  )
+    .bind(user.id)
+    .first()) as any;
+
+  let result = text;
+
+  const variables: Record<string, string> = {
+    "{{Users.name}}": user.full_name || user.name || "Student",
+    "{{Users.email}}": user.email || "",
+    "{{Users.role}}": user.role || "student",
+    "{{Courses.title}}": enrollment ? enrollment.course_title : "Our Course",
+    "{{Courses.price}}": enrollment ? enrollment.course_price?.toString() : "",
+    "{{Enrollments.progress}}": enrollment
+      ? enrollment.progress?.toString()
+      : "0",
+  };
+
+  for (const [key, value] of Object.entries(variables)) {
+    // Escape specific regex characters in key
+    const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    result = result.replace(new RegExp(escapedKey, "gi"), value);
+  }
+
+  const conditionMap: Record<string, boolean> = {
+    "Users.isAdmin": user.role === "admin",
+    "Enrollments.isComplete": enrollment ? enrollment.progress >= 100 : false,
+    "Enrollments.hasStarted": enrollment ? enrollment.progress > 0 : false,
+    "Enrollments.exists": !!enrollment,
+  };
+
+  for (const [cond, isTrue] of Object.entries(conditionMap)) {
+    const escapedCond = cond.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const regex = new RegExp(
+      `\\{\\{#if\\s+${escapedCond}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+      "gi",
+    );
+    result = result.replace(regex, (match, innerText) => {
+      return isTrue ? innerText : "";
+    });
+  }
+
+  return result;
+}
+
+async function handleSendDraftedEmail(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  try {
+    await requireAdmin(request, env);
+    const draft = (await env.DB.prepare(
+      "SELECT * FROM EmailDrafts WHERE id = ?",
+    )
+      .bind(id)
+      .first()) as any;
+
+    if (!draft)
+      return new Response(JSON.stringify({ error: "Draft not found" }), {
+        status: 404,
+      });
+    if (draft.status === "sent")
+      return new Response(JSON.stringify({ error: "Draft already sent" }), {
+        status: 400,
+      });
+
+    // Split recipients by comma and trim whitespace
+    const recipientList = draft.recipient
+      .split(",")
+      .map((r: string) => r.trim())
+      .filter(Boolean);
+
+    let allSuccessful = true;
+    for (const recipient of recipientList) {
+      const pSubject = await replaceDynamicVariables(
+        draft.subject,
+        recipient,
+        env,
+      );
+      const pBody = await replaceDynamicVariables(draft.body, recipient, env);
+
+      let textFallback = "Please view this email in an HTML compatible client.";
+      let htmlContent = pBody;
+      if (draft.is_html !== 1) {
+        textFallback = pBody;
+        htmlContent = `<p>${pBody}</p>`;
+      }
+
+      const success = await safeSendEmail(
+        env,
+        recipient,
+        pSubject,
+        pSubject,
+        htmlContent,
+        textFallback,
+      );
+      if (!success) {
+        allSuccessful = false;
+        console.error("Failed to send notification email");
+      }
+    }
+
+    if (allSuccessful) {
+      await env.DB.prepare(
+        'UPDATE EmailDrafts SET status = "sent", sent_at = CURRENT_TIMESTAMP WHERE id = ?',
+      )
+        .bind(id)
+        .run();
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } else {
+      return new Response(
+        JSON.stringify({ error: "One or more email deliveries failed" }),
+        { status: 500 },
+      );
+    }
+  } catch (error) {
+    return handleGlobalError(error, "Admin.SendDraftedEmail", env, request);
+  }
+}
+
+async function executeAIAction(
+  action: any,
+  env: Env,
+  adminId: string,
+  reqUrl: string,
+) {
+  const { type, params } = action;
+
+  // LLM auto-execution of any mutation (create/update/delete/save/assign)
+  // is disabled because there is no human confirmation loop.
+  // Only read-only query actions are allowed automatically.
+  const READ_ONLY_ACTIONS = [
+    "get_detailed_stats",
+    "get_student_details",
+  ];
+  if (!READ_ONLY_ACTIONS.includes(type)) {
+    return {
+      success: false,
+      message: `Action '${type}' is disabled for auto-execution. Please use the admin UI.`,
+    };
+  }
+
+  try {
+    switch (type) {
+      case "create_course": {
+        if (!params.title)
+          return {
+            success: false,
+            message: "Missing required parameter: title",
+          };
+        const id = generateCustomId("YA-CRS");
+        await env.DB.prepare(
+          "INSERT INTO Courses (id, title, description, teacher_id, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            id,
+            params.title,
+            params.description ?? "",
+            adminId,
+            params.price_rupees ?? 0,
+            params.price_usd ?? 0,
+            params.category_id ?? null,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Course "${params.title}" created successfully with ID ${id}. Prices: Ã¢ÂÂ¹${params.price_rupees}, $${params.price_usd}.`,
+        };
+      }
+      case "edit_course": {
+        if (!params.id)
+          return { success: false, message: "Missing required parameter: id" };
+        await env.DB.prepare(
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+        )
+          .bind(
+            params.title ?? null,
+            params.description ?? null,
+            params.price_rupees ?? null,
+            params.price_usd ?? null,
+            params.category_id ?? null,
+            params.id,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Course ${params.id} updated successfully.`,
+        };
+      }
+      case "delete_course": {
+        if (!params.id)
+          return { success: false, message: "Missing required parameter: id" };
+        await env.DB.prepare("DELETE FROM Courses WHERE id = ?")
+          .bind(params.id)
+          .run();
+        return {
+          success: true,
+          message: `Course ${params.id} deleted successfully.`,
+        };
+      }
+      case "create_batch": {
+        if (!params.course_id || !params.name)
+          return {
+            success: false,
+            message: "Missing required parameters: course_id or name",
+          };
+        const id = generateBatchId(params.course_id);
+        await env.DB.prepare(
+          "INSERT INTO Batches (id, course_id, name, start_date, end_date, status, class_start_time, class_end_time, class_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            id,
+            params.course_id,
+            params.name,
+            params.start_date || null,
+            params.end_date || null,
+            params.status || "upcoming",
+            params.class_start_time || null,
+            params.class_end_time || null,
+            params.class_days || null,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Batch "${params.name}" created successfully for Course ${params.course_id} with ID ${id}.`,
+        };
+      }
+      case "edit_batch": {
+        if (!params.id)
+          return { success: false, message: "Missing required parameter: id" };
+        await env.DB.prepare(
+          "UPDATE Batches SET name = COALESCE(?, name), status = COALESCE(?, status), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date) WHERE id = ?",
+        )
+          .bind(
+            params.name ?? null,
+            params.status ?? null,
+            params.start_date ?? null,
+            params.end_date ?? null,
+            params.id,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Batch ${params.id} updated successfully.`,
+        };
+      }
+      case "add_lesson": {
+        if (!params.course_id || !params.title || !params.type)
+          return {
+            success: false,
+            message: "Missing required parameters for lesson.",
+          };
+        const id = generateCustomId("YA-LSN");
+        await env.DB.prepare(
+          "INSERT INTO Lessons (id, course_id, chapter_title, title, type, content_url, text_content, text_content_hi, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            id,
+            params.course_id,
+            params.chapter_title ?? "General",
+            params.title,
+            params.type,
+            params.content_url ?? "",
+            params.text_content ?? "",
+            params.text_content_hi ?? "",
+            0,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Lesson "${params.title}" added to course ${params.course_id} successfully.`,
+        };
+      }
+      case "edit_lesson": {
+        if (!params.lesson_id)
+          return {
+            success: false,
+            message: "Missing required parameter: lesson_id",
+          };
+        await env.DB.prepare(
+          `UPDATE Lessons SET title = COALESCE(?, title), chapter_title = COALESCE(?, chapter_title), type = COALESCE(?, type), content_url = COALESCE(?, content_url), text_content = COALESCE(?, text_content), text_content_hi = COALESCE(?, text_content_hi) WHERE id = ?`,
+        )
+          .bind(
+            params.title ?? null,
+            params.chapter_title ?? null,
+            params.type ?? null,
+            params.content_url ?? null,
+            params.text_content ?? null,
+            params.text_content_hi ?? null,
+            params.lesson_id,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Lesson ${params.lesson_id} updated successfully.`,
+        };
+      }
+      case "delete_lesson": {
+        if (!params.lesson_id)
+          return {
+            success: false,
+            message: "Missing required parameter: lesson_id",
+          };
+        await env.DB.prepare("DELETE FROM Lessons WHERE id = ?")
+          .bind(params.lesson_id)
+          .run();
+        return {
+          success: true,
+          message: `Lesson ${params.lesson_id} deleted successfully.`,
+        };
+      }
+      case "save_broadcast_draft": {
+        if (!params.subject || !params.message)
+          return {
+            success: false,
+            message: "Subject and Message are required for broadcast drafts.",
+          };
+        const id = generateCustomId("YA-BRD");
+        await env.DB.prepare(
+          `
+          INSERT INTO BroadcastDrafts (id, subject, message, type, target_type, target_id, custom_emails, admin_id)
+          VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
+        `,
+        )
+          .bind(
+            id,
+            params.subject,
+            params.message,
+            params.target || "all",
+            params.targetId || "",
+            params.customEmails || "",
+            adminId,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Broadcast draft saved successfully. You can find it in the Broadcast Drafts section.`,
+        };
+      }
+      case "add_student": {
+        if (!params.email)
+          return {
+            success: false,
+            message: "Missing required parameter: email",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        const id = await generateStudentId(
+          env.DB,
+          "IN",
+          "XX",
+          params.full_name || "X",
+        );
+        await env.DB.prepare(
+          "INSERT INTO Users (id, student_id, email, role, full_name) VALUES (?, ?, ?, ?, ?)",
+        )
+          .bind(id, id, lowerEmail, "student", params.full_name ?? "New Student")
+          .run();
+        return {
+          success: true,
+          message: `Student ${lowerEmail} added successfully with ID ${id}.`,
+        };
+      }
+      case "edit_student": {
+        if (!params.email)
+          return {
+            success: false,
+            message: "Missing required parameter: email",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        await env.DB.prepare(
+          "UPDATE Users SET full_name = COALESCE(?, full_name), role = COALESCE(?, role) WHERE email = ?",
+        )
+          .bind(params.full_name ?? null, params.role ?? null, lowerEmail)
+          .run();
+        return {
+          success: true,
+          message: `Student ${lowerEmail} updated successfully.`,
+        };
+      }
+      case "delete_student": {
+        if (!params.email)
+          return {
+            success: false,
+            message: "Missing required parameter: email",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        await env.DB.prepare("DELETE FROM Users WHERE email = ?")
+          .bind(lowerEmail)
+          .run();
+        return {
+          success: true,
+          message: `Student ${lowerEmail} deleted successfully.`,
+        };
+      }
+      case "assign_course": {
+        if (!params.email || !params.course_id)
+          return {
+            success: false,
+            message: "Missing required parameters: email or course_id",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        const user = (await env.DB.prepare(
+          "SELECT id FROM Users WHERE email = ?",
+        )
+          .bind(lowerEmail)
+          .first()) as any;
+        if (!user) return { success: false, message: "User not found." };
+
+        const enrollmentResult = await ensureEnrollment(env, {
+          userId: user.id,
+          courseId: params.course_id,
+          batchId: params.batch_id,
+          status: "active",
+          paymentStatus: params.payment_status || "pending",
+          amountPaid: params.amount_paid,
+          paymentSource: params.payment_source || "ai_admin_assignment",
+          preservePaidStatus: true,
+        });
+        if (enrollmentResult.alreadyInSameBatch && !enrollmentResult.created) {
+          return {
+            success: false,
+            message: "Student is already enrolled in this course and batch.",
+          };
+        }
+        return {
+          success: true,
+          message: enrollmentResult.created
+            ? `Student ${lowerEmail} enrolled in course ${params.course_id}.`
+            : `Student ${lowerEmail} enrollment updated for course ${params.course_id}.`,
+        };
+      }
+      case "delete_enrollment": {
+        if (!params.email || !params.course_id)
+          return {
+            success: false,
+            message: "Missing required parameters: email or course_id",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        const user = (await env.DB.prepare(
+          "SELECT id FROM Users WHERE email = ?",
+        )
+          .bind(lowerEmail)
+          .first()) as any;
+        if (!user) return { success: false, message: "User not found." };
+        await env.DB.prepare(
+          "DELETE FROM Enrollments WHERE user_id = ? AND course_id = ?",
+        )
+          .bind(user.id, params.course_id)
+          .run();
+        return {
+          success: true,
+          message: `Enrollment for ${lowerEmail} in course ${params.course_id} deleted.`,
+        };
+      }
+      case "get_detailed_stats": {
+        const users = await env.DB.prepare(
+          "SELECT role, COUNT(*) as count FROM Users GROUP BY role",
+        ).all();
+        const enrollments = await env.DB.prepare(
+          "SELECT c.title, COUNT(e.id) as enrolls FROM Courses c LEFT JOIN Enrollments e ON c.id = e.course_id GROUP BY c.id",
+        ).all();
+        return {
+          success: true,
+          data: {
+            user_distribution: users.results,
+            course_popularity: enrollments.results,
+          },
+        };
+      }
+      case "get_student_details": {
+        if (!params.email)
+          return {
+            success: false,
+            message: "Missing required parameter: email",
+          };
+        const lowerEmail = params.email.toLowerCase();
+        const user = (await env.DB.prepare(
+          "SELECT id, email, full_name, created_at FROM Users WHERE email = ?",
+        )
+          .bind(lowerEmail)
+          .first()) as any;
+        if (!user) return { success: false, message: "Student not found." };
+        const progress = await env.DB.prepare(
+          `
+          SELECT c.title, e.progress, e.status, e.purchased_at
+          FROM Enrollments e
+          JOIN Courses c ON e.course_id = c.id
+          WHERE e.user_id = ?
+        `,
+        )
+          .bind(user.id)
+          .all();
+        return {
+          success: true,
+          data: { profile: user, enrollments: progress.results },
+        };
+      }
+      case "read_lesson": {
+        if (!params.lesson_id)
+          return {
+            success: false,
+            message: "Missing required parameter: lesson_id",
+          };
+        const lesson = (await env.DB.prepare(
+          "SELECT title, text_content, text_content_hi, type FROM Lessons WHERE id = ?",
+        )
+          .bind(params.lesson_id)
+          .first()) as any;
+        if (!lesson) return { success: false, message: "Lesson not found." };
+        return {
+          success: true,
+          data: {
+            title: lesson.title,
+            content: lesson.text_content ?? `[${lesson.type} content]`,
+            content_hi: lesson.text_content_hi ?? ``,
+            type: lesson.type,
+          },
+        };
+      }
+      case "draft_email": {
+        const id = generateCustomId("YA-EML");
+        const recipientList = Array.isArray(params.to)
+          ? params.to.join(", ")
+          : (params.to ?? "");
+        await env.DB.prepare(
+          "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            id,
+            recipientList,
+            params.subject ?? "",
+            params.body ?? "",
+            params.isHtml ? 1 : 0,
+            adminId,
+          )
+          .run();
+        return {
+          success: true,
+          message: "Ã Â¤Â¡Ã Â¥ÂÃ Â¤Â¶Ã Â¤Â¬Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â¡ Ã Â¤ÂªÃ Â¤Â° Ã Â¤ÂÃ Â¤Â®Ã Â¥ÂÃ Â¤Â² Ã Â¤Â¡Ã Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤Â«Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤Â¹Ã Â¥ÂÃ Â¥Â¤",
+          draft_id: id,
+        };
+      }
+      case "create_form_and_draft_email": {
+        if (!params.form_title || !params.to)
+          return {
+            success: false,
+            message: "Missing required parameters for form/email.",
+          };
+        const formId = generateCustomId("YA-FRM");
+        let slugBase = params.form_title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        if (!slugBase || slugBase.length < 2) slugBase = "admission-form";
+        const slug = `${slugBase}-${crypto.randomUUID().substring(0, 5)}`;
+        const fieldsJsonStr =
+          typeof params.form_fields_json === "string"
+            ? params.form_fields_json
+            : JSON.stringify(params.form_fields_json ?? []);
+        await env.DB.prepare(
+          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            formId,
+            slug,
+            params.form_title,
+            params.form_title_hi ?? null,
+            params.form_description ?? "",
+            params.form_description_hi ?? null,
+            fieldsJsonStr,
+            JSON.stringify(params.theme ?? {}),
+            params.confirmation_email_body ?? null,
+            params.linked_course_id ?? null,
+            params.linked_batch_id ?? null,
+            params.auto_enroll ?? 0,
+            params.eligibility_criteria ?? null,
+          )
+          .run();
+        const currentOrigin = new URL(reqUrl).origin;
+        const formLink = `${currentOrigin}/form?slug=${slug}`;
+        const finalBody = `${params.email_body ?? ""}<br/><br/><p style="text-align:center;"><a href="${formLink}" class="btn" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Fill out the Form</a></p>`;
+        const draftId = generateCustomId("YA-EML");
+        const recipientList = Array.isArray(params.to)
+          ? params.to.join(", ")
+          : (params.to ?? "");
+        await env.DB.prepare(
+          "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+          .bind(
+            draftId,
+            recipientList,
+            params.subject ?? "",
+            finalBody,
+            1,
+            adminId,
+          )
+          .run();
+        return {
+          success: true,
+          message: `Ã Â¤Â«Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â® Ã Â¤ÂÃ Â¤Â° Ã Â¤ÂÃ Â¤Â®Ã Â¥ÂÃ Â¤Â² Ã Â¤Â¡Ã Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤Â«Ã Â¥ÂÃ Â¤Â Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â Ã Â¤Â¬Ã Â¤Â¨Ã Â¤Â¾Ã Â¤Â Ã Â¤ÂÃ Â¤ÂÃ Â¥Â¤ (Form Link: ${formLink})`,
+        };
+      }
+      case "bulk_draft_email": {
+        const { recipients, subject, body, isHtml } = params;
+        if (!Array.isArray(recipients))
+          return { success: false, message: "Recipients must be an array." };
+        const queries = recipients.map((email) => {
+          const id = generateCustomId("YA-EML");
+          return env.DB.prepare(
+            "INSERT INTO EmailDrafts (id, recipient, subject, body, is_html, admin_id) VALUES (?, ?, ?, ?, ?, ?)",
+          ).bind(
+            id,
+            email ?? "",
+            subject ?? "",
+            body ?? "",
+            isHtml ? 1 : 0,
+            adminId,
+          );
+        });
+        await env.DB.batch(queries);
+        return {
+          success: true,
+          message: `${recipients.length} Ã Â¤ÂÃ Â¤Â¾Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¥Â Ã Â¤Â²Ã Â¤Â¿Ã Â¤Â Ã Â¤ÂÃ Â¤Â®Ã Â¥ÂÃ Â¤Â² Ã Â¤Â¡Ã Â¥ÂÃ Â¤Â°Ã Â¤Â¾Ã Â¤Â«Ã Â¥ÂÃ Â¤ÂÃ Â¥ÂÃ Â¤Â¸ Ã Â¤Â¸Ã Â¤Â«Ã Â¤Â²Ã Â¤Â¤Ã Â¤Â¾Ã Â¤ÂªÃ Â¥ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤ÂµÃ Â¤Â Ã Â¤Â¤Ã Â¥ÂÃ Â¤Â¯Ã Â¤Â¾Ã Â¤Â° Ã Â¤ÂÃ Â¤Â¿Ã Â¤Â Ã Â¤ÂÃ Â¤Â Ã Â¤Â¹Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤`,
+        };
+      }
+      case "query_users": {
+        const { filter, course_id } = params;
+        let results;
+        if (filter === "enrolled_all") {
+          results = await env.DB.prepare(
+            "SELECT DISTINCT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id",
+          ).all();
+        } else if (filter === "enrolled_course" && course_id) {
+          results = await env.DB.prepare(
+            "SELECT u.email, u.full_name FROM Users u JOIN Enrollments e ON u.id = e.user_id WHERE e.course_id = ?",
+          )
+            .bind(course_id)
+            .all();
+        } else if (filter === "subscribers") {
+          results = await env.DB.prepare(
+            "SELECT email, 'Subscriber' as full_name FROM Subscribers",
+          ).all();
+        } else {
+          results = await env.DB.prepare(
+            "SELECT email, full_name FROM Users WHERE role = 'student'",
+          ).all();
+        }
+        return {
+          success: true,
+          data: results.results,
+          message: `Found ${results.results.length} users.`,
+        };
+      }
+      case "send_email": {
+        if (!params.to || !params.subject || !params.body)
+          return { success: false, message: "Missing email parameters." };
+        let textFallback =
+          "Please view this email in an HTML compatible client.";
+        let htmlContent = params.body;
+        if (!params.isHtml) {
+          textFallback = params.body;
+          htmlContent = `<p>${params.body}</p>`;
+        }
+        const success = await safeSendEmail(
+          env,
+          params.to,
+          params.subject,
+          params.subject,
+          htmlContent,
+          textFallback,
+        );
+        return success
+          ? { success: true, message: `Email sent to ${params.to}.` }
+          : {
+            success: false,
+            message: `Failed to send email to ${params.to}.`,
+          };
+      }
+      default:
+        return { success: false, message: "Unknown action." };
+    }
+  } catch (e: any) {
+    return { success: false, message: `Action failed: ${e.message}` };
+  }
+}
+
+async function handleGetChatHistory(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+    const userId = payload.sub;
+
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId");
+
+    let records;
+    if (sessionId) {
+      records = await env.DB.prepare(
+        "SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? AND session_id = ? ORDER BY created_at ASC LIMIT 50",
+      )
+        .bind(userId, sessionId)
+        .all();
+    } else {
+      records = await env.DB.prepare(
+        "SELECT role, content, created_at FROM ChatHistory WHERE user_id = ? ORDER BY created_at ASC LIMIT 50",
+      )
+        .bind(userId)
+        .all();
+    }
+
+    return new Response(JSON.stringify(records.results), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "AI.GetHistory", env, request);
+  }
+}
+
+async function handleDeleteChatHistory(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const token = getCookie(request, "session");
+    if (!token)
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+
+    const jwtSecret = await getCachedJwtSecret(env);
+    if (!jwtSecret) throw new Error("JWT_SECRET missing");
+    const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
+    const userId = payload.sub;
+
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId");
+
+    if (sessionId) {
+      await env.DB.prepare(
+        "DELETE FROM ChatHistory WHERE user_id = ? AND session_id = ?",
+      )
+        .bind(userId, sessionId)
+        .run();
+    } else {
+      await env.DB.prepare("DELETE FROM ChatHistory WHERE user_id = ?")
+        .bind(userId)
+        .run();
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, message: "Chat history deleted." }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return handleGlobalError(error, "AI.DeleteHistory", env, request);
+  }
+}
+
+async function handleAIContentHelper(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
     const { context, type, data } = (await request.json()) as any;
 
     let systemPrompt = "";
