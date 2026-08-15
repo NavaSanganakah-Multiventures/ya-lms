@@ -704,7 +704,7 @@ Instructions:
 5. Add or update tests where practical.
 6. Run lint/tests and summarize results.
 7. Commit the fix on the current branch.
-8. At the end of your response, add a Hindi section titled "à¤ªà¤¹à¤²à¥ à¤à¥à¤¯à¤¾ à¤¥à¤¾ à¤à¤° à¤à¤¬ à¤à¥à¤¯à¤¾ à¤¹à¥" that clearly explains what was wrong before and what changed now.
+8. At the end of your response, add a Hindi section titled "ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¥ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ" that clearly explains what was wrong before and what changed now.
 
 If the error is configuration-only, explain the missing secret/config and add safe guards where possible.`;
 }
@@ -725,7 +725,7 @@ async function generateJulesRepairPrompt(env: Env, session: any): Promise<string
     const aiResult = await generateAIContent([
       {
         role: "system",
-        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "à¤ªà¤¹à¤²à¥ à¤à¥à¤¯à¤¾ à¤¥à¤¾ à¤à¤° à¤à¤¬ à¤à¥à¤¯à¤¾ à¤¹à¥" explaining the before/after.`,
+        content: `You write excellent repair prompts for Jules, an autonomous coding agent. Return JSON only: {"prompt":"..."}. The prompt must be specific, safe, and actionable. Preserve the full captured error record in the prompt, including message, stack/details, and full payload. Also instruct Jules to end its response with a Hindi section named "ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¥ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ" explaining the before/after.`,
       },
       {
         role: "user",
@@ -1272,12 +1272,12 @@ export function generateEmailHTML(
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
       <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">ð ${title}</h1>
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.1);">ÃÂ°ÃÂÃÂÃÂ ${title}</h1>
       </div>
       <div style="background: #f8fafc; padding: 32px; color: #334155;">
         ${bodyContent}
         <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; text-align: center;">
-          <p style="margin: 0;">Om! ð</p>
+          <p style="margin: 0;">Om! ÃÂ°ÃÂÃÂÃÂ</p>
           <p style="margin: 4px 0 0 0;">${dashboardName} (${childCompany})</p>
         </div>
       </div>
@@ -1293,7 +1293,7 @@ export function generateRedAlertHTML(
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fecaca; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.1), 0 2px 4px -1px rgba(239, 68, 68, 0.06);">
       <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">ð¨ ${title}</h1>
+        <h1 style="color: white; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">ÃÂ°ÃÂÃÂÃÂ¨ ${title}</h1>
       </div>
       <div style="background: #fff1f2; padding: 32px; color: #881337;">
         ${bodyContent}
@@ -1509,7 +1509,7 @@ async function getAnnouncementRecipients(
 
 function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string; title: string; html: string; text: string } {
   const itemLabel = payload.kind === "course" ? "Course" : "Batch";
-  const hindiLabel = payload.kind === "course" ? "à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸" : "à¤¨à¤¯à¤¾ à¤¬à¥à¤";
+  const hindiLabel = payload.kind === "course" ? "ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸" : "ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ";
   const title = payload.titleHi || payload.title;
   const description = stripHtml(payload.descriptionHi || payload.description || "");
   const details: string[] = [];
@@ -1517,7 +1517,7 @@ function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string
   if (payload.startDate) details.push(`Start date: ${payload.startDate}`);
   if (payload.classDays) details.push(`Class days: ${payload.classDays}`);
   if (payload.classStartTime) details.push(`Class time: ${payload.classStartTime}`);
-  if (payload.priceRupees != null) details.push(`Fees: â¹${payload.priceRupees}`);
+  if (payload.priceRupees != null) details.push(`Fees: ÃÂ¢ÃÂÃÂ¹${payload.priceRupees}`);
 
   const detailHtml = details.length
     ? `<ul>${details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
@@ -1528,10 +1528,10 @@ function buildAnnouncementEmail(payload: AnnouncementPayload): { subject: string
 
   return {
     subject: `${hindiLabel}: ${title}`,
-    title: `${hindiLabel} à¤ªà¥à¤°à¤à¤¾à¤¶à¤¿à¤¤ à¤¹à¥à¤`,
+    title: `${hindiLabel} ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ`,
     html: `
       <p>Namaste,</p>
-      <p>à¤¹à¤®à¤¨à¥ <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤</p>
+      <p>ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ <strong>${escapeHtml(title)}</strong> ${payload.kind === "course" ? "publish" : "create"} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
       ${description ? `<p>${escapeHtml(description)}</p>` : ""}
       ${detailHtml}
       ${actionHtml}
@@ -1561,15 +1561,15 @@ async function sendAnnouncementEmails(
 }
 
 function buildSocialPost(payload: AnnouncementPayload): string {
-  const prefix = payload.kind === "course" ? "ð New Course" : "ð New Batch";
+  const prefix = payload.kind === "course" ? "ÃÂ°ÃÂÃÂÃÂ New Course" : "ÃÂ°ÃÂÃÂÃÂ New Batch";
   const title = payload.titleHi || payload.title;
   const lines = [prefix, title];
   const description = stripHtml(payload.descriptionHi || payload.description || "");
   if (description) lines.push("", description.slice(0, 500));
   if (payload.courseTitle && payload.kind === "batch") lines.push(`Course: ${payload.courseTitle}`);
   if (payload.startDate) lines.push(`Starts: ${payload.startDate}`);
-  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" â¢ ")}`);
-  if (payload.priceRupees != null) lines.push(`Fees: â¹${payload.priceRupees}`);
+  if (payload.classDays || payload.classStartTime) lines.push(`Schedule: ${[payload.classDays, payload.classStartTime].filter(Boolean).join(" ÃÂ¢ÃÂÃÂ¢ ")}`);
+  if (payload.priceRupees != null) lines.push(`Fees: ÃÂ¢ÃÂÃÂ¹${payload.priceRupees}`);
   if (payload.url) lines.push("", payload.url);
   lines.push("", "#Adityanveshan #YagyaAshram #OnlineLearning");
   return lines.join("\n");
@@ -1613,8 +1613,8 @@ type SocialIntegrationId = (typeof SOCIAL_INTEGRATION_CONFIG)[number]["id"];
 
 function maskSecretValue(value: string | null): string {
   if (!value) return "";
-  if (value.length <= 8) return "â¢â¢â¢â¢";
-  return `${value.slice(0, 4)}â¢â¢â¢â¢${value.slice(-4)}`;
+  if (value.length <= 8) return "ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢";
+  return `${value.slice(0, 4)}ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢ÃÂ¢ÃÂÃÂ¢${value.slice(-4)}`;
 }
 
 async function isSocialPlatformEnabled(env: Env, platform: string): Promise<boolean> {
@@ -1793,7 +1793,7 @@ async function handleAdminGoogleCallback(
     return new Response(
       `<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0a0a0a;color:#fff;">
         <div style="text-align:center;padding:2rem;border-radius:1rem;border:1px solid #333;background:#111;">
-          <h1 style="color:#22c55e;">â Google Calendar Connected</h1>
+          <h1 style="color:#22c55e;">ÃÂ¢ÃÂÃÂ Google Calendar Connected</h1>
           <p>${userInfo.email ? `Connected as: <strong>${escapeHtml(userInfo.email)}</strong>` : ""}</p>
           <p style="color:#888;font-size:14px;">You can close this tab and return to the Integrations page.</p>
         </div>
@@ -2235,7 +2235,7 @@ async function logAdminActivity(
   details: string,
   ip: string = "Unknown",
 ) {
-  const subject = `ð¡ï¸ Admin Activity Alert: ${action}`;
+  const subject = `ÃÂ°ÃÂÃÂÃÂ¡ÃÂ¯ÃÂ¸ÃÂ Admin Activity Alert: ${action}`;
   const title = "Admin Activity Logged";
   const html = `
     <p><strong>Admin:</strong> ${adminEmail}</p>
@@ -2373,7 +2373,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
-    // Log OTP request for debugging â email and OTP value intentionally excluded from logs
+    // Log OTP request for debugging ÃÂ¢ÃÂÃÂ email and OTP value intentionally excluded from logs
     console.log(`[OTP GENERATED]`);
 
     // Call Cloudflare Email Service implementation via safe wrapper
@@ -2402,7 +2402,7 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
             "INSERT OR REPLACE INTO OTPs (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)"
           ).bind(email, oldOtpRow.otp, oldOtpRow.expires_at).run();
         } else {
-          // No previous OTP â delete the new one so user can request fresh
+          // No previous OTP ÃÂ¢ÃÂÃÂ delete the new one so user can request fresh
           await env.DB.prepare("DELETE FROM OTPs WHERE email = ?").bind(email).run();
         }
       }
@@ -2618,7 +2618,7 @@ async function handleVerifyOTP(request: Request, env: Env, ctx: ExecutionContext
     try {
       const clientIp = getClientIP(request);
       const loginTime = getISTTime();
-      const loginSubject = `ð Login Alert: ${user.role.toUpperCase()}`;
+      const loginSubject = `ÃÂ°ÃÂÃÂÃÂ Login Alert: ${user.role.toUpperCase()}`;
       const loginTitle = "New Login Detected";
       const loginHtml = `
         <p>Namaste,</p>
@@ -2706,18 +2706,18 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
 
     // Send Welcome Email
     const welcomeHtml = `
-      <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${escapeHtml(full_name)}</strong>,</p>
-      <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+      <p style="font-size:16px;">ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${escapeHtml(full_name)}</strong>,</p>
+      <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Adityanveshan LMS ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° account ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
       <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${generatedId}</code></p>
-      <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
+      <p>Login ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ email (<strong>${email}</strong>) use ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° OTP ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ verify ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
     `;
     const safeName = full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${safeName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${generatedId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
+    const welcomeText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${safeName},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Adityanveshan LMS ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° account ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\nStudent ID: ${generatedId}\n\nLogin ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ email (${email}) use ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° OTP ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ verify ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`;
     ctx.waitUntil(safeSendEmail(
       env,
       email,
       "Welcome to Adityanveshan",
-      "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
+      "ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤!",
       welcomeHtml,
       welcomeText,
     ));
@@ -2764,7 +2764,7 @@ async function handleRegister(request: Request, env: Env, ctx: ExecutionContext)
   }
 }
 
-// GET /api/auth/validate-session â used by middleware to check if session is still valid
+// GET /api/auth/validate-session ÃÂ¢ÃÂÃÂ used by middleware to check if session is still valid
 async function handleValidateSession(
   request: Request,
   env: Env,
@@ -2842,7 +2842,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   return response;
 }
 
-// POST /api/auth/refresh â Activity ping: validates session & checks inactivity (1 hour limit)
+// POST /api/auth/refresh ÃÂ¢ÃÂÃÂ Activity ping: validates session & checks inactivity (1 hour limit)
 // Returns new token if active, 401 if expired or inactive >1h
 async function handleRefreshSession(
   request: Request,
@@ -3048,7 +3048,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
                  }
               }
            } catch {
-              // Invalid/expired session â deny below without IP blacklist
+              // Invalid/expired session ÃÂ¢ÃÂÃÂ deny below without IP blacklist
            }
         }
         // No valid session credential found. Deny immediately so expired or
@@ -3095,7 +3095,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
       // Without appUrl we cannot verify the origin, so block to prevent CSRF.
       if (origin || referer) return false;
 
-      // No identifying headers at all â allow through to route-level auth
+      // No identifying headers at all ÃÂ¢ÃÂÃÂ allow through to route-level auth
       return true;
   }
 
@@ -3147,7 +3147,7 @@ async function verifyAppSignature(request: Request, env: Env): Promise<boolean> 
 // This avoids a KV read on every authenticated request (requireAuth, requireAdmin, etc.)
 let _jwtSecretCache: string | null = null;
 let _jwtSecretCacheExpiry = 0;
-const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds â shorter window to limit auth bypass risk on rotation
+const JWT_SECRET_CACHE_TTL = 30 * 1000; // 30 seconds ÃÂ¢ÃÂÃÂ shorter window to limit auth bypass risk on rotation
 
 async function getCachedJwtSecret(env: Env): Promise<string | null> {
   const now = Date.now();
@@ -3174,7 +3174,7 @@ function generateSecureOTP(): string {
 /**
  * Constant-time string comparison to prevent timing attacks on secrets like OTPs.
  * Always compares all characters regardless of where a mismatch occurs.
- * No early returns â same code path for any input length or content.
+ * No early returns ÃÂ¢ÃÂÃÂ same code path for any input length or content.
  */
 function timingSafeEqual(a: string, b: string): boolean {
   const aBytes = new TextEncoder().encode(a);
@@ -3220,7 +3220,7 @@ function generateBatchId(courseId: string): string {
 }
 
 // ================================================================
-// ð¡ BROADCAST HELPERS â DataSyncDO ke through WebSocket broadcast
+// ÃÂ°ÃÂÃÂÃÂ¡ BROADCAST HELPERS ÃÂ¢ÃÂÃÂ DataSyncDO ke through WebSocket broadcast
 // ================================================================
 
 /**
@@ -3258,7 +3258,7 @@ async function broadcastToAll(env: Env, type: string, data: any): Promise<void> 
     const stub = env.DATA_SYNC_DO.get(doId);
     await stub.fetch("http://do/broadcast", {
       method: "POST",
-      body: JSON.stringify({ type, data }),  // No userId â broadcasts to ALL WS
+      body: JSON.stringify({ type, data }),  // No userId ÃÂ¢ÃÂÃÂ broadcasts to ALL WS
     });
   } catch (e) {
     console.error("[Broadcast] Global broadcast failed:", e);
@@ -3359,16 +3359,16 @@ function transliterateFirstLetter(char: string): string {
 
   // Devanagari (Hindi, Marathi, Sanskrit) first-letter mappings
   const DEVANAGARI_MAP: Record<string, string> = {
-    'à¤': 'A', 'à¤': 'A', 'à¤': 'I', 'à¤': 'I', 'à¤': 'U', 'à¤': 'U',
-    'à¤': 'E', 'à¤': 'A', 'à¤': 'O', 'à¤': 'O',
-    'à¤': 'K', 'à¤': 'K', 'à¤': 'G', 'à¤': 'G', 'à¤': 'N',
-    'à¤': 'C', 'à¤': 'C', 'à¤': 'J', 'à¤': 'J', 'à¤': 'N',
-    'à¤': 'T', 'à¤ ': 'T', 'à¤¡': 'D', 'à¤¢': 'D', 'à¤£': 'N',
-    'à¤¤': 'T', 'à¤¥': 'T', 'à¤¦': 'D', 'à¤§': 'D', 'à¤¨': 'N',
-    'à¤ª': 'P', 'à¤«': 'P', 'à¤¬': 'B', 'à¤­': 'B', 'à¤®': 'M',
-    'à¤¯': 'Y', 'à¤°': 'R', 'à¤²': 'L', 'à¤µ': 'V',
-    'à¤¶': 'S', 'à¤·': 'S', 'à¤¸': 'S', 'à¤¹': 'H',
-    'à¤³': 'L', 'à¤à¥à¤·': 'K', 'à¤à¥à¤': 'J',
+    'ÃÂ ÃÂ¤ÃÂ': 'A', 'ÃÂ ÃÂ¤ÃÂ': 'A', 'ÃÂ ÃÂ¤ÃÂ': 'I', 'ÃÂ ÃÂ¤ÃÂ': 'I', 'ÃÂ ÃÂ¤ÃÂ': 'U', 'ÃÂ ÃÂ¤ÃÂ': 'U',
+    'ÃÂ ÃÂ¤ÃÂ': 'E', 'ÃÂ ÃÂ¤ÃÂ': 'A', 'ÃÂ ÃÂ¤ÃÂ': 'O', 'ÃÂ ÃÂ¤ÃÂ': 'O',
+    'ÃÂ ÃÂ¤ÃÂ': 'K', 'ÃÂ ÃÂ¤ÃÂ': 'K', 'ÃÂ ÃÂ¤ÃÂ': 'G', 'ÃÂ ÃÂ¤ÃÂ': 'G', 'ÃÂ ÃÂ¤ÃÂ': 'N',
+    'ÃÂ ÃÂ¤ÃÂ': 'C', 'ÃÂ ÃÂ¤ÃÂ': 'C', 'ÃÂ ÃÂ¤ÃÂ': 'J', 'ÃÂ ÃÂ¤ÃÂ': 'J', 'ÃÂ ÃÂ¤ÃÂ': 'N',
+    'ÃÂ ÃÂ¤ÃÂ': 'T', 'ÃÂ ÃÂ¤ÃÂ ': 'T', 'ÃÂ ÃÂ¤ÃÂ¡': 'D', 'ÃÂ ÃÂ¤ÃÂ¢': 'D', 'ÃÂ ÃÂ¤ÃÂ£': 'N',
+    'ÃÂ ÃÂ¤ÃÂ¤': 'T', 'ÃÂ ÃÂ¤ÃÂ¥': 'T', 'ÃÂ ÃÂ¤ÃÂ¦': 'D', 'ÃÂ ÃÂ¤ÃÂ§': 'D', 'ÃÂ ÃÂ¤ÃÂ¨': 'N',
+    'ÃÂ ÃÂ¤ÃÂª': 'P', 'ÃÂ ÃÂ¤ÃÂ«': 'P', 'ÃÂ ÃÂ¤ÃÂ¬': 'B', 'ÃÂ ÃÂ¤ÃÂ­': 'B', 'ÃÂ ÃÂ¤ÃÂ®': 'M',
+    'ÃÂ ÃÂ¤ÃÂ¯': 'Y', 'ÃÂ ÃÂ¤ÃÂ°': 'R', 'ÃÂ ÃÂ¤ÃÂ²': 'L', 'ÃÂ ÃÂ¤ÃÂµ': 'V',
+    'ÃÂ ÃÂ¤ÃÂ¶': 'S', 'ÃÂ ÃÂ¤ÃÂ·': 'S', 'ÃÂ ÃÂ¤ÃÂ¸': 'S', 'ÃÂ ÃÂ¤ÃÂ¹': 'H',
+    'ÃÂ ÃÂ¤ÃÂ³': 'L', 'ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ·': 'K', 'ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ': 'J',
   };
 
   const devMap = DEVANAGARI_MAP[char] || DEVANAGARI_MAP[upper];
@@ -3376,108 +3376,108 @@ function transliterateFirstLetter(char: string): string {
 
   // Bengali
   const BENGALI_MAP: Record<string, string> = {
-    'à¦': 'A', 'à¦': 'A', 'à¦': 'I', 'à¦': 'I', 'à¦': 'U', 'à¦': 'U',
-    'à¦': 'E', 'à¦': 'A', 'à¦': 'O', 'à¦': 'O',
-    'à¦': 'K', 'à¦': 'K', 'à¦': 'G', 'à¦': 'G', 'à¦': 'N',
-    'à¦': 'C', 'à¦': 'C', 'à¦': 'J', 'à¦': 'J', 'à¦': 'N',
-    'à¦': 'T', 'à¦ ': 'T', 'à¦¡': 'D', 'à¦¢': 'D', 'à¦£': 'N',
-    'à¦¤': 'T', 'à¦¥': 'T', 'à¦¦': 'D', 'à¦§': 'D', 'à¦¨': 'N',
-    'à¦ª': 'P', 'à¦«': 'P', 'à¦¬': 'B', 'à¦­': 'B', 'à¦®': 'M',
-    'à¦¯': 'Y', 'à¦°': 'R', 'à¦²': 'L', 'à¦¶': 'S', 'à¦·': 'S', 'à¦¸': 'S', 'à¦¹': 'H',
+    'ÃÂ ÃÂ¦ÃÂ': 'A', 'ÃÂ ÃÂ¦ÃÂ': 'A', 'ÃÂ ÃÂ¦ÃÂ': 'I', 'ÃÂ ÃÂ¦ÃÂ': 'I', 'ÃÂ ÃÂ¦ÃÂ': 'U', 'ÃÂ ÃÂ¦ÃÂ': 'U',
+    'ÃÂ ÃÂ¦ÃÂ': 'E', 'ÃÂ ÃÂ¦ÃÂ': 'A', 'ÃÂ ÃÂ¦ÃÂ': 'O', 'ÃÂ ÃÂ¦ÃÂ': 'O',
+    'ÃÂ ÃÂ¦ÃÂ': 'K', 'ÃÂ ÃÂ¦ÃÂ': 'K', 'ÃÂ ÃÂ¦ÃÂ': 'G', 'ÃÂ ÃÂ¦ÃÂ': 'G', 'ÃÂ ÃÂ¦ÃÂ': 'N',
+    'ÃÂ ÃÂ¦ÃÂ': 'C', 'ÃÂ ÃÂ¦ÃÂ': 'C', 'ÃÂ ÃÂ¦ÃÂ': 'J', 'ÃÂ ÃÂ¦ÃÂ': 'J', 'ÃÂ ÃÂ¦ÃÂ': 'N',
+    'ÃÂ ÃÂ¦ÃÂ': 'T', 'ÃÂ ÃÂ¦ÃÂ ': 'T', 'ÃÂ ÃÂ¦ÃÂ¡': 'D', 'ÃÂ ÃÂ¦ÃÂ¢': 'D', 'ÃÂ ÃÂ¦ÃÂ£': 'N',
+    'ÃÂ ÃÂ¦ÃÂ¤': 'T', 'ÃÂ ÃÂ¦ÃÂ¥': 'T', 'ÃÂ ÃÂ¦ÃÂ¦': 'D', 'ÃÂ ÃÂ¦ÃÂ§': 'D', 'ÃÂ ÃÂ¦ÃÂ¨': 'N',
+    'ÃÂ ÃÂ¦ÃÂª': 'P', 'ÃÂ ÃÂ¦ÃÂ«': 'P', 'ÃÂ ÃÂ¦ÃÂ¬': 'B', 'ÃÂ ÃÂ¦ÃÂ­': 'B', 'ÃÂ ÃÂ¦ÃÂ®': 'M',
+    'ÃÂ ÃÂ¦ÃÂ¯': 'Y', 'ÃÂ ÃÂ¦ÃÂ°': 'R', 'ÃÂ ÃÂ¦ÃÂ²': 'L', 'ÃÂ ÃÂ¦ÃÂ¶': 'S', 'ÃÂ ÃÂ¦ÃÂ·': 'S', 'ÃÂ ÃÂ¦ÃÂ¸': 'S', 'ÃÂ ÃÂ¦ÃÂ¹': 'H',
   };
   if (BENGALI_MAP[char]) return BENGALI_MAP[char];
 
   // Gurmukhi (Punjabi)
   const GURMUKHI_MAP: Record<string, string> = {
-    'à¨': 'A', 'à¨': 'A', 'à¨': 'I', 'à¨': 'I', 'à¨': 'U', 'à¨': 'U',
-    'à¨': 'E', 'à¨': 'A', 'à¨': 'O', 'à¨': 'O',
-    'à¨': 'K', 'à¨': 'K', 'à¨': 'G', 'à¨': 'G', 'à¨': 'N',
-    'à¨': 'C', 'à¨': 'C', 'à¨': 'J', 'à¨': 'J', 'à¨': 'N',
-    'à¨': 'T', 'à¨ ': 'T', 'à¨¡': 'D', 'à¨¢': 'D', 'à¨£': 'N',
-    'à¨¤': 'T', 'à¨¥': 'T', 'à¨¦': 'D', 'à¨§': 'D', 'à¨¨': 'N',
-    'à¨ª': 'P', 'à¨«': 'P', 'à¨¬': 'B', 'à¨­': 'B', 'à¨®': 'M',
-    'à¨¯': 'Y', 'à¨°': 'R', 'à¨²': 'L', 'à¨µ': 'V', 'à¨¸': 'S', 'à¨¹': 'H',
+    'ÃÂ ÃÂ¨ÃÂ': 'A', 'ÃÂ ÃÂ¨ÃÂ': 'A', 'ÃÂ ÃÂ¨ÃÂ': 'I', 'ÃÂ ÃÂ¨ÃÂ': 'I', 'ÃÂ ÃÂ¨ÃÂ': 'U', 'ÃÂ ÃÂ¨ÃÂ': 'U',
+    'ÃÂ ÃÂ¨ÃÂ': 'E', 'ÃÂ ÃÂ¨ÃÂ': 'A', 'ÃÂ ÃÂ¨ÃÂ': 'O', 'ÃÂ ÃÂ¨ÃÂ': 'O',
+    'ÃÂ ÃÂ¨ÃÂ': 'K', 'ÃÂ ÃÂ¨ÃÂ': 'K', 'ÃÂ ÃÂ¨ÃÂ': 'G', 'ÃÂ ÃÂ¨ÃÂ': 'G', 'ÃÂ ÃÂ¨ÃÂ': 'N',
+    'ÃÂ ÃÂ¨ÃÂ': 'C', 'ÃÂ ÃÂ¨ÃÂ': 'C', 'ÃÂ ÃÂ¨ÃÂ': 'J', 'ÃÂ ÃÂ¨ÃÂ': 'J', 'ÃÂ ÃÂ¨ÃÂ': 'N',
+    'ÃÂ ÃÂ¨ÃÂ': 'T', 'ÃÂ ÃÂ¨ÃÂ ': 'T', 'ÃÂ ÃÂ¨ÃÂ¡': 'D', 'ÃÂ ÃÂ¨ÃÂ¢': 'D', 'ÃÂ ÃÂ¨ÃÂ£': 'N',
+    'ÃÂ ÃÂ¨ÃÂ¤': 'T', 'ÃÂ ÃÂ¨ÃÂ¥': 'T', 'ÃÂ ÃÂ¨ÃÂ¦': 'D', 'ÃÂ ÃÂ¨ÃÂ§': 'D', 'ÃÂ ÃÂ¨ÃÂ¨': 'N',
+    'ÃÂ ÃÂ¨ÃÂª': 'P', 'ÃÂ ÃÂ¨ÃÂ«': 'P', 'ÃÂ ÃÂ¨ÃÂ¬': 'B', 'ÃÂ ÃÂ¨ÃÂ­': 'B', 'ÃÂ ÃÂ¨ÃÂ®': 'M',
+    'ÃÂ ÃÂ¨ÃÂ¯': 'Y', 'ÃÂ ÃÂ¨ÃÂ°': 'R', 'ÃÂ ÃÂ¨ÃÂ²': 'L', 'ÃÂ ÃÂ¨ÃÂµ': 'V', 'ÃÂ ÃÂ¨ÃÂ¸': 'S', 'ÃÂ ÃÂ¨ÃÂ¹': 'H',
   };
   if (GURMUKHI_MAP[char]) return GURMUKHI_MAP[char];
 
   // Gujarati
   const GUJARATI_MAP: Record<string, string> = {
-    'àª': 'A', 'àª': 'A', 'àª': 'I', 'àª': 'I', 'àª': 'U', 'àª': 'U',
-    'àª': 'E', 'àª': 'A', 'àª': 'O', 'àª': 'O',
-    'àª': 'K', 'àª': 'K', 'àª': 'G', 'àª': 'G', 'àª': 'N',
-    'àª': 'C', 'àª': 'C', 'àª': 'J', 'àª': 'J', 'àª': 'N',
-    'àª': 'T', 'àª ': 'T', 'àª¡': 'D', 'àª¢': 'D', 'àª£': 'N',
-    'àª¤': 'T', 'àª¥': 'T', 'àª¦': 'D', 'àª§': 'D', 'àª¨': 'N',
-    'àªª': 'P', 'àª«': 'P', 'àª¬': 'B', 'àª­': 'B', 'àª®': 'M',
-    'àª¯': 'Y', 'àª°': 'R', 'àª²': 'L', 'àªµ': 'V',
-    'àª¶': 'S', 'àª·': 'S', 'àª¸': 'S', 'àª¹': 'H', 'àª³': 'L',
+    'ÃÂ ÃÂªÃÂ': 'A', 'ÃÂ ÃÂªÃÂ': 'A', 'ÃÂ ÃÂªÃÂ': 'I', 'ÃÂ ÃÂªÃÂ': 'I', 'ÃÂ ÃÂªÃÂ': 'U', 'ÃÂ ÃÂªÃÂ': 'U',
+    'ÃÂ ÃÂªÃÂ': 'E', 'ÃÂ ÃÂªÃÂ': 'A', 'ÃÂ ÃÂªÃÂ': 'O', 'ÃÂ ÃÂªÃÂ': 'O',
+    'ÃÂ ÃÂªÃÂ': 'K', 'ÃÂ ÃÂªÃÂ': 'K', 'ÃÂ ÃÂªÃÂ': 'G', 'ÃÂ ÃÂªÃÂ': 'G', 'ÃÂ ÃÂªÃÂ': 'N',
+    'ÃÂ ÃÂªÃÂ': 'C', 'ÃÂ ÃÂªÃÂ': 'C', 'ÃÂ ÃÂªÃÂ': 'J', 'ÃÂ ÃÂªÃÂ': 'J', 'ÃÂ ÃÂªÃÂ': 'N',
+    'ÃÂ ÃÂªÃÂ': 'T', 'ÃÂ ÃÂªÃÂ ': 'T', 'ÃÂ ÃÂªÃÂ¡': 'D', 'ÃÂ ÃÂªÃÂ¢': 'D', 'ÃÂ ÃÂªÃÂ£': 'N',
+    'ÃÂ ÃÂªÃÂ¤': 'T', 'ÃÂ ÃÂªÃÂ¥': 'T', 'ÃÂ ÃÂªÃÂ¦': 'D', 'ÃÂ ÃÂªÃÂ§': 'D', 'ÃÂ ÃÂªÃÂ¨': 'N',
+    'ÃÂ ÃÂªÃÂª': 'P', 'ÃÂ ÃÂªÃÂ«': 'P', 'ÃÂ ÃÂªÃÂ¬': 'B', 'ÃÂ ÃÂªÃÂ­': 'B', 'ÃÂ ÃÂªÃÂ®': 'M',
+    'ÃÂ ÃÂªÃÂ¯': 'Y', 'ÃÂ ÃÂªÃÂ°': 'R', 'ÃÂ ÃÂªÃÂ²': 'L', 'ÃÂ ÃÂªÃÂµ': 'V',
+    'ÃÂ ÃÂªÃÂ¶': 'S', 'ÃÂ ÃÂªÃÂ·': 'S', 'ÃÂ ÃÂªÃÂ¸': 'S', 'ÃÂ ÃÂªÃÂ¹': 'H', 'ÃÂ ÃÂªÃÂ³': 'L',
   };
   if (GUJARATI_MAP[char]) return GUJARATI_MAP[char];
 
   // Tamil
   const TAMIL_MAP: Record<string, string> = {
-    'à®': 'A', 'à®': 'A', 'à®': 'I', 'à®': 'I', 'à®': 'U', 'à®': 'U',
-    'à®': 'E', 'à®': 'E', 'à®': 'A', 'à®': 'O', 'à®': 'O', 'à®': 'O',
-    'à®': 'K', 'à®': 'N', 'à®': 'C', 'à®': 'N', 'à®': 'T',
-    'à®£': 'N', 'à®¤': 'T', 'à®¨': 'N', 'à®©': 'N', 'à®ª': 'P',
-    'à®®': 'M', 'à®¯': 'Y', 'à®°': 'R', 'à®²': 'L', 'à®³': 'L',
-    'à®´': 'L', 'à®µ': 'V', 'à®¶': 'S', 'à®·': 'S', 'à®¸': 'S', 'à®¹': 'H',
+    'ÃÂ ÃÂ®ÃÂ': 'A', 'ÃÂ ÃÂ®ÃÂ': 'A', 'ÃÂ ÃÂ®ÃÂ': 'I', 'ÃÂ ÃÂ®ÃÂ': 'I', 'ÃÂ ÃÂ®ÃÂ': 'U', 'ÃÂ ÃÂ®ÃÂ': 'U',
+    'ÃÂ ÃÂ®ÃÂ': 'E', 'ÃÂ ÃÂ®ÃÂ': 'E', 'ÃÂ ÃÂ®ÃÂ': 'A', 'ÃÂ ÃÂ®ÃÂ': 'O', 'ÃÂ ÃÂ®ÃÂ': 'O', 'ÃÂ ÃÂ®ÃÂ': 'O',
+    'ÃÂ ÃÂ®ÃÂ': 'K', 'ÃÂ ÃÂ®ÃÂ': 'N', 'ÃÂ ÃÂ®ÃÂ': 'C', 'ÃÂ ÃÂ®ÃÂ': 'N', 'ÃÂ ÃÂ®ÃÂ': 'T',
+    'ÃÂ ÃÂ®ÃÂ£': 'N', 'ÃÂ ÃÂ®ÃÂ¤': 'T', 'ÃÂ ÃÂ®ÃÂ¨': 'N', 'ÃÂ ÃÂ®ÃÂ©': 'N', 'ÃÂ ÃÂ®ÃÂª': 'P',
+    'ÃÂ ÃÂ®ÃÂ®': 'M', 'ÃÂ ÃÂ®ÃÂ¯': 'Y', 'ÃÂ ÃÂ®ÃÂ°': 'R', 'ÃÂ ÃÂ®ÃÂ²': 'L', 'ÃÂ ÃÂ®ÃÂ³': 'L',
+    'ÃÂ ÃÂ®ÃÂ´': 'L', 'ÃÂ ÃÂ®ÃÂµ': 'V', 'ÃÂ ÃÂ®ÃÂ¶': 'S', 'ÃÂ ÃÂ®ÃÂ·': 'S', 'ÃÂ ÃÂ®ÃÂ¸': 'S', 'ÃÂ ÃÂ®ÃÂ¹': 'H',
   };
   if (TAMIL_MAP[char]) return TAMIL_MAP[char];
 
   // Telugu
   const TELUGU_MAP: Record<string, string> = {
-    'à°': 'A', 'à°': 'A', 'à°': 'I', 'à°': 'I', 'à°': 'U', 'à°': 'U',
-    'à°': 'E', 'à°': 'E', 'à°': 'A', 'à°': 'O', 'à°': 'O', 'à°': 'O',
-    'à°': 'K', 'à°': 'K', 'à°': 'G', 'à°': 'G', 'à°': 'N',
-    'à°': 'C', 'à°': 'C', 'à°': 'J', 'à°': 'J', 'à°': 'N',
-    'à°': 'T', 'à° ': 'T', 'à°¡': 'D', 'à°¢': 'D', 'à°£': 'N',
-    'à°¤': 'T', 'à°¥': 'T', 'à°¦': 'D', 'à°§': 'D', 'à°¨': 'N',
-    'à°ª': 'P', 'à°«': 'P', 'à°¬': 'B', 'à°­': 'B', 'à°®': 'M',
-    'à°¯': 'Y', 'à°°': 'R', 'à°²': 'L', 'à°µ': 'V',
-    'à°¶': 'S', 'à°·': 'S', 'à°¸': 'S', 'à°¹': 'H', 'à°³': 'L', 'à°à±à°·': 'K',
+    'ÃÂ ÃÂ°ÃÂ': 'A', 'ÃÂ ÃÂ°ÃÂ': 'A', 'ÃÂ ÃÂ°ÃÂ': 'I', 'ÃÂ ÃÂ°ÃÂ': 'I', 'ÃÂ ÃÂ°ÃÂ': 'U', 'ÃÂ ÃÂ°ÃÂ': 'U',
+    'ÃÂ ÃÂ°ÃÂ': 'E', 'ÃÂ ÃÂ°ÃÂ': 'E', 'ÃÂ ÃÂ°ÃÂ': 'A', 'ÃÂ ÃÂ°ÃÂ': 'O', 'ÃÂ ÃÂ°ÃÂ': 'O', 'ÃÂ ÃÂ°ÃÂ': 'O',
+    'ÃÂ ÃÂ°ÃÂ': 'K', 'ÃÂ ÃÂ°ÃÂ': 'K', 'ÃÂ ÃÂ°ÃÂ': 'G', 'ÃÂ ÃÂ°ÃÂ': 'G', 'ÃÂ ÃÂ°ÃÂ': 'N',
+    'ÃÂ ÃÂ°ÃÂ': 'C', 'ÃÂ ÃÂ°ÃÂ': 'C', 'ÃÂ ÃÂ°ÃÂ': 'J', 'ÃÂ ÃÂ°ÃÂ': 'J', 'ÃÂ ÃÂ°ÃÂ': 'N',
+    'ÃÂ ÃÂ°ÃÂ': 'T', 'ÃÂ ÃÂ°ÃÂ ': 'T', 'ÃÂ ÃÂ°ÃÂ¡': 'D', 'ÃÂ ÃÂ°ÃÂ¢': 'D', 'ÃÂ ÃÂ°ÃÂ£': 'N',
+    'ÃÂ ÃÂ°ÃÂ¤': 'T', 'ÃÂ ÃÂ°ÃÂ¥': 'T', 'ÃÂ ÃÂ°ÃÂ¦': 'D', 'ÃÂ ÃÂ°ÃÂ§': 'D', 'ÃÂ ÃÂ°ÃÂ¨': 'N',
+    'ÃÂ ÃÂ°ÃÂª': 'P', 'ÃÂ ÃÂ°ÃÂ«': 'P', 'ÃÂ ÃÂ°ÃÂ¬': 'B', 'ÃÂ ÃÂ°ÃÂ­': 'B', 'ÃÂ ÃÂ°ÃÂ®': 'M',
+    'ÃÂ ÃÂ°ÃÂ¯': 'Y', 'ÃÂ ÃÂ°ÃÂ°': 'R', 'ÃÂ ÃÂ°ÃÂ²': 'L', 'ÃÂ ÃÂ°ÃÂµ': 'V',
+    'ÃÂ ÃÂ°ÃÂ¶': 'S', 'ÃÂ ÃÂ°ÃÂ·': 'S', 'ÃÂ ÃÂ°ÃÂ¸': 'S', 'ÃÂ ÃÂ°ÃÂ¹': 'H', 'ÃÂ ÃÂ°ÃÂ³': 'L', 'ÃÂ ÃÂ°ÃÂÃÂ ÃÂ±ÃÂÃÂ ÃÂ°ÃÂ·': 'K',
   };
   if (TELUGU_MAP[char]) return TELUGU_MAP[char];
 
   // Kannada
   const KANNADA_MAP: Record<string, string> = {
-    'à²': 'A', 'à²': 'A', 'à²': 'I', 'à²': 'I', 'à²': 'U', 'à²': 'U',
-    'à²': 'E', 'à²': 'E', 'à²': 'A', 'à²': 'O', 'à²': 'O', 'à²': 'O',
-    'à²': 'K', 'à²': 'K', 'à²': 'G', 'à²': 'G', 'à²': 'N',
-    'à²': 'C', 'à²': 'C', 'à²': 'J', 'à²': 'J', 'à²': 'N',
-    'à²': 'T', 'à² ': 'T', 'à²¡': 'D', 'à²¢': 'D', 'à²£': 'N',
-    'à²¤': 'T', 'à²¥': 'T', 'à²¦': 'D', 'à²§': 'D', 'à²¨': 'N',
-    'à²ª': 'P', 'à²«': 'P', 'à²¬': 'B', 'à²­': 'B', 'à²®': 'M',
-    'à²¯': 'Y', 'à²°': 'R', 'à²²': 'L', 'à²µ': 'V',
-    'à²¶': 'S', 'à²·': 'S', 'à²¸': 'S', 'à²¹': 'H', 'à²³': 'L',
+    'ÃÂ ÃÂ²ÃÂ': 'A', 'ÃÂ ÃÂ²ÃÂ': 'A', 'ÃÂ ÃÂ²ÃÂ': 'I', 'ÃÂ ÃÂ²ÃÂ': 'I', 'ÃÂ ÃÂ²ÃÂ': 'U', 'ÃÂ ÃÂ²ÃÂ': 'U',
+    'ÃÂ ÃÂ²ÃÂ': 'E', 'ÃÂ ÃÂ²ÃÂ': 'E', 'ÃÂ ÃÂ²ÃÂ': 'A', 'ÃÂ ÃÂ²ÃÂ': 'O', 'ÃÂ ÃÂ²ÃÂ': 'O', 'ÃÂ ÃÂ²ÃÂ': 'O',
+    'ÃÂ ÃÂ²ÃÂ': 'K', 'ÃÂ ÃÂ²ÃÂ': 'K', 'ÃÂ ÃÂ²ÃÂ': 'G', 'ÃÂ ÃÂ²ÃÂ': 'G', 'ÃÂ ÃÂ²ÃÂ': 'N',
+    'ÃÂ ÃÂ²ÃÂ': 'C', 'ÃÂ ÃÂ²ÃÂ': 'C', 'ÃÂ ÃÂ²ÃÂ': 'J', 'ÃÂ ÃÂ²ÃÂ': 'J', 'ÃÂ ÃÂ²ÃÂ': 'N',
+    'ÃÂ ÃÂ²ÃÂ': 'T', 'ÃÂ ÃÂ²ÃÂ ': 'T', 'ÃÂ ÃÂ²ÃÂ¡': 'D', 'ÃÂ ÃÂ²ÃÂ¢': 'D', 'ÃÂ ÃÂ²ÃÂ£': 'N',
+    'ÃÂ ÃÂ²ÃÂ¤': 'T', 'ÃÂ ÃÂ²ÃÂ¥': 'T', 'ÃÂ ÃÂ²ÃÂ¦': 'D', 'ÃÂ ÃÂ²ÃÂ§': 'D', 'ÃÂ ÃÂ²ÃÂ¨': 'N',
+    'ÃÂ ÃÂ²ÃÂª': 'P', 'ÃÂ ÃÂ²ÃÂ«': 'P', 'ÃÂ ÃÂ²ÃÂ¬': 'B', 'ÃÂ ÃÂ²ÃÂ­': 'B', 'ÃÂ ÃÂ²ÃÂ®': 'M',
+    'ÃÂ ÃÂ²ÃÂ¯': 'Y', 'ÃÂ ÃÂ²ÃÂ°': 'R', 'ÃÂ ÃÂ²ÃÂ²': 'L', 'ÃÂ ÃÂ²ÃÂµ': 'V',
+    'ÃÂ ÃÂ²ÃÂ¶': 'S', 'ÃÂ ÃÂ²ÃÂ·': 'S', 'ÃÂ ÃÂ²ÃÂ¸': 'S', 'ÃÂ ÃÂ²ÃÂ¹': 'H', 'ÃÂ ÃÂ²ÃÂ³': 'L',
   };
   if (KANNADA_MAP[char]) return KANNADA_MAP[char];
 
   // Malayalam
   const MALAYALAM_MAP: Record<string, string> = {
-    'à´': 'A', 'à´': 'A', 'à´': 'I', 'à´': 'I', 'à´': 'U', 'à´': 'U',
-    'à´': 'E', 'à´': 'E', 'à´': 'A', 'à´': 'O', 'à´': 'O', 'à´': 'O',
-    'à´': 'K', 'à´': 'K', 'à´': 'G', 'à´': 'G', 'à´': 'N',
-    'à´': 'C', 'à´': 'C', 'à´': 'J', 'à´': 'J', 'à´': 'N',
-    'à´': 'T', 'à´ ': 'T', 'à´¡': 'D', 'à´¢': 'D', 'à´£': 'N',
-    'à´¤': 'T', 'à´¥': 'T', 'à´¦': 'D', 'à´§': 'D', 'à´¨': 'N',
-    'à´ª': 'P', 'à´«': 'P', 'à´¬': 'B', 'à´­': 'B', 'à´®': 'M',
-    'à´¯': 'Y', 'à´°': 'R', 'à´²': 'L', 'à´µ': 'V',
-    'à´¶': 'S', 'à´·': 'S', 'à´¸': 'S', 'à´¹': 'H', 'à´³': 'L', 'à´´': 'L', 'à´±': 'R',
+    'ÃÂ ÃÂ´ÃÂ': 'A', 'ÃÂ ÃÂ´ÃÂ': 'A', 'ÃÂ ÃÂ´ÃÂ': 'I', 'ÃÂ ÃÂ´ÃÂ': 'I', 'ÃÂ ÃÂ´ÃÂ': 'U', 'ÃÂ ÃÂ´ÃÂ': 'U',
+    'ÃÂ ÃÂ´ÃÂ': 'E', 'ÃÂ ÃÂ´ÃÂ': 'E', 'ÃÂ ÃÂ´ÃÂ': 'A', 'ÃÂ ÃÂ´ÃÂ': 'O', 'ÃÂ ÃÂ´ÃÂ': 'O', 'ÃÂ ÃÂ´ÃÂ': 'O',
+    'ÃÂ ÃÂ´ÃÂ': 'K', 'ÃÂ ÃÂ´ÃÂ': 'K', 'ÃÂ ÃÂ´ÃÂ': 'G', 'ÃÂ ÃÂ´ÃÂ': 'G', 'ÃÂ ÃÂ´ÃÂ': 'N',
+    'ÃÂ ÃÂ´ÃÂ': 'C', 'ÃÂ ÃÂ´ÃÂ': 'C', 'ÃÂ ÃÂ´ÃÂ': 'J', 'ÃÂ ÃÂ´ÃÂ': 'J', 'ÃÂ ÃÂ´ÃÂ': 'N',
+    'ÃÂ ÃÂ´ÃÂ': 'T', 'ÃÂ ÃÂ´ÃÂ ': 'T', 'ÃÂ ÃÂ´ÃÂ¡': 'D', 'ÃÂ ÃÂ´ÃÂ¢': 'D', 'ÃÂ ÃÂ´ÃÂ£': 'N',
+    'ÃÂ ÃÂ´ÃÂ¤': 'T', 'ÃÂ ÃÂ´ÃÂ¥': 'T', 'ÃÂ ÃÂ´ÃÂ¦': 'D', 'ÃÂ ÃÂ´ÃÂ§': 'D', 'ÃÂ ÃÂ´ÃÂ¨': 'N',
+    'ÃÂ ÃÂ´ÃÂª': 'P', 'ÃÂ ÃÂ´ÃÂ«': 'P', 'ÃÂ ÃÂ´ÃÂ¬': 'B', 'ÃÂ ÃÂ´ÃÂ­': 'B', 'ÃÂ ÃÂ´ÃÂ®': 'M',
+    'ÃÂ ÃÂ´ÃÂ¯': 'Y', 'ÃÂ ÃÂ´ÃÂ°': 'R', 'ÃÂ ÃÂ´ÃÂ²': 'L', 'ÃÂ ÃÂ´ÃÂµ': 'V',
+    'ÃÂ ÃÂ´ÃÂ¶': 'S', 'ÃÂ ÃÂ´ÃÂ·': 'S', 'ÃÂ ÃÂ´ÃÂ¸': 'S', 'ÃÂ ÃÂ´ÃÂ¹': 'H', 'ÃÂ ÃÂ´ÃÂ³': 'L', 'ÃÂ ÃÂ´ÃÂ´': 'L', 'ÃÂ ÃÂ´ÃÂ±': 'R',
   };
   if (MALAYALAM_MAP[char]) return MALAYALAM_MAP[char];
 
   // Odia
   const ODIA_MAP: Record<string, string> = {
-    'à¬': 'A', 'à¬': 'A', 'à¬': 'I', 'à¬': 'I', 'à¬': 'U', 'à¬': 'U',
-    'à¬': 'E', 'à¬': 'A', 'à¬': 'O', 'à¬': 'O',
-    'à¬': 'K', 'à¬': 'K', 'à¬': 'G', 'à¬': 'G', 'à¬': 'N',
-    'à¬': 'C', 'à¬': 'C', 'à¬': 'J', 'à¬': 'J', 'à¬': 'N',
-    'à¬': 'T', 'à¬ ': 'T', 'à¬¡': 'D', 'à¬¢': 'D', 'à¬£': 'N',
-    'à¬¤': 'T', 'à¬¥': 'T', 'à¬¦': 'D', 'à¬§': 'D', 'à¬¨': 'N',
-    'à¬ª': 'P', 'à¬«': 'P', 'à¬¬': 'B', 'à¬­': 'B', 'à¬®': 'M',
-    'à¬¯': 'Y', 'à¬°': 'R', 'à¬²': 'L', 'à¬µ': 'V',
-    'à¬¶': 'S', 'à¬·': 'S', 'à¬¸': 'S', 'à¬¹': 'H', 'à¬³': 'L',
+    'ÃÂ ÃÂ¬ÃÂ': 'A', 'ÃÂ ÃÂ¬ÃÂ': 'A', 'ÃÂ ÃÂ¬ÃÂ': 'I', 'ÃÂ ÃÂ¬ÃÂ': 'I', 'ÃÂ ÃÂ¬ÃÂ': 'U', 'ÃÂ ÃÂ¬ÃÂ': 'U',
+    'ÃÂ ÃÂ¬ÃÂ': 'E', 'ÃÂ ÃÂ¬ÃÂ': 'A', 'ÃÂ ÃÂ¬ÃÂ': 'O', 'ÃÂ ÃÂ¬ÃÂ': 'O',
+    'ÃÂ ÃÂ¬ÃÂ': 'K', 'ÃÂ ÃÂ¬ÃÂ': 'K', 'ÃÂ ÃÂ¬ÃÂ': 'G', 'ÃÂ ÃÂ¬ÃÂ': 'G', 'ÃÂ ÃÂ¬ÃÂ': 'N',
+    'ÃÂ ÃÂ¬ÃÂ': 'C', 'ÃÂ ÃÂ¬ÃÂ': 'C', 'ÃÂ ÃÂ¬ÃÂ': 'J', 'ÃÂ ÃÂ¬ÃÂ': 'J', 'ÃÂ ÃÂ¬ÃÂ': 'N',
+    'ÃÂ ÃÂ¬ÃÂ': 'T', 'ÃÂ ÃÂ¬ÃÂ ': 'T', 'ÃÂ ÃÂ¬ÃÂ¡': 'D', 'ÃÂ ÃÂ¬ÃÂ¢': 'D', 'ÃÂ ÃÂ¬ÃÂ£': 'N',
+    'ÃÂ ÃÂ¬ÃÂ¤': 'T', 'ÃÂ ÃÂ¬ÃÂ¥': 'T', 'ÃÂ ÃÂ¬ÃÂ¦': 'D', 'ÃÂ ÃÂ¬ÃÂ§': 'D', 'ÃÂ ÃÂ¬ÃÂ¨': 'N',
+    'ÃÂ ÃÂ¬ÃÂª': 'P', 'ÃÂ ÃÂ¬ÃÂ«': 'P', 'ÃÂ ÃÂ¬ÃÂ¬': 'B', 'ÃÂ ÃÂ¬ÃÂ­': 'B', 'ÃÂ ÃÂ¬ÃÂ®': 'M',
+    'ÃÂ ÃÂ¬ÃÂ¯': 'Y', 'ÃÂ ÃÂ¬ÃÂ°': 'R', 'ÃÂ ÃÂ¬ÃÂ²': 'L', 'ÃÂ ÃÂ¬ÃÂµ': 'V',
+    'ÃÂ ÃÂ¬ÃÂ¶': 'S', 'ÃÂ ÃÂ¬ÃÂ·': 'S', 'ÃÂ ÃÂ¬ÃÂ¸': 'S', 'ÃÂ ÃÂ¬ÃÂ¹': 'H', 'ÃÂ ÃÂ¬ÃÂ³': 'L',
   };
   if (ODIA_MAP[char]) return ODIA_MAP[char];
 
@@ -3719,7 +3719,7 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       return new Response(_adminStatsCache.payload, { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
-    // â¡ Bolt: Batch these queries to execute concurrently instead of sequentially
+    // ÃÂ¢ÃÂÃÂ¡ Bolt: Batch these queries to execute concurrently instead of sequentially
     // This prevents a 4-step waterfall and significantly reduces dashboard load time.
     const results = await env.DB.batch([
       env.DB.prepare(`
@@ -3873,7 +3873,7 @@ async function handleAdminSendActionOTP(
       }
     }
 
-    const title = "ð Action Verification";
+    const title = "ÃÂ°ÃÂÃÂÃÂ Action Verification";
     const body = `
       <p style="font-size:16px;color:#334155;">Namaste <strong>${user.full_name || "User"}</strong>,</p>
       <p style="color:#475569;">You have requested an OTP to perform a sensitive action.</p>
@@ -3965,7 +3965,7 @@ async function handleContactForm(request: Request, env: Env): Promise<Response> 
     if (existing) {
       const windowAge = Date.now() - new Date(existing.window_start).getTime();
       if (windowAge < 3600 * 1000 && existing.window_used >= 3) {
-        return new Response(JSON.stringify({ error: "à¤¬à¤¹à¥à¤¤ à¤à¤§à¤¿à¤ à¤à¤¨à¥à¤°à¥à¤§à¥¤ à¤à¥à¤ªà¤¯à¤¾ à¤à¤ à¤à¤à¤à¥ à¤¬à¤¾à¤¦ à¤ªà¥à¤¨à¤ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤à¤°à¥à¤à¥¤" }), {
+        return new Response(JSON.stringify({ error: "ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¦ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤" }), {
           status: 429,
           headers: { "Content-Type": "application/json" },
         });
@@ -4002,9 +4002,9 @@ async function handleContactForm(request: Request, env: Env): Promise<Response> 
     `;
     const textBody = `New Contact Form Submission\n\nName: ${name}\nEmail: ${email}\nMessage: ${message}`;
 
-    await safeSendEmail(env, adminEmail, `Contact Form: ${name}`, "ð¬ New Contact Message", emailBody, textBody);
+    await safeSendEmail(env, adminEmail, `Contact Form: ${name}`, "ÃÂ°ÃÂÃÂÃÂ¬ New Contact Message", emailBody, textBody);
 
-    return new Response(JSON.stringify({ success: true, message: "à¤à¤ªà¤à¤¾ à¤¸à¤à¤¦à¥à¤¶ à¤­à¥à¤ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤" }), {
+    return new Response(JSON.stringify({ success: true, message: "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¶ ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -4205,7 +4205,7 @@ async function handleAdminSecrets(
     if (request.method === "POST") {
       const body = await parseRequestBody(request);
 
-      // POST /api/admin/secrets/delete â delete a key
+      // POST /api/admin/secrets/delete ÃÂ¢ÃÂÃÂ delete a key
       if (pathname === "/api/admin/secrets/delete") {
         const { key } = body;
         if (!key || typeof key !== "string") {
@@ -4223,7 +4223,7 @@ async function handleAdminSecrets(
         });
       }
 
-      // POST /api/admin/secrets/{key} â create/update single key
+      // POST /api/admin/secrets/{key} ÃÂ¢ÃÂÃÂ create/update single key
       const singleKeyMatch = pathname.match(/^\/api\/admin\/secrets\/([^/]+)$/);
       if (singleKeyMatch) {
         let key: string;
@@ -4257,10 +4257,10 @@ async function handleAdminSecrets(
         });
       }
 
-      // POST /api/admin/secrets â bulk update
+      // POST /api/admin/secrets ÃÂ¢ÃÂÃÂ bulk update
       const { secrets } = body;
       if (!secrets || typeof secrets !== "object") {
-        return new Response(JSON.stringify({ error: "Invalid format â expected { secrets: { ... } }" }), {
+        return new Response(JSON.stringify({ error: "Invalid format ÃÂ¢ÃÂÃÂ expected { secrets: { ... } }" }), {
           status: 400,
         });
       }
@@ -4384,7 +4384,7 @@ async function handleAdminAddBalance(
       return new Response(JSON.stringify({ error: "Invalid amount" }), { status: 400 });
     }
     if (amount > MAX_AMOUNT) {
-      return new Response(JSON.stringify({ error: `Amount exceeds maximum of â¹${MAX_AMOUNT}` }), { status: 400 });
+      return new Response(JSON.stringify({ error: `Amount exceeds maximum of ÃÂ¢ÃÂÃÂ¹${MAX_AMOUNT}` }), { status: 400 });
     }
     if (!otp) {
       return new Response(JSON.stringify({ error: "OTP is required" }), { status: 400 });
@@ -4413,28 +4413,28 @@ async function handleAdminAddBalance(
     );
 
     const emailBody = `
-      <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${targetUser.full_name || "Student"}</strong>,</p>
-      <p style="color:#475569;">à¤µà¥à¤¯à¤µà¤¸à¥à¤¥à¤¾à¤ªà¤ (Admin) à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ à¤à¤¾à¤¤à¥ à¤®à¥à¤ <strong>â¹${amount}</strong> à¤à¥à¤¡à¤¼à¥ à¤à¤ à¤¹à¥à¤à¥¤</p>
-      <p style="color:#475569;">à¤à¤ªà¤à¤¾ à¤¨à¤¯à¤¾ à¤¬à¥à¤²à¥à¤à¤¸: <strong>â¹${wallet.balance_rupees}</strong></p>
+      <p style="font-size:16px;color:#334155;">ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${targetUser.full_name || "Student"}</strong>,</p>
+      <p style="color:#475569;">ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¥ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ (Admin) ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ <strong>ÃÂ¢ÃÂÃÂ¹${amount}</strong> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¤ÃÂ¼ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+      <p style="color:#475569;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸: <strong>ÃÂ¢ÃÂÃÂ¹${wallet.balance_rupees}</strong></p>
     `;
     await safeSendEmail(
       env,
       targetUser.email,
       "Balance Added - Adityanveshan LMS",
-      "ð° Balance Added",
+      "ÃÂ°ÃÂÃÂÃÂ° Balance Added",
       emailBody,
-      `Namaste,\nYour account has been credited with â¹${amount}. Your new balance is â¹${wallet.balance_rupees}.`
+      `Namaste,\nYour account has been credited with ÃÂ¢ÃÂÃÂ¹${amount}. Your new balance is ÃÂ¢ÃÂÃÂ¹${wallet.balance_rupees}.`
     ).catch((e) => console.error("[GiveCredits] safeSendEmail failed", e));
 
     await logAdminActivity(
       env,
       admin.email || "Unknown Admin",
       "Give Credits",
-      `Added â¹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
+      `Added ÃÂ¢ÃÂÃÂ¹${amount} credits to user ${targetUser.full_name || userId} (ID: ${userId}).`,
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
-    // ð¯ [NEW] DataSyncDO ke through broadcast karo â full balance data
+    // ÃÂ°ÃÂÃÂÃÂ¯ [NEW] DataSyncDO ke through broadcast karo ÃÂ¢ÃÂÃÂ full balance data
     try {
       const dataDoId = env.DATA_SYNC_DO.idFromName("data-sync");
       const dataStub = env.DATA_SYNC_DO.get(dataDoId);
@@ -4633,12 +4633,12 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("DELETE FROM Users WHERE id = ?").bind(id),
       ]);
 
-      const title = "à¤à¤²à¤µà¤¿à¤¦à¤¾! à¤à¤¾à¤¤à¤¾ à¤¹à¤à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥";
+      const title = "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¾! ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ";
       const emailBody = `
-        <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${targetUser.full_name || "User"}</strong>,</p>
-        <p style="color:#475569;">à¤à¤ªà¤à¤¾ <strong>Adityanveshan LMS</strong> à¤à¤¾ à¤à¤¾à¤¤à¤¾ à¤µà¥à¤¯à¤µà¤¸à¥à¤¥à¤¾à¤ªà¤ (Admin) à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¹à¤à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+        <p style="font-size:16px;color:#334155;">ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${targetUser.full_name || "User"}</strong>,</p>
+        <p style="color:#475569;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ <strong>Adityanveshan LMS</strong> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¥ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ (Admin) ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         <div style="background:#fef2f2;border-radius:12px;padding:16px;margin:20px 0;border-left:4px solid #ef4444;">
-          <p style="margin:0;color:#991b1b;font-weight:600;">à¤¯à¤¦à¤¿ à¤à¤ªà¤à¥ à¤²à¤à¤¤à¤¾ à¤¹à¥ à¤à¤¿ à¤¯à¤¹ à¤à¥à¤ à¤à¤²à¤¤à¥ à¤¹à¥, à¤¤à¥ à¤à¥à¤ªà¤¯à¤¾ à¤¸à¤ªà¥à¤°à¥à¤ à¤à¥à¤® à¤¸à¥ à¤¸à¤à¤ªà¤°à¥à¤ à¤à¤°à¥à¤à¥¤</p>
+          <p style="margin:0;color:#991b1b;font-weight:600;">ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¹ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ, ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         </div>
       `;
       await safeSendEmail(
@@ -4759,17 +4759,17 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
         .run();
 
       // Send Welcome Email
-      const welcomeTitle = "ð à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤ à¤¹à¥!";
+      const welcomeTitle = "ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Adityanveshan LMS ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!";
       const appUrl = await getPublicAppUrl(env);
       const welcomeBody = `
-        <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-        <p>à¤à¤ªà¤à¤¾ à¤à¤¾à¤¤à¤¾ <strong>à¤à¤à¤¾à¤°à¥à¤¯ ${adminName}</strong> à¤à¥ à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¬à¤¨à¤¾ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+        <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+        <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ <strong>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ ${adminName}</strong> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         <div style="background:#f8fafc;padding:20px;border-radius:12px;margin:20px 0;border:1px solid #e2e8f0;">
-          <p style="margin:0;font-weight:600;">à¤à¤ªà¤à¥ à¤²à¥à¤à¤¿à¤¨ à¤µà¤¿à¤µà¤°à¤£:</p>
-          <p style="margin:8px 0;">à¤à¤®à¥à¤²: <strong>${email}</strong></p>
-          <p style="margin:0;">à¤à¤ª OTP à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤²à¥à¤à¤¿à¤¨ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
+          <p style="margin:0;font-weight:600;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ£:</p>
+          <p style="margin:8px 0;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ²: <strong>${email}</strong></p>
+          <p style="margin:0;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª OTP ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         </div>
-        <p>à¤à¤ª à¤¯à¤¹à¤¾à¤ à¤¸à¥ à¤²à¥à¤à¤¿à¤¨ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+        <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
       await safeSendEmail(
         env,
@@ -5024,7 +5024,7 @@ async function handleAdminCourses(
         )
         .run();
 
-      // Global Broadcast: à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸ à¤ªà¤¬à¥à¤²à¤¿à¤¶ à¤¹à¥à¤¨à¥ à¤ªà¤° à¤¸à¤­à¥ à¤¯à¥à¤à¤¼à¤°à¥à¤¸ à¤à¥ à¤¤à¥à¤°à¤à¤¤ à¤à¤ªà¤¡à¥à¤ à¤¦à¥à¤
+      // Global Broadcast: ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¶ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¼ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ
       broadcastToAll(env, "course", { courseId, title: title || "Untitled Course" });
 
       let announcementResult = {};
@@ -5054,8 +5054,8 @@ async function handleAdminCourses(
         try {
           const pushResult = await sendPush(env, {
             all: true,
-            title: `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${title || "Untitled Course"}`,
-            body: "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤",
+            title: `ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸: ${title || "Untitled Course"}`,
+            body: "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
             data: {
               url: `/course/${courseId}`,
               clickUrl: `/course/${courseId}`,
@@ -5070,8 +5070,8 @@ async function handleAdminCourses(
             pushBroadcastId,
             (userAuth as any).sub || null,
             "all",
-            `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${title || "Untitled Course"}`,
-            "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤",
+            `ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸: ${title || "Untitled Course"}`,
+            "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
             JSON.stringify({ courseId, type: "new_course_announcement" }),
             pushResult.sent,
             pushResult.failed,
@@ -5494,7 +5494,7 @@ async function ensureEnrollment(
 
   const id = generateCustomId("YA-ENR");
 
-  // Atomic INSERT â ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
+  // Atomic INSERT ÃÂ¢ÃÂÃÂ ON CONFLICT DO NOTHING prevents duplicate enrollment rows.
   // If another request already inserted the same (user_id, course_id), the INSERT
   // is silently ignored and we fall through to the UPDATE path below.
   const insertResult = await env.DB.prepare(
@@ -5519,7 +5519,7 @@ async function ensureEnrollment(
     };
   }
 
-  // Row already existed â do UPDATE with preservePaidStatus logic
+  // Row already existed ÃÂ¢ÃÂÃÂ do UPDATE with preservePaidStatus logic
   const existing: any = await env.DB.prepare(
     "SELECT id, batch_id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
   )
@@ -5709,16 +5709,16 @@ async function handleAdminEnrollments(
 
       if (user?.email && course?.title) {
         const welcomeHtml = `
-            <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-            <p>Admin à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ <strong>${course.title}</strong> à¤®à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤ ${payment_status === "paid" ? "à¤à¤ªà¤à¥ à¤ªà¥à¤°à¥à¤®à¤¿à¤¯à¤® à¤à¤à¥à¤¸à¥à¤¸ à¤¦à¥ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤" : ""}</p>
-            <p>à¤à¤ª à¤à¤­à¥ à¤¸à¥ à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
+            <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+            <p>Admin ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ <strong>${course.title}</strong> ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ ${payment_status === "paid" ? "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤" : ""}</p>
+            <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
          `;
-        const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nAdmin à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤à¤ªà¤à¥ ${course.title} à¤®à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nà¤à¤ª à¤à¤­à¥ à¤¸à¥ à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤`;
+        const welcomeText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"},\n\nAdmin ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ${course.title} ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`;
         await safeSendEmail(
           env,
           user.email,
           `Welcome to ${course.title}`,
-          "ð Course Enrollment Successful!",
+          "ÃÂ°ÃÂÃÂÃÂ Course Enrollment Successful!",
           welcomeHtml,
           welcomeText,
         );
@@ -5859,15 +5859,15 @@ async function handleAdminIssueCertificate(
     await createNotification(
       env,
       enrollment.user_id,
-      "Certificate issued ð",
+      "Certificate issued ÃÂ°ÃÂÃÂÃÂ",
       `Your certificate for "${enrollment.course_title}" has been issued by admin.`,
       "success",
     );
 
     if (enrollment.user_email) {
       const html = `
-        <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${enrollment.user_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-        <p>à¤à¤ªà¤à¤¾ <strong>${enrollment.course_title}</strong> course certificate issue à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+        <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${enrollment.user_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+        <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ <strong>${enrollment.course_title}</strong> course certificate issue ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:16px 0;">
           <p style="margin:0;color:#166534;font-weight:700;">Certificate ID: ${certificateId}</p>
           <p style="margin:8px 0 0;color:#166534;">Issued at: ${getISTTime(issuedAt)}</p>
@@ -5878,7 +5878,7 @@ async function handleAdminIssueCertificate(
         env,
         enrollment.user_email,
         `Certificate issued: ${enrollment.course_title}`,
-        "ð Certificate Issued",
+        "ÃÂ°ÃÂÃÂÃÂ Certificate Issued",
         html,
         text,
       );
@@ -5994,7 +5994,7 @@ async function handleAdminBatches(
       if (!course_id && !book_id)
         return new Response(
           JSON.stringify({
-            error: "à¤à¥à¤°à¥à¤¸ à¤¯à¤¾ à¤ªà¥à¤¸à¥à¤¤à¤ à¤à¤à¤¡à¥ à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥ (Course or Book ID is required)",
+            error: "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ (Course or Book ID is required)",
           }),
           { status: 400 },
         );
@@ -6009,7 +6009,7 @@ async function handleAdminBatches(
       if (!name)
         return new Response(
           JSON.stringify({
-            error: "à¤¬à¥à¤ à¤à¤¾ à¤¨à¤¾à¤® à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥ (Batch name is required)",
+            error: "ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ (Batch name is required)",
           }),
           { status: 400 },
         );
@@ -6105,8 +6105,8 @@ async function handleAdminBatches(
           try {
             const pushResult = await sendPush(env, {
               all: true,
-              title: `ð à¤¨à¤ à¤à¤à¥à¤·à¤¾: ${name}`,
-              body: `${courseOrBookTitle} â à¤à¤­à¥ join à¤à¤°à¥à¤à¥¤`,
+              title: `ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ·ÃÂ ÃÂ¤ÃÂ¾: ${name}`,
+              body: `${courseOrBookTitle} ÃÂ¢ÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ join ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
               data: {
                 url: urlPath,
                 clickUrl: urlPath,
@@ -6123,8 +6123,8 @@ async function handleAdminBatches(
               pushBroadcastId,
               (userAuth as any).sub || null,
               "all",
-              `ð à¤¨à¤ à¤à¤à¥à¤·à¤¾: ${name}`,
-              `${courseOrBookTitle} â à¤à¤­à¥ join à¤à¤°à¥à¤à¥¤`,
+              `ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ·ÃÂ ÃÂ¤ÃÂ¾: ${name}`,
+              `${courseOrBookTitle} ÃÂ¢ÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ join ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
               JSON.stringify({ batchId: id, courseId: course_id || null, bookId: book_id || null, type: "new_batch_announcement" }),
               pushResult.sent,
               pushResult.failed,
@@ -6453,11 +6453,11 @@ async function handleAdminBatchStudents(
         .first();
 
       if (student?.email) {
-        const title = "ð à¤¬à¥à¤ à¤®à¥à¤ à¤¨à¤¾à¤®à¤¾à¤à¤à¤¨ à¤¸à¤«à¤²!";
+        const title = "ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²!";
         const body = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${student.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-          <p>à¤à¤ªà¤à¥ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ <strong>${batch.name}</strong> (${course.title}) à¤®à¥à¤ à¤à¥à¥ à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
-          <p>à¤à¤¬ à¤à¤ª à¤à¤ªà¤¨à¥ à¤ªà¥à¤¾à¤ à¤¶à¥à¤°à¥ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
+          <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${student.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+          <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ <strong>${batch.name}</strong> (${course.title}) ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+          <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
         `;
         await safeSendEmail(
           env,
@@ -7028,7 +7028,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 
     if (pendingCharges.length === 0) return;
 
-    // Batch: check existing charges for ALL no-show students â chunked for D1 parameter limit
+    // Batch: check existing charges for ALL no-show students ÃÂ¢ÃÂÃÂ chunked for D1 parameter limit
     // Check both PendingCharges AND CreditLedger to prevent double deduction
     const allNoShowIds = pendingCharges.map((c) => c.userId);
     const existingSet = new Set<string>();
@@ -7054,7 +7054,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
          VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
       ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
 
-      // changes === 0 means a duplicate was ignored â another call already inserted
+      // changes === 0 means a duplicate was ignored ÃÂ¢ÃÂÃÂ another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
 
       const deduction = await deductFromWallet(env, userId, chargeAmount, "no_show_charge", "live_session", sessionId);
@@ -7386,13 +7386,13 @@ async function sendFCM(
   try {
     const projectId = await env.PLATFORM_SECRETS.get("FCM_PROJECT_ID");
     if (!projectId) {
-      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets â add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
+      return { ok: false, status: 0, errorBody: "FCM_PROJECT_ID not set in KV secrets ÃÂ¢ÃÂÃÂ add it via wrangler secret put FCM_PROJECT_ID <project-id>" };
     }
 
-    // FCM v1 API â OAuth2 via service account
+    // FCM v1 API ÃÂ¢ÃÂÃÂ OAuth2 via service account
     const accessToken = await getFCMAccessToken(env);
     if (!accessToken) {
-      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable â set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
+      return { ok: false, status: 0, errorBody: "FCM OAuth2 token unavailable ÃÂ¢ÃÂÃÂ set FCM_SERVICE_ACCOUNT (service account JSON) in KV secrets" };
     }
 
     const payload: any = {
@@ -7445,7 +7445,7 @@ async function sendFCM(
     const errBody = await res.text();
     console.error("FCM v1 send error:", res.status, errBody);
 
-    // On 401, invalidate cached token and retry once â token may be stale
+    // On 401, invalidate cached token and retry once ÃÂ¢ÃÂÃÂ token may be stale
     if (res.status === 401) {
       await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN");
       await env.PLATFORM_SECRETS.delete("FCM_ACCESS_TOKEN_EXPIRY");
@@ -7491,7 +7491,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-// Batch FCM sender â sends in parallel chunks to avoid per-device sequential blocking
+// Batch FCM sender ÃÂ¢ÃÂÃÂ sends in parallel chunks to avoid per-device sequential blocking
 async function sendFCMBatch(
   env: Env,
   devices: { id: string; fcm_token: string }[],
@@ -7605,7 +7605,7 @@ async function handleRegisterDevice(
       const auth = await requireAuth(request, env);
       userId = auth.sub;
     } catch {
-      // Anonymous â save token without user_id; associate-user links it on login
+      // Anonymous ÃÂ¢ÃÂÃÂ save token without user_id; associate-user links it on login
     }
 
     const ipAddress =
@@ -7795,7 +7795,7 @@ async function handleAssociateUser(
 
     const associated = ((associateResult as any)?.meta?.changes ?? 0) > 0;
 
-    // Conversion tracking: anonymous â user (analytics + free-limit reset)
+    // Conversion tracking: anonymous ÃÂ¢ÃÂÃÂ user (analytics + free-limit reset)
     await env.DB.prepare(
       `UPDATE AnonymousUsers
        SET converted_to_user_id = ?, converted_at = datetime('now')
@@ -8007,7 +8007,7 @@ async function handleSendPush(
   }
 }
 
-// Unified send push function â sends to all devices of a user (or all users)
+// Unified send push function ÃÂ¢ÃÂÃÂ sends to all devices of a user (or all users)
 
 // Helper: unified push broadcast executor handling audiences, exclusions, and limits
 async function executePushBroadcast(
@@ -8205,7 +8205,7 @@ async function executePushBroadcast(
 }
 
 
-// Unified send push function â sends to all devices of a user (or all users)
+// Unified send push function ÃÂ¢ÃÂÃÂ sends to all devices of a user (or all users)
 async function sendPush(
   env: Env,
   options: {
@@ -8421,7 +8421,7 @@ async function handleLiveClassReminders(
       );
     }
 
-    // Reminder window: 14-16 minutes from now (15-min lead time, Â±1 min tolerance)
+    // Reminder window: 14-16 minutes from now (15-min lead time, ÃÂÃÂ±1 min tolerance)
     const upcoming: any = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, l.start_time as start_date, b.course_id, b.book_id,
               c.title as course_title, c.title_hi as course_title_hi,
@@ -8462,7 +8462,7 @@ async function handleLiveClassReminders(
       batchUserMap.get(row.batch_id)!.add(uid);
     }
 
-    // Batch: get ALL devices for ALL enrolled users â chunked for D1 parameter limit
+    // Batch: get ALL devices for ALL enrolled users ÃÂ¢ÃÂÃÂ chunked for D1 parameter limit
     const allUserIds = [...new Set([...batchUserMap.values()].flatMap((s) => [...s]))];
     if (allUserIds.length === 0) {
       return new Response(
@@ -8480,7 +8480,7 @@ async function handleLiveClassReminders(
       allDevices.push(...(result.results || []));
     }
 
-    // Map user_id â devices[] in memory
+    // Map user_id ÃÂ¢ÃÂÃÂ devices[] in memory
     const userDeviceMap = new Map<string, { id: string; fcm_token: string }[]>();
     for (const dev of allDevices) {
       const uid = (dev as any).user_id;
@@ -8489,14 +8489,14 @@ async function handleLiveClassReminders(
       userDeviceMap.get(uid)!.push({ id: (dev as any).id, fcm_token: (dev as any).fcm_token });
     }
 
-    // Now process each batch â no more DB queries, just memory lookups + parallel FCM
+    // Now process each batch ÃÂ¢ÃÂÃÂ no more DB queries, just memory lookups + parallel FCM
     for (const batch of batches) {
       const userIds = [...(batchUserMap.get(batch.id) || [])];
       if (userIds.length === 0) continue;
 
       const title = batch.course_title || batch.book_title || batch.name;
-      const reminderTitle = `ð ${title} â à¤à¤à¥à¤·à¤¾ à¤à¤²à¥à¤¦ à¤¶à¥à¤°à¥ à¤¹à¥à¤à¥`;
-      const reminderBody = `15 à¤®à¤¿à¤¨à¤ à¤®à¥à¤ à¤²à¤¾à¤à¤µ à¤à¥à¤²à¤¾à¤¸ à¤¶à¥à¤°à¥ à¤¹à¥ à¤°à¤¹à¥ à¤¹à¥à¥¤ à¤¤à¥à¤¯à¤¾à¤° à¤°à¤¹à¥à¤!`;
+      const reminderTitle = `ÃÂ°ÃÂÃÂÃÂ ${title} ÃÂ¢ÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ·ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¦ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ`;
+      const reminderBody = `15 ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂµ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ!`;
       const pushData = {
         url: `/dashboard/course/learn?batch=${batch.id}`,
         clickUrl: `/dashboard/course/learn?batch=${batch.id}`,
@@ -8551,8 +8551,8 @@ async function handleNewCourseAnnouncement(
     }
     const target = audience === "anonymous" ? "anonymous" : "all";
 
-    const title = `ð à¤¨à¤¯à¤¾ à¤à¥à¤°à¥à¤¸: ${course_title}`;
-    const bodyText = "à¤à¤­à¥ enroll à¤à¤°à¥à¤ à¤à¤° à¤¸à¥à¤à¤¨à¤¾ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤à¥¤";
+    const title = `ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸: ${course_title}`;
+    const bodyText = "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤";
     const result = await sendPush(env, {
       all: target === "all",
       title,
@@ -8687,7 +8687,7 @@ function computeNextRunAt(job: any, fromTime?: Date): string | null {
         return candidate.toISOString().replace("T", " ").substring(0, 19);
       }
     }
-    // No more in this month â first valid day of next month
+    // No more in this month ÃÂ¢ÃÂÃÂ first valid day of next month
     const firstDay = daysOfMonth[0];
     const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, firstDay, utcHH, utcMM, 0));
     return candidate.toISOString().replace("T", " ").substring(0, 19);
@@ -9339,7 +9339,7 @@ async function handleFirebaseConfig(env: Env): Promise<Response> {
   const appId = await env.PLATFORM_SECRETS.get("FIREBASE_APP_ID");
 
   if (!appId) {
-    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS â FCM token generation may fail");
+    console.warn("FIREBASE_APP_ID not set in PLATFORM_SECRETS ÃÂ¢ÃÂÃÂ FCM token generation may fail");
   }
 
   if (!apiKey || !projectId || !messagingSenderId || !appId) {
@@ -11003,7 +11003,7 @@ async function handleGetBook(
           completedLessonIds = completedRes.results?.map((r: any) => r.lesson_id) || [];
         }
       } catch (e) {
-        // Not authenticated â treat as unauthenticated user
+        // Not authenticated ÃÂ¢ÃÂÃÂ treat as unauthenticated user
       }
     }
 
@@ -11050,7 +11050,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
     const url = new URL(request.url);
     const id = bookId || url.searchParams.get("bookId");
 
-    // Single book fetch â used by [bookId] page to get title
+    // Single book fetch ÃÂ¢ÃÂÃÂ used by [bookId] page to get title
     if (id) {
       const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
@@ -11198,7 +11198,7 @@ async function handleAdminDeleteBook(request: Request, env: Env, bookId: string)
   }
 }
 
-// ââ Book Lesson Handlers âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Book Lesson Handlers ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 // These handle /api/admin/books/lessons with bookId and lessonId as query params.
 // Book-only lessons have course_id = NULL and book_id = bookId.
 
@@ -11618,8 +11618,8 @@ async function handleListLessons(
           ...r,
           content_url: "",
           text_content: premiumLocked 
-            ? "ð This content is premium. Please enroll/pay to unlock." 
-            : "ð You must complete the previous lesson/quiz to unlock this.",
+            ? "ÃÂ°ÃÂÃÂÃÂ This content is premium. Please enroll/pay to unlock." 
+            : "ÃÂ°ÃÂÃÂÃÂ You must complete the previous lesson/quiz to unlock this.",
           is_locked: true,
           locked_reason: premiumLocked ? 'premium' : 'sequential'
         };
@@ -11741,7 +11741,7 @@ async function handleGetLesson(
                 type: lesson.type,
                 is_free: lesson.is_free,
                 content_url: "",
-                text_content: "ð You must complete the previous lesson/quiz to unlock this."
+                text_content: "ÃÂ°ÃÂÃÂÃÂ You must complete the previous lesson/quiz to unlock this."
               };
               return new Response(JSON.stringify({ lesson: safeLesson, course, error: "Sequential lock active" }), { status: 403, headers: { "Content-Type": "application/json" } });
            }
@@ -11761,7 +11761,7 @@ async function handleGetLesson(
         text_content:
           lesson.is_free === 1
             ? lesson.text_content
-            : "ð Premium Content Locked. Please upgrade your enrollment to access.",
+            : "ÃÂ°ÃÂÃÂÃÂ Premium Content Locked. Please upgrade your enrollment to access.",
       };
       return new Response(
         JSON.stringify({
@@ -12259,7 +12259,7 @@ async function handleAdminCreateLesson(
   }
 }
 
-// ââ Chapter Names API âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Chapter Names API ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 async function handleAdminGetCourseChapters(
   request: Request,
   env: Env,
@@ -13345,17 +13345,17 @@ async function handleFormResponseSubmit(
 
           // Welcome email for new account
           const welcomeHtml = `
-            <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-            <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+            <p style="font-size:16px;">ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${fullName}</strong>,</p>
+            <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Adityanveshan LMS ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° account ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
-            <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
+            <p>Login ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ email (<strong>${email}</strong>) use ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° OTP ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ verify ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
           `;
-          const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${newUserId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
+          const welcomeText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${fullName},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Adityanveshan LMS ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° account ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\nStudent ID: ${newUserId}\n\nLogin ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ email (${email}) use ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° OTP ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ verify ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`;
           await safeSendEmail(
             env,
             email,
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® - Account Created",
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
+            "ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ® - Account Created",
+            "ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤!",
             welcomeHtml,
             welcomeText,
           );
@@ -13379,7 +13379,7 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ course enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ course enrollment ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ batch ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤`,
                 "success",
               );
             }
@@ -13401,7 +13401,7 @@ async function handleFormResponseSubmit(
               env,
               user.id,
               "Course Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ course à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ form ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ course ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤`,
               "success",
             );
           }
@@ -13424,7 +13424,7 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ à¤ªà¥à¤¸à¥à¤¤à¤ enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ enrollment ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ batch ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤`,
                 "success",
               );
             }
@@ -13446,7 +13446,7 @@ async function handleFormResponseSubmit(
               env,
               user.id,
               "Book Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤ªà¥à¤¸à¥à¤¤à¤ à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ form ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤`,
               "success",
             );
           }
@@ -13487,17 +13487,17 @@ async function handleFormResponseSubmit(
       let userBody = template.confirmation_email_body;
       if (!userBody) {
         userBody = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-          <p>à¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "<strong>${template.title}</strong>" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
-          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">ð à¤à¤ªà¤à¥ <strong>${courseInfo.title}</strong> à¤®à¥à¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥!${courseInfo.price_rupees > 0 ? " Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}</p></div>` : ""}
+          <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${fullName}</strong>,</p>
+          <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ® "<strong>${template.title}</strong>" ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ <strong>${courseInfo.title}</strong> ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!${courseInfo.price_rupees > 0 ? " Premium access ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ course page ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤" : ""}</p></div>` : ""}
         `;
       }
-      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "${template.title}" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
+      const userText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${fullName},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ® "${template.title}" ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\n\nOm!`;
       await safeSendEmail(
         env,
         email,
         subject,
-        "â à¤«à¥à¤°à¥à¤® à¤à¤®à¤¾ à¤¹à¥à¤!",
+        "ÃÂ¢ÃÂÃÂ ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ!",
         userBody,
         userText,
       );
@@ -13527,7 +13527,7 @@ async function handleFormResponseSubmit(
       env,
       adminEmail,
       `[LMS Form] New Submission: ${template.title}`,
-      "ð New Form Submission",
+      "ÃÂ°ÃÂÃÂÃÂ New Form Submission",
       adminHtml,
       adminText,
     );
@@ -13574,7 +13574,7 @@ async function callRealtimeAPI(
 
     if (missingKeys.length > 0) {
       const msg = `Missing RealtimeKit configurations in PLATFORM_SECRETS: ${missingKeys.join(", ")}`;
-      console.error(`[Realtime] ${msg} â returning null, callers will treat as empty result`);
+      console.error(`[Realtime] ${msg} ÃÂ¢ÃÂÃÂ returning null, callers will treat as empty result`);
       // Send urgent alert to admin
       await sendRedAlert(env, "Live Session (RealtimeKit) API Config", msg).catch(() => { });
       return null;
@@ -13666,7 +13666,7 @@ async function getRealtimeParticipantToken(
     "POST",
     {
       custom_participant_id: userId,
-      name: name || "à¤à¤¾à¤¤à¥à¤°",
+      name: name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°",
       preset_name: isAdmin ? "group_call_host" : "group_call_participant",
     },
   );
@@ -14701,8 +14701,8 @@ async function deductFromWallet(
   const before = await getWalletBalance(env, userId);
   if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
 
-  // ð´ FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
-  // insert succeed or fail together â no inconsistent state.
+  // ÃÂ°ÃÂÃÂÃÂ´ FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
+  // insert succeed or fail together ÃÂ¢ÃÂÃÂ no inconsistent state.
   const ledgerId = generateCustomId("YA-CRL");
   const batchResult = await env.DB.batch([
     env.DB.prepare(
@@ -14768,7 +14768,7 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
   )
     .bind(userId, sessionId)
     .run();
-
+}
 
 async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
   const nowIso = new Date().toISOString();
@@ -14819,7 +14819,6 @@ async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string
   } catch (err) {
     console.error('[Live.Charge] releaseLiveChargeLock failed', err);
   }
-}
 }
 
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
@@ -15115,7 +15114,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
         requiredAmount: rate,
         availableBalance: wallet.balance_rupees,
         maxMinutes: 0,
-        message: `à¤à¤¸ flat-rate live class à¤®à¥à¤ à¤à¥à¤¡à¤¼à¤¨à¥ à¤à¥ à¤²à¤¿à¤ â¹${rate} à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ balance recharge à¤à¤°à¥à¤à¥¤`,
+        message: `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸ flat-rate live class ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¤ÃÂ¼ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ¢ÃÂÃÂ¹${rate} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ balance recharge ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
       };
     }
 
@@ -15170,7 +15169,7 @@ async function chargeSelfStudyGroupClassIfNeeded(
       requiredAmount: rate,
       availableBalance: wallet.balance_rupees,
       maxMinutes: 0,
-      message: `à¤à¤¸ credit-based live class à¤®à¥à¤ à¤à¥à¤¡à¤¼à¤¨à¥ à¤à¥ à¤²à¤¿à¤ â¹${rate} à¤à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯ à¤¹à¥à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ balance recharge à¤à¤°à¥à¤à¥¤ (â¹${rate} required to join this class. Please recharge your wallet.)`,
+      message: `ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸ credit-based live class ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¤ÃÂ¼ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ¢ÃÂÃÂ¹${rate} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ balance recharge ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ (ÃÂ¢ÃÂÃÂ¹${rate} required to join this class. Please recharge your wallet.)`,
     };
   }
 
@@ -15243,7 +15242,7 @@ async function chargeAttendanceGroupClassCredits(
         sessionId,
       );
       if (!deduction.ok) {
-        console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+        console.error(`Failed to deduct ÃÂ¢ÃÂÃÂ¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
         await env.DB.prepare(
           "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
         ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
@@ -15288,7 +15287,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     .bind(sessionId)
     .all()).results as any[];
 
-  // Batch: get total charged amounts for all attendees â chunked for D1 parameter limit
+  // Batch: get total charged amounts for all attendees ÃÂ¢ÃÂÃÂ chunked for D1 parameter limit
   const userIds = rows.map((r: any) => r.user_id).filter(Boolean);
   const chargedMap = new Map<string, number>();
   for (const chunk of chunkArray(userIds, 50)) {
@@ -15303,7 +15302,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     const creditUnit = normalizeGroupClassCreditUnit(session?.live_class_credit_unit);
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
-    // Read fresh remaining prepaid from DB â chargeAttendanceGroupClassCredits just updated it
+    // Read fresh remaining prepaid from DB ÃÂ¢ÃÂÃÂ chargeAttendanceGroupClassCredits just updated it
     if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
@@ -15313,7 +15312,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
         const safeRefund = Math.min(roundedRefund, totalCharged);
         if (safeRefund > 0) {
           await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
-          console.log(`[Live.EndSession] Refunded â¹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+          console.log(`[Live.EndSession] Refunded ÃÂ¢ÃÂÃÂ¹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
         }
       }
     }
@@ -15366,7 +15365,7 @@ async function handleBookIndividualClass(
     if (wallet.balance_rupees < creditCost) {
       return new Response(JSON.stringify({
         error: "INSUFFICIENT_BALANCE",
-        message: `Individual class ke liye â¹${creditCost} chahiye. Aapke paas sirf â¹${wallet.balance_rupees} hain.`,
+        message: `Individual class ke liye ÃÂ¢ÃÂÃÂ¹${creditCost} chahiye. Aapke paas sirf ÃÂ¢ÃÂÃÂ¹${wallet.balance_rupees} hain.`,
       }), { status: 402 });
     }
 
@@ -15574,7 +15573,7 @@ async function handleRazorpayCreateTopupOrder(
 
     if (amount_paise === 0) {
       const txId = generateCustomId("YA-TXN");
-      // Record actual amount paid (â¹0 for full coupon), not the original price
+      // Record actual amount paid (ÃÂ¢ÃÂÃÂ¹0 for full coupon), not the original price
       const discountedAmountRupees = paiseToInr(amount_paise);
       await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
@@ -15848,7 +15847,7 @@ async function handleAdminCreateLiveSession(
           `Failed to create a Cloudflare RealtimeKit meeting for course ${courseId}.`,
         );
         return new Response(
-          JSON.stringify({ error: "Meeting room à¤¬à¤¨à¤¾à¤¨à¥ à¤®à¥à¤ à¤µà¤¿à¤«à¤²à¥¤ à¤à¥à¤ªà¤¯à¤¾ à¤ªà¥à¤¨à¤ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤à¤°à¥à¤à¥¤" }),
+          JSON.stringify({ error: "Meeting room ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤" }),
           { status: 500, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -16110,7 +16109,7 @@ async function handleLiveSignaling(
         .bind(id, sessionId, payload.sub, type, JSON.stringify(data))
         .run();
 
-      // Update Attendance if it's a student joining â atomic conditional insert prevents TOCTOU race
+      // Update Attendance if it's a student joining ÃÂ¢ÃÂÃÂ atomic conditional insert prevents TOCTOU race
       if (payload.role === "student" && type === "offer_request") {
         const attId = generateCustomId("YA-ATT");
         await env.DB.prepare(
@@ -16481,7 +16480,7 @@ async function handleEnrollWithCredits(
     );
 
     if (!deduction.ok) {
-      // Wallet deduction failed â clean up the enrollment we just created
+      // Wallet deduction failed ÃÂ¢ÃÂÃÂ clean up the enrollment we just created
       try {
         await env.DB.prepare("DELETE FROM Enrollments WHERE id = ?")
           .bind(enrollmentResult.id)
@@ -16509,7 +16508,7 @@ async function handleEnrollWithCredits(
       env,
       payload.sub,
       "Course Unlocked",
-      `You unlocked "${course.title}" using â¹${requiredCost} from wallet.`,
+      `You unlocked "${course.title}" using ÃÂ¢ÃÂÃÂ¹${requiredCost} from wallet.`,
       "success",
     );
 
@@ -16611,25 +16610,25 @@ async function handleEnroll(
       "navasanganakah@gmail.com";
     if (user?.email) {
       const userHtml = `
-        <p style="font-size:16px;color:#334155;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-        <p style="font-size:16px;color:#334155;">à¤à¤ªà¤à¥ <strong>${course.title}</strong> à¤à¤¾ <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!</p>
+        <p style="font-size:16px;color:#334155;">ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+        <p style="font-size:16px;color:#334155;">ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ <strong>${course.title}</strong> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ <span style="color:#4f46e5;font-weight:bold;">Free Preview Access</span> ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!</p>
         <div style="background:#ede9fe;border-radius:12px;padding:16px;margin:20px 0;">
-          <p style="margin:0;color:#5b21b6;font-weight:600;">ð Free lessons à¤à¤­à¥ à¤¦à¥à¤à¥à¤à¥¤</p>
-          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">ð Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤à¤¾à¤à¤ à¤à¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤</p>` : ""}
+          <p style="margin:0;color:#5b21b6;font-weight:600;">ÃÂ°ÃÂÃÂÃÂ Free lessons ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+          ${course.price_rupees > 0 ? `<p style="margin:8px 0 0;color:#7c3aed;">ÃÂ°ÃÂÃÂÃÂ Premium access ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ course page ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>` : ""}
         </div>
       `;
-      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¥ ${course.title} à¤à¤¾ Free Preview Access à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!\nFree lessons à¤à¤­à¥ à¤¦à¥à¤à¥à¤à¥¤\n${course.price_rupees > 0 ? "Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤à¤¾à¤à¤ à¤à¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}`;
+      const userText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ${course.title} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Free Preview Access ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!\nFree lessons ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤\n${course.price_rupees > 0 ? "Premium access ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ course page ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤" : ""}`;
       await safeSendEmail(
         env,
         user.email,
-        `â Enrollment Confirmed: ${course.title}`,
-        "ð Free Access à¤®à¤¿à¤² à¤à¤¯à¤¾!",
+        `ÃÂ¢ÃÂÃÂ Enrollment Confirmed: ${course.title}`,
+        "ÃÂ°ÃÂÃÂÃÂ Free Access ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾!",
         userHtml,
         userText,
       );
     }
-    const adminHtml = `<p>à¤¨à¤®à¤¸à¥à¤¤à¥ Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) à¤¨à¥ <strong>${course.title}</strong> à¤®à¥à¤ <b>Free Enroll</b> à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤</p><p>Om!</p>`;
-    const adminText = `à¤¨à¤®à¤¸à¥à¤¤à¥ Admin,\n\n${user?.full_name || userId} (${user?.email}) à¤¨à¥ ${course.title} à¤®à¥à¤ Free Enroll à¤à¤¿à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
+    const adminHtml = `<p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ Admin,</p><p><strong>${user?.full_name || userId}</strong> (${user?.email}) ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ <strong>${course.title}</strong> ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ <b>Free Enroll</b> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p><p>Om!</p>`;
+    const adminText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ Admin,\n\n${user?.full_name || userId} (${user?.email}) ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ${course.title} ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ Free Enroll ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\n\nOm!`;
     await safeSendEmail(
       env,
       adminEmail,
@@ -16673,7 +16672,7 @@ async function handleBookCompleteLesson(
 
     const userId = payload.sub;
 
-    // Check enrollment â user must be enrolled in this book (or a linked course)
+    // Check enrollment ÃÂ¢ÃÂÃÂ user must be enrolled in this book (or a linked course)
     const enrollment: any = await env.DB.prepare(
       "SELECT id, progress FROM Enrollments WHERE user_id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?)) AND status IN ('active', 'completed') LIMIT 1",
     ).bind(userId, bookId, bookId).first();
@@ -16731,7 +16730,7 @@ async function handleBookCompleteLesson(
     const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
     const status = progress >= 100 ? "completed" : "active";
 
-    // Update enrollment progress â try book_id match first, then fallback to course_id
+    // Update enrollment progress ÃÂ¢ÃÂÃÂ try book_id match first, then fallback to course_id
     const updated = await env.DB.prepare(
       "UPDATE Enrollments SET progress = ?, status = ? WHERE id = ? AND (book_id = ? OR course_id IN (SELECT course_id FROM CourseBooks WHERE book_id = ?))",
     ).bind(progress, status, enrollment.id, bookId, bookId).run();
@@ -16741,7 +16740,7 @@ async function handleBookCompleteLesson(
         "SELECT title FROM Books WHERE id = ?",
       ).bind(bookId).first();
       await createNotification(
-        env, userId, "Book Completed! ð",
+        env, userId, "Book Completed! ÃÂ°ÃÂÃÂÃÂ",
         `Congratulations on completing "${c?.title || "this book"}"!`,
         "success",
       );
@@ -16927,7 +16926,7 @@ async function handleCompleteLesson(
       status = "completed";
     }
 
-    // Check if paid enrollment â set certificate_eligible
+    // Check if paid enrollment ÃÂ¢ÃÂÃÂ set certificate_eligible
     const paidEnrollment: any = await env.DB.prepare(
       "SELECT id, payment_status FROM Enrollments WHERE user_id = ? AND course_id = ?",
     )
@@ -16956,8 +16955,8 @@ async function handleCompleteLesson(
       await createNotification(
         env,
         userId,
-        "Course Completed! ð",
-        `Congratulations on completing "${c?.title}"!${isPaid ? " à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤!" : ""}`,
+        "Course Completed! ÃÂ°ÃÂÃÂÃÂ",
+        `Congratulations on completing "${c?.title}"!${isPaid ? " ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ Certificate ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ eligible ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ!" : ""}`,
         "success",
       );
 
@@ -16968,32 +16967,32 @@ async function handleCompleteLesson(
         .first();
       if (user?.email) {
         let emailHtml = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-          <p>à¤à¤ªà¤¨à¥ <strong>${c?.title}</strong> course 100% à¤ªà¥à¤°à¤¾ à¤à¤° à¤²à¤¿à¤¯à¤¾ à¤¹à¥! ð</p>
+          <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+          <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ <strong>${c?.title}</strong> course 100% ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ! ÃÂ°ÃÂÃÂÃÂ</p>
         `;
-        let emailText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤¨à¥ ${c?.title} course 100% à¤ªà¥à¤°à¤¾ à¤à¤° à¤²à¤¿à¤¯à¤¾ à¤¹à¥! ð\n`;
+        let emailText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ${c?.title} course 100% ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ! ÃÂ°ÃÂÃÂÃÂ\n`;
 
         if (isPaid) {
           emailHtml += `
             <div style="background:#fffbeb;padding:16px;border-radius:12px;border:1px solid #fde68a;margin-top:16px;">
-              <p style="color:#92400e;font-weight:600;margin:0;">ð à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¥¤ Admin à¤à¤²à¥à¤¦ à¤¹à¥ à¤à¤ªà¤à¤¾ certificate issue à¤à¤°à¥à¤à¤¾à¥¤</p>
+              <p style="color:#92400e;font-weight:600;margin:0;">ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ Certificate ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ eligible ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ Admin ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¦ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ certificate issue ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¥ÃÂ¤</p>
             </div>
           `;
-          emailText += `\nð à¤à¤ª à¤à¤¬ Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¥¤ Admin à¤à¤²à¥à¤¦ à¤¹à¥ à¤à¤ªà¤à¤¾ certificate issue à¤à¤°à¥à¤à¤¾à¥¤`;
+          emailText += `\nÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¬ Certificate ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ eligible ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ Admin ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¦ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ certificate issue ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¥ÃÂ¤`;
         } else {
           emailHtml += `
             <div style="background:#f0fdf4;padding:16px;border-radius:12px;border:1px solid #bbf7d0;margin-top:16px;">
-              <p style="color:#166534;font-weight:600;margin:0;">â¨ Certificate à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ Premium Enrollment à¤®à¥à¤ upgrade à¤à¤°à¥à¤à¥¤</p>
+              <p style="color:#166534;font-weight:600;margin:0;">ÃÂ¢ÃÂÃÂ¨ Certificate ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ Premium Enrollment ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ upgrade ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
             </div>
           `;
-          emailText += `\nâ¨ Certificate à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ Premium Enrollment à¤®à¥à¤ upgrade à¤à¤°à¥à¤à¥¤`;
+          emailText += `\nÃÂ¢ÃÂÃÂ¨ Certificate ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ Premium Enrollment ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ upgrade ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`;
         }
 
         await safeSendEmail(
           env,
           user.email,
           `Course Completed: ${c?.title}`,
-          "ð Course Completed!",
+          "ÃÂ°ÃÂÃÂÃÂ Course Completed!",
           emailHtml,
           emailText,
         );
@@ -17409,7 +17408,7 @@ async function handleCreatePaymentOrder(
 
     const order = (await response.json()) as any;
 
-    // Step 1: Create Transaction FIRST â prevents orphaned enrollment if Transaction INSERT fails
+    // Step 1: Create Transaction FIRST ÃÂ¢ÃÂÃÂ prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -17417,7 +17416,7 @@ async function handleCreatePaymentOrder(
       .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
-    // Step 2: Create Enrollment â uses ON CONFLICT DO NOTHING to prevent duplicates
+    // Step 2: Create Enrollment ÃÂ¢ÃÂÃÂ uses ON CONFLICT DO NOTHING to prevent duplicates
     const enrollPayload: any = { userId: payload.sub, status: "pending", paymentStatus: "pending", paymentSource: "razorpay", paymentId: order.id, preservePaidStatus: true };
     if (itemType === "course") enrollPayload.courseId = itemId;
     if (itemType === "book") enrollPayload.bookId = itemId;
@@ -17496,14 +17495,14 @@ async function handleVerifyPayment(
       const user: any = await env.DB.prepare("SELECT email, full_name FROM Users WHERE id = ?").bind(orderOwner.user_id).first();
       if (user?.email) {
         const userHtml = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-          <p><strong>${title}</strong> à¤à¤¾ <b>Premium Access</b> à¤à¤ªà¤à¥ à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!</p>
+          <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+          <p><strong>${title}</strong> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ <b>Premium Access</b> ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!</p>
           <div style="background:#dcfce7;border-radius:12px;padding:16px;margin:20px 0;">
-            <p style="margin:0;color:#166534;font-weight:600;">ð Course à¤ªà¥à¤°à¤¾ à¤à¤°à¤¨à¥ à¤ªà¤° à¤à¤ª Certificate à¤à¥ à¤²à¤¿à¤ eligible à¤¹à¥à¤à¤à¥!</p>
+            <p style="margin:0;color:#166534;font-weight:600;">ÃÂ°ÃÂÃÂÃÂ Course ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª Certificate ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ eligible ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ!</p>
           </div>
         `;
-        const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}\n\n${title} à¤à¤¾ Premium Access à¤à¤ªà¤à¥ à¤®à¤¿à¤² à¤à¤¯à¤¾ à¤¹à¥!\n\nOm!`;
-        await safeSendEmail(env, user.email, `ð Premium Access Confirmed: ${title}`, "ð à¤­à¥à¤à¤¤à¤¾à¤¨ à¤¸à¤«à¤²!", userHtml, userText);
+        const userText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}\n\n${title} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ Premium Access ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!\n\nOm!`;
+        await safeSendEmail(env, user.email, `ÃÂ°ÃÂÃÂÃÂ Premium Access Confirmed: ${title}`, "ÃÂ°ÃÂÃÂÃÂ ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²!", userHtml, userText);
         await createNotification(env, orderOwner.user_id, "Payment Successful", `You now have premium access to ${title}`, "success");
       }
     } catch (e) {
@@ -17639,7 +17638,7 @@ async function checkAndConsumeAICredit(
   if (!deductionResult.ok) {
     return {
       allowed: false,
-      reason: `Balance à¤à¤® à¤¹à¥à¥¤ à¤à¤¸ action à¤à¥ à¤²à¤¿à¤ â¹${deduction} à¤à¤¾à¤¹à¤¿à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ wallet recharge à¤à¤°à¥à¤à¥¤ (Insufficient balance. â¹${deduction} required. Please recharge your wallet.)`,
+      reason: `Balance ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸ action ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ¢ÃÂÃÂ¹${deduction} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ wallet recharge ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ (Insufficient balance. ÃÂ¢ÃÂÃÂ¹${deduction} required. Please recharge your wallet.)`,
       remaining: deductionResult.balance_rupees,
     };
   }
@@ -17723,7 +17722,7 @@ async function handleAdminAIReindex(
   }
 }
 
-async function checkHourlyLimit(
+export async function checkHourlyLimit(
   env: Env,
   userId: string,
   service = "ai",
@@ -17736,7 +17735,7 @@ async function checkHourlyLimit(
 
   const windowStart = limit?.window_start ? new Date(limit.window_start) : new Date(0);
   const windowUsed = Number(limit?.window_used || 0);
-  const rateLimit = Number(limit?.rate_limit || 0);
+  const rateLimit = limit?.rate_limit > 0 ? Number(limit.rate_limit) : 60;
   const now = new Date();
   const diffMs = now.getTime() - windowStart.getTime();
 
@@ -17755,7 +17754,7 @@ async function checkHourlyLimit(
     const resetMin = Math.ceil((3600000 - diffMs) / 60000);
     return {
       allowed: false,
-      reason: `Rate limit exceeded (${rateLimit}/hour). ${resetMin} à¤®à¤¿à¤¨à¤ à¤¬à¤¾à¤¦ try à¤à¤°à¥à¤à¥¤`,
+      reason: `Rate limit exceeded (${rateLimit}/hour). ${resetMin} ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¦ try ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
     };
   }
 
@@ -17796,7 +17795,7 @@ async function userHasActiveSubscription(
   return profile.hasActiveSub;
 }
 
-// GET /api/subscription/plans â Public list of active plans
+// GET /api/subscription/plans ÃÂ¢ÃÂÃÂ Public list of active plans
 async function handleListSubscriptionPlans(
   request: Request,
   env: Env,
@@ -17821,7 +17820,7 @@ async function handleListSubscriptionPlans(
   }
 }
 
-// GET /api/subscription/me â User ka current subscription status
+// GET /api/subscription/me ÃÂ¢ÃÂÃÂ User ka current subscription status
 async function handleGetUserSubscription(
   request: Request,
   env: Env,
@@ -17868,7 +17867,7 @@ async function handleGetUserSubscription(
   }
 }
 
-// POST /api/subscription/create â Create Razorpay subscription & save to DB
+// POST /api/subscription/create ÃÂ¢ÃÂÃÂ Create Razorpay subscription & save to DB
 async function handleCreateSubscription(
   request: Request,
   env: Env,
@@ -18003,7 +18002,7 @@ async function handleCreateSubscription(
       );
     }
 
-    // Save subscription record to D1 â reuse pre-select created subscription if available
+    // Save subscription record to D1 ÃÂ¢ÃÂÃÂ reuse pre-select created subscription if available
     const existingCreatedSub: any = await env.DB.prepare(
       `SELECT id FROM Subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'created' AND razorpay_subscription_id IS NULL ORDER BY created_at DESC LIMIT 1`,
     )
@@ -18040,12 +18039,12 @@ async function handleCreateSubscription(
         <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #bbf7d0;">
           <p style="margin: 0; color: #166534; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ÃÂ¢ÃÂÃÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>Please complete the payment in the checkout window to activate your subscription.</p>
         <p style="font-size: 13px; color: #64748b;">If you closed the window, you can re-initiate the payment from your student dashboard.</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nYour new subscription for ${plan.name} has been created. Please complete the payment to activate it.\n\nAmount: ÃÂ¢ÃÂÃÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -18070,7 +18069,7 @@ async function handleCreateSubscription(
   }
 }
 
-// POST /api/subscription/cancel â Request cancellation of active subscription
+// POST /api/subscription/cancel ÃÂ¢ÃÂÃÂ Request cancellation of active subscription
 async function handleCancelSubscription(
   request: Request,
   env: Env,
@@ -18277,7 +18276,7 @@ async function handleAdminPlanPool(
   }
 }
 
-// GET /api/subscription/plans/:id/pool â Student sees what they can choose from
+// GET /api/subscription/plans/:id/pool ÃÂ¢ÃÂÃÂ Student sees what they can choose from
 async function handleStudentPlanPool(
   request: Request,
   env: Env,
@@ -18345,7 +18344,7 @@ async function handleStudentPlanPool(
   }
 }
 
-// POST /api/subscription/pre-select â Student saves selection before payment
+// POST /api/subscription/pre-select ÃÂ¢ÃÂÃÂ Student saves selection before payment
 async function handleStudentPreSelect(
   request: Request,
   env: Env,
@@ -18545,7 +18544,7 @@ async function handleStudentPreSelect(
   }
 }
 
-// GET /api/subscription/my-selections â Get student's locked selections
+// GET /api/subscription/my-selections ÃÂ¢ÃÂÃÂ Get student's locked selections
 async function handleGetMySelections(
   request: Request,
   env: Env,
@@ -18597,7 +18596,7 @@ async function handleGetMySelections(
   }
 }
 
-// GET /api/subscription/ai-credits â Get student's current wallet balance
+// GET /api/subscription/ai-credits ÃÂ¢ÃÂÃÂ Get student's current wallet balance
 async function handleGetMyWalletBalance(
   request: Request,
   env: Env,
@@ -18619,7 +18618,7 @@ async function handleGetMyWalletBalance(
   }
 }
 
-// GET+POST+PUT+DELETE /api/admin/subscription/plans â Admin: Manage plans (with Razorpay auto-creation)
+// GET+POST+PUT+DELETE /api/admin/subscription/plans ÃÂ¢ÃÂÃÂ Admin: Manage plans (with Razorpay auto-creation)
 async function handleAdminSubscriptionPlans(
   request: Request,
   env: Env,
@@ -18631,7 +18630,7 @@ async function handleAdminSubscriptionPlans(
     const planId = url.pathname.split("/").pop();
     const isSpecificPlan = planId && planId !== "plans";
 
-    // GET â List all plans
+    // GET ÃÂ¢ÃÂÃÂ List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
         "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
@@ -18642,7 +18641,7 @@ async function handleAdminSubscriptionPlans(
       });
     }
 
-    // POST â Create plan (auto-creates in Razorpay first, then saves to DB)
+    // POST ÃÂ¢ÃÂÃÂ Create plan (auto-creates in Razorpay first, then saves to DB)
     if (request.method === "POST") {
       const {
         name,
@@ -18768,13 +18767,13 @@ async function handleAdminSubscriptionPlans(
           razorpay_plan_id: razorpayPlanId,
           message: razorpayPlanId
             ? `Plan created successfully and linked to Razorpay (${razorpayPlanId})`
-            : "Plan saved to DB. Razorpay keys not configured â plan not created in Razorpay.",
+            : "Plan saved to DB. Razorpay keys not configured ÃÂ¢ÃÂÃÂ plan not created in Razorpay.",
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // PUT â Update plan (all fields updateable)
+    // PUT ÃÂ¢ÃÂÃÂ Update plan (all fields updateable)
     if (request.method === "PUT" && isSpecificPlan) {
       const {
         name, interval, interval_count, amount_rupees, razorpay_plan_id,
@@ -18868,7 +18867,7 @@ async function handleAdminSubscriptionPlans(
       });
     }
 
-      // DELETE â Deactivate plan (soft delete â keeps existing subscriptions intact)
+      // DELETE ÃÂ¢ÃÂÃÂ Deactivate plan (soft delete ÃÂ¢ÃÂÃÂ keeps existing subscriptions intact)
     if (request.method === "DELETE" && isSpecificPlan) {
       const razorpayKey = await getSecret(env, "RAZORPAY_KEY_ID");
       const razorpaySecret = await getSecret(env, "RAZORPAY_KEY_SECRET");
@@ -19026,7 +19025,7 @@ async function getOrCreateRazorpayCustomer(
   );
 }
 
-// POST /api/admin/subscription/assign â Admin: Manually assign plan to user (sends Razorpay link)
+// POST /api/admin/subscription/assign ÃÂ¢ÃÂÃÂ Admin: Manually assign plan to user (sends Razorpay link)
 async function handleAdminAssignSubscription(
   request: Request,
   env: Env,
@@ -19153,7 +19152,7 @@ async function handleAdminAssignSubscription(
         <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 24px 0; border: 1px solid #ddd6fe;">
           <p style="margin: 0; color: #4338ca; font-weight: bold;">Subscription Details:</p>
           <p style="margin: 8px 0 0 0;">Plan: ${plan.name}</p>
-          <p style="margin: 4px 0 0 0;">Amount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
+          <p style="margin: 4px 0 0 0;">Amount: ÃÂ¢ÃÂÃÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}</p>
         </div>
         <p>To activate your subscription and start your learning journey, please complete the payment using the official link below:</p>
         <p style="text-align: center; margin: 32px 0;">
@@ -19161,7 +19160,7 @@ async function handleAdminAssignSubscription(
         </p>
         <p style="font-size: 13px; color: #64748b;">If the button doesn't work, copy and paste this URL into your browser: <br/> ${rzpPaymentLink}</p>
       `;
-      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: â¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
+      const textBody = `Namaste ${user.full_name || "Student"},\n\nA new subscription plan (${plan.name}) has been assigned to your account. Please complete the payment using this link to activate it: ${rzpPaymentLink}\n\nAmount: ÃÂ¢ÃÂÃÂ¹${Math.round(plan.amount_rupees)} / ${plan.interval}`;
 
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
@@ -19179,7 +19178,7 @@ async function handleAdminAssignSubscription(
     return handleGlobalError(error, "Admin.AssignSubscription", env, request);
   }
 }
-// POST /api/payment/webhook â Razorpay Webhook (server-side event processing)
+// POST /api/payment/webhook ÃÂ¢ÃÂÃÂ Razorpay Webhook (server-side event processing)
 async function handleRazorpayWebhook(
   request: Request,
   env: Env,
@@ -19211,7 +19210,7 @@ async function handleRazorpayWebhook(
     );
 
     if (!isValid) {
-      console.error("[Webhook] Signature mismatch â possible forgery attempt");
+      console.error("[Webhook] Signature mismatch ÃÂ¢ÃÂÃÂ possible forgery attempt");
       return new Response(
         JSON.stringify({ error: "Invalid webhook signature" }),
         { status: 400 },
@@ -19228,7 +19227,7 @@ async function handleRazorpayWebhook(
     const eventType: string = event.event;
     console.log(`[Webhook] Received event: ${eventType}`);
 
-    // 3. Idempotency guard â insert the event ID up front. If another concurrent
+    // 3. Idempotency guard ÃÂ¢ÃÂÃÂ insert the event ID up front. If another concurrent
     // delivery already inserted it, we skip. If processing later throws, we delete
     // the row so Razorpay can retry transient failures.
     const eventId = event.id || request.headers.get("x-razorpay-event-id");
@@ -19266,7 +19265,7 @@ async function handleRazorpayWebhook(
         )
           .bind(orderId)
           .first();
-        // actualAmountInr paiseârupees conversion ke baad INR mein hai
+        // actualAmountInr paiseÃÂ¢ÃÂÃÂrupees conversion ke baad INR mein hai
         const amountPaid = actualAmountInr || txForAmount?.amount_rupees || 0;
 
         await env.DB.prepare(
@@ -19296,14 +19295,14 @@ async function handleRazorpayWebhook(
           await createNotification(
             env,
             enrollment.user_id,
-            "Payment Successful! ð",
+            "Payment Successful! ÃÂ°ÃÂÃÂÃÂ",
             `"${enrollment.title}" course ka access unlock ho gaya hai.`,
             "success",
           );
         }
 
         // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
-        // D1 (SQLite-based) RETURNING clause support nahi karta â do step mein karte hain
+        // D1 (SQLite-based) RETURNING clause support nahi karta ÃÂ¢ÃÂÃÂ do step mein karte hain
         const creditTxFind: any = await env.DB.prepare(
           "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
@@ -19326,8 +19325,8 @@ async function handleRazorpayWebhook(
           await createNotification(
             env,
             creditTxUpdate.user_id,
-            "Balance Added! ð",
-            `â¹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
+            "Balance Added! ÃÂ°ÃÂÃÂÃÂ",
+            `ÃÂ¢ÃÂÃÂ¹${creditTxUpdate.amount_rupees} aapke wallet mein add ho gaye hain.`,
             "success",
           );
         }
@@ -19335,7 +19334,7 @@ async function handleRazorpayWebhook(
     } else if (eventType === "subscription.activated") {
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
-        // Idempotency check â skip if already active (prevents double AI credit allocation on webhook retry)
+        // Idempotency check ÃÂ¢ÃÂÃÂ skip if already active (prevents double AI credit allocation on webhook retry)
         const existingSub: any = await env.DB.prepare(
           "SELECT status FROM Subscriptions WHERE razorpay_subscription_id = ?",
         )
@@ -19383,16 +19382,16 @@ async function handleRazorpayWebhook(
             if (dbSub.live_class_amount_rupees > 0) {
               const renewalAmount = dbSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
-                // ð´ FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
+                // ÃÂ°ÃÂÃÂÃÂ´ FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
                 // Previously: status update, then addToWallet, then tracking field update
                 // were 3 separate calls. If the worker crashed after status update
                 // but before wallet credit, retry would see status='active' and
-                // skip the entire block â permanently losing the credit.
-                // Now they execute in one DB transaction â all succeed or none.
+                // skip the entire block ÃÂ¢ÃÂÃÂ permanently losing the credit.
+                // Now they execute in one DB transaction ÃÂ¢ÃÂÃÂ all succeed or none.
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
                 const batchStmts = [
-                  // Status update (no-op if already active â safe for retry)
+                  // Status update (no-op if already active ÃÂ¢ÃÂÃÂ safe for retry)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
                   ).bind(periodStart, periodEnd, dbSub.id),
@@ -19410,7 +19409,7 @@ async function handleRazorpayWebhook(
                     `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
                      SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
                   ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
-                  // Accumulate tracking field â add plan value to existing balance (rollover)
+                  // Accumulate tracking field ÃÂ¢ÃÂÃÂ add plan value to existing balance (rollover)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
                   ).bind(renewalAmount, dbSub.id),
@@ -19421,7 +19420,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               dbSub.user_id,
-              "Subscription Active! â",
+              "Subscription Active! ÃÂ¢ÃÂÃÂ",
               "Aapka subscription activate ho gaya hai. Apne selected courses access karein!",
               "success",
             );
@@ -19434,16 +19433,16 @@ async function handleRazorpayWebhook(
               .first();
             if (user?.email) {
               const userHtml = `
-                <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${user.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-                <p>à¤à¤ªà¤à¤¾ subscription à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ activate à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥!</p>
-                <p>à¤à¤ª à¤à¤ªà¤¨à¥ selected courses à¤à¤° AI credits à¤à¤¾ à¤à¤ªà¤¯à¥à¤ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤</p>
+                <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+                <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ subscription ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ activate ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!</p>
+                <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ selected courses ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° AI credits ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
               `;
-              const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${user.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¤¾ subscription à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ activate à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥!\nà¤à¤ª à¤à¤ªà¤¨à¥ selected courses à¤à¤° AI credits à¤à¤¾ à¤à¤ªà¤¯à¥à¤ à¤à¤° à¤¸à¤à¤¤à¥ à¤¹à¥à¤à¥¤\n\nOm!`;
+              const userText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${user.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ subscription ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ activate ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ!\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂª ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ selected courses ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° AI credits ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤\n\nOm!`;
               await safeSendEmail(
                 env,
                 user.email,
                 "Subscription Activated",
-                "â Subscription Active!",
+                "ÃÂ¢ÃÂÃÂ Subscription Active!",
                 userHtml,
                 userText,
               );
@@ -19453,7 +19452,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.authenticated") {
-      // Payment authenticated by user â update status to 'authenticated' (payment captured separately)
+      // Payment authenticated by user ÃÂ¢ÃÂÃÂ update status to 'authenticated' (payment captured separately)
       const authSub = event.payload?.subscription?.entity;
       if (authSub?.id) {
         const existingAuthSub: any = await env.DB.prepare(
@@ -19475,7 +19474,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal â update period dates and refill live_class_amount_rupees
+      // Renewal ÃÂ¢ÃÂÃÂ update period dates and refill live_class_amount_rupees
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
@@ -19512,7 +19511,7 @@ async function handleRazorpayWebhook(
             .first();
           if (chargedSub) {
             if (chargedSub.live_class_amount_rupees > 0) {
-              // ð´ FIX: Atomic batch for status update, wallet credit, tracking field.
+              // ÃÂ°ÃÂÃÂÃÂ´ FIX: Atomic batch for status update, wallet credit, tracking field.
               // Prevents permanent credit loss if worker crashes mid-way.
               const renewalAmount = chargedSub.live_class_amount_rupees || 0;
               if (renewalAmount > 0) {
@@ -19558,7 +19557,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               chargedSub.user_id,
-              "Subscription Renewed! â»ï¸",
+              "Subscription Renewed! ÃÂ¢ÃÂÃÂ»ÃÂ¯ÃÂ¸ÃÂ",
               "Aapka subscription renew ho gaya hai aur wallet me paise add ho gaye hain.",
               "success",
             );
@@ -19566,7 +19565,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.halted") {
-      // Payment failed â halt subscription
+      // Payment failed ÃÂ¢ÃÂÃÂ halt subscription
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         // Check previous status to avoid duplicate notifications on retry
@@ -19593,7 +19592,7 @@ async function handleRazorpayWebhook(
             await createNotification(
               env,
               dbSub.user_id,
-              "Subscription Payment Failed â ï¸",
+              "Subscription Payment Failed ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ",
               "Aapke subscription ka payment fail ho gaya. Kripya payment update karein.",
               "alert",
             );
@@ -19605,17 +19604,17 @@ async function handleRazorpayWebhook(
               .first();
             if (haltedUser?.email) {
               const haltedHtml = `
-                <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${haltedUser.full_name || "à¤à¤¾à¤¤à¥à¤°"}</strong>,</p>
-                <p>à¤à¤ªà¤à¥ subscription à¤à¤¾ à¤­à¥à¤à¤¤à¤¾à¤¨ à¤µà¤¿à¤«à¤² à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
-                <p>à¤à¥à¤ªà¤¯à¤¾ Razorpay dashboard à¤ªà¤° à¤à¤¾à¤à¤° à¤à¤ªà¤¨à¥ payment method à¤à¥ update à¤à¤°à¥à¤ à¤¤à¤¾à¤à¤¿ à¤à¤ªà¤à¤¾ subscription à¤à¤¾à¤°à¥ à¤°à¤¹ à¤¸à¤à¥à¥¤</p>
-                <p>à¤à¤à¤° à¤à¤ªà¤¨à¥ à¤¯à¤¹ à¤¨à¤¹à¥à¤ à¤à¤¿à¤¯à¤¾ à¤¹à¥ à¤¤à¥ à¤à¥à¤ªà¤¯à¤¾ à¤à¤¸ à¤¸à¤à¤¦à¥à¤¶ à¤à¥ à¤à¤¨à¤¦à¥à¤à¤¾ à¤à¤°à¥à¤à¥¤</p>
+                <p>ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ <strong>${haltedUser.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"}</strong>,</p>
+                <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ subscription ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+                <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ Razorpay dashboard ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ payment method ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ update ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ subscription ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¹ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
+                <p>ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¹ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¶ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
               `;
-              const haltedText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${haltedUser.full_name || "à¤à¤¾à¤¤à¥à¤°"},\n\nà¤à¤ªà¤à¥ subscription à¤à¤¾ à¤­à¥à¤à¤¤à¤¾à¤¨ à¤µà¤¿à¤«à¤² à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nà¤à¥à¤ªà¤¯à¤¾ Razorpay dashboard à¤ªà¤° à¤à¤¾à¤à¤° à¤à¤ªà¤¨à¥ payment method à¤à¥ update à¤à¤°à¥à¤à¥¤\n\nOm!`;
+              const haltedText = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂ ${haltedUser.full_name || "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°"},\n\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ subscription ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤\nÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ Razorpay dashboard ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ payment method ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ update ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤\n\nOm!`;
               await safeSendEmail(
                 env,
                 haltedUser.email,
                 "Subscription Payment Failed",
-                "â ï¸ Subscription Payment Failed",
+                "ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ Subscription Payment Failed",
                 haltedHtml,
                 haltedText,
               );
@@ -19898,73 +19897,75 @@ export async function generateAIContent(
   const models = await getAiModelConfig(env, modelId);
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
 
-  const universalPayload = models.map(m => {
-    let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
-    const reqQuery: any = {
-      model: m.id,
-      messages: applySystemPrompt(messages, m.system_prompt),
-      max_tokens: 4000,
-    };
-    if (forceJson) reqQuery.response_format = { type: "json_object" };
+  let lastError: Error | null = null;
 
-    return {
-      provider: m.provider,
-      endpoint: m.endpoint,
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
-      query: reqQuery
-    };
-  });
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
-    const gRes = await fetch(gatewayUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(universalPayload),
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
-
-    let resText = await gRes.text();
-
-    if (!gRes.ok) {
-      throw new Error(`AI Gateway universal request failed: ${resText}`);
-    }
-
-    if (!resText || resText.trim() === "") {
-      throw new Error(`Gateway returned EMPTY response`);
-    }
-
+  for (const m of models) {
     try {
-      const aiResponse = JSON.parse(resText);
-      // Handle standard OpenAI-like response
-      if (aiResponse.choices?.[0]?.message?.content) {
-        let content = aiResponse.choices[0].message.content;
-        return forceJson ? sanitizeJson(content) : content;
-      }
-      // Handle direct string responses if gateway simplifies it
-      if (typeof aiResponse === "string")
-        return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
 
-      throw new Error("JSON parsed but structure unknown");
-    } catch (parseError) {
-      // If parsing fails but we have text, and we're not forced into JSON, return as is
-      if (!forceJson && resText) return resText;
-      throw new Error(
-        `Gateway returned non-JSON structure: ${resText.substring(0, 100)}`,
-      );
+      const reqQuery: any = {
+        model: m.id,
+        messages: applySystemPrompt(messages, m.system_prompt),
+        max_tokens: 4000,
+      };
+      if (forceJson) reqQuery.response_format = { type: "json_object" };
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: reqQuery,
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const gRes = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      const resText = await gRes.text();
+
+      if (!gRes.ok) {
+        console.warn(`[AI Gateway] Model ${m.id} returned error ${gRes.status}:`, resText.substring(0, 200));
+        throw new Error(`Gateway request failed (${gRes.status})`);
+      }
+
+      if (!resText || resText.trim() === "") {
+        throw new Error("Gateway returned EMPTY response");
+      }
+
+      try {
+        const aiResponse = JSON.parse(resText);
+        if (aiResponse.choices?.[0]?.message?.content) {
+          const c = aiResponse.choices[0].message.content;
+          return forceJson ? sanitizeJson(c) : c;
+        }
+        if (typeof aiResponse === "string")
+          return forceJson ? sanitizeJson(aiResponse) : aiResponse;
+        throw new Error("JSON parsed but structure unknown");
+      } catch (parseError) {
+        if (!forceJson && resText) return resText;
+        console.warn(`[AI Gateway] Model ${m.id} returned non-JSON structure:`, resText.substring(0, 100));
+        throw new Error("Gateway returned non-JSON structure");
+      }
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Gateway] Model ${m.id} failed:`, lastError.message);
     }
-  } catch (e: any) {
-    throw new Error(`AI Gateway Request Failed: ${e.message}`);
   }
+
+  throw new Error(`AI Gateway Request Failed: ${lastError?.message || "All models failed"}`);
 }
 
 async function fetchAIStream(messages: any[], env: Env, modelId?: string | null): Promise<Response> {
@@ -19981,50 +19982,59 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   const models = await getAiModelConfig(env, modelId);
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
 
-  const universalPayload = models.map(m => {
-    let authHeader = `Bearer ${aigToken}`;
-    if (m.provider === "openai" && openaiKey) {
-      authHeader = `Bearer ${openaiKey}`;
-    }
-    return {
-      provider: m.provider,
-      endpoint: m.endpoint,
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
-      query: {
-        model: m.id,
-        messages: applySystemPrompt(messages, m.system_prompt),
-        max_tokens: 4000,
-        stream: true
-      }
-    };
-  });
+  let lastError: Error | null = null;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
-  try {
-    const response = await fetch(gatewayUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(universalPayload),
-      signal: controller.signal,
-    });
-    return new Response(response.body, {
-      headers: { "Content-Type": "text/event-stream" },
-    });
-  } finally {
-    clearTimeout(timeoutId);
+  for (const m of models) {
+    try {
+      const authHeader =
+        m.provider === "openai" && openaiKey
+          ? `Bearer ${openaiKey}`
+          : `Bearer ${aigToken}`;
+
+      const payload = {
+        provider: m.provider,
+        endpoint: m.endpoint,
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        query: {
+          model: m.id,
+          messages: applySystemPrompt(messages, m.system_prompt),
+          max_tokens: 4000,
+          stream: true,
+        },
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(gatewayUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`[AI Stream] Model ${m.id} returned error ${response.status}:`, errText.substring(0, 200));
+        throw new Error(`Gateway stream failed (${response.status})`);
+      }
+
+      return new Response(response.body, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[AI Stream] Model ${m.id} failed:`, lastError.message);
+    }
   }
+
+  throw new Error(`AI Stream Request Failed: ${lastError?.message || "All models failed"}`);
 }
 
-// Converts Workers AI's native streaming chunks ({"response":"..."}) into
-// OpenAI-compatible SSE (data: {"choices":[{"delta":{"content":"..."}}]})
-// so the frontend can use a single parser for both the Gateway stream
-// (admin/teacher) and the direct Workers AI stream (students).
 function transformWorkersAIStreamToOpenAI(
   input: ReadableStream<Uint8Array>,
 ): ReadableStream<Uint8Array> {
@@ -20114,7 +20124,7 @@ async function getAIGlobalContext(
   try {
     let context = "";
     if (role === "admin") {
-      // â¡ Bolt: Batch independent queries to execute concurrently instead of sequentially
+      // ÃÂ¢ÃÂÃÂ¡ Bolt: Batch independent queries to execute concurrently instead of sequentially
       const [statsResult, recentEnrollments, courseList] = await env.DB.batch([
         env.DB.prepare(
           `
@@ -20164,7 +20174,7 @@ Actions:
 18. send_email: { to, subject, body, isHtml }
 `;
     } else if (userId) {
-      // â¡ Bolt: Batch independent user context queries
+      // ÃÂ¢ÃÂÃÂ¡ Bolt: Batch independent user context queries
       const [userResult, enrollments, library, recentNotifications, examProgress] = await env.DB.batch([
         env.DB.prepare("SELECT id, full_name, email, role, phone, district, state, country, birth_date, father_name, mother_name, grand_father_name, pincode, gender, bio, birth_place, created_at FROM Users WHERE id = ?").bind(userId),
         env.DB.prepare(
@@ -20213,7 +20223,7 @@ Joined: ${user?.created_at}
       // Deep lesson titles for enrolled courses
       const enrolledCourses = (enrollments.results as any[]) || [];
       if (enrolledCourses.length > 0) {
-        // â¡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
+        // ÃÂ¢ÃÂÃÂ¡ Bolt: Batch lesson queries for enrolled courses to prevent N+1 waterfall
         const lessonQueries = enrolledCourses.map((enrolled) =>
           env.DB.prepare("SELECT id, title, type FROM Lessons WHERE course_id = ?").bind(enrolled.course_id)
         );
@@ -20387,27 +20397,27 @@ function buildReleaseContent(options: {
     .filter(Boolean)
     .slice(0, 10);
   const summaryLines = [
-    `Branch ${options.sourceBranch} à¤¸à¥ ${options.targetBranch} à¤®à¥à¤ release changes à¤¤à¥à¤¯à¤¾à¤° à¤¹à¥à¤à¥¤`,
-    commitTitles.length ? `à¤®à¥à¤à¥à¤¯ commits: ${commitTitles.join("; ")}` : "GitHub compare à¤®à¥à¤ commit details à¤à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¥à¥¤",
-    fileNames.length ? `à¤ªà¥à¤°à¤­à¤¾à¤µà¤¿à¤¤ files: ${fileNames.join(", ")}` : "File level changes à¤à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¥à¥¤",
+    `Branch ${options.sourceBranch} ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂ ${options.targetBranch} ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ release changes ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
+    commitTitles.length ? `ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ commits: ${commitTitles.join("; ")}` : "GitHub compare ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ commit details ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ§ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤",
+    fileNames.length ? `ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ files: ${fileNames.join(", ")}` : "File level changes ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ§ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤",
   ];
   if (options.mergedSha) summaryLines.push(`Merge SHA: ${options.mergedSha}`);
   const changeSummary = summaryLines.join("\n");
-  const subject = `à¤¨à¤ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤à¤ªà¤¡à¥à¤: ${options.sourceBranch} â ${options.targetBranch}`;
-  const body = `Namaste,\n\nà¤¹à¤®à¤¨à¥ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤®à¥à¤ à¤¨à¤ à¤¬à¤¦à¤²à¤¾à¤µ publish à¤à¤¿à¤¯à¥ à¤¹à¥à¤à¥¤\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
+  const subject = `ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ: ${options.sourceBranch} ÃÂ¢ÃÂÃÂ ${options.targetBranch}`;
+  const body = `Namaste,\n\nÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂµ publish ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤\n\n${changeSummary}\n\nArticle API integration: Coming soon.\n\nOm!`;
   const html = `
     <p>Namaste,</p>
-    <p>à¤¹à¤®à¤¨à¥ à¤µà¥à¤¬à¤¸à¤¾à¤à¤ à¤®à¥à¤ à¤¨à¤ à¤¬à¤¦à¤²à¤¾à¤µ publish à¤à¤¿à¤¯à¥ à¤¹à¥à¤à¥¤</p>
+    <p>ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂµ publish ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤</p>
     <pre style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px;">${escapeHtml(changeSummary)}</pre>
-    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare à¤¦à¥à¤à¥à¤</a></p>` : ""}
+    ${options.compareUrl ? `<p><a href="${escapeHtml(options.compareUrl)}">GitHub compare ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ</a></p>` : ""}
     <p><strong>Article API integration:</strong> Coming soon.</p>
     <p>Om!</p>
   `;
   const social = [
-    "ð Website Update Published",
-    `${options.sourceBranch} â ${options.targetBranch}`,
+    "ÃÂ°ÃÂÃÂÃÂ Website Update Published",
+    `${options.sourceBranch} ÃÂ¢ÃÂÃÂ ${options.targetBranch}`,
     "",
-    commitTitles.length ? commitTitles.map((title: string) => `â¢ ${title}`).join("\n") : "à¤¨à¤ à¤¸à¥à¤§à¤¾à¤° à¤à¤° changes live à¤¹à¥à¤ à¤¹à¥à¤à¥¤",
+    commitTitles.length ? commitTitles.map((title: string) => `ÃÂ¢ÃÂÃÂ¢ ${title}`).join("\n") : "ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° changes live ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
     "",
     "Article: Coming soon",
     "#Adityanveshan #WebsiteUpdate #YagyaAshram",
@@ -21203,7 +21213,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: `Course "${params.title}" created successfully with ID ${id}. Prices: â¹${params.price_rupees}, $${params.price_usd}.`,
+          message: `Course "${params.title}" created successfully with ID ${id}. Prices: ÃÂ¢ÃÂÃÂ¹${params.price_rupees}, $${params.price_usd}.`,
         };
       }
       case "edit_course": {
@@ -21575,7 +21585,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: "à¤¡à¥à¤¶à¤¬à¥à¤°à¥à¤¡ à¤ªà¤° à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤ à¤¸à¤¹à¥à¤ à¤²à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤",
+          message: "ÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¡ ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤",
           draft_id: id,
         };
       }
@@ -21636,7 +21646,7 @@ async function executeAIAction(
           .run();
         return {
           success: true,
-          message: `à¤«à¥à¤°à¥à¤® à¤à¤° à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¬à¤¨à¤¾à¤ à¤à¤à¥¤ (Form Link: ${formLink})`,
+          message: `ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤ (Form Link: ${formLink})`,
         };
       }
       case "bulk_draft_email": {
@@ -21659,7 +21669,7 @@ async function executeAIAction(
         await env.DB.batch(queries);
         return {
           success: true,
-          message: `${recipients.length} à¤à¤¾à¤¤à¥à¤°à¥à¤ à¤à¥ à¤²à¤¿à¤ à¤à¤®à¥à¤² à¤¡à¥à¤°à¤¾à¤«à¥à¤à¥à¤¸ à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤¤à¥à¤¯à¤¾à¤° à¤à¤¿à¤ à¤à¤ à¤¹à¥à¤à¥¤`,
+          message: `${recipients.length} ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ² ÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ° ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`,
         };
       }
       case "query_users": {
@@ -21814,7 +21824,7 @@ async function handleAIContentHelper(
   env: Env,
 ): Promise<Response> {
   try {
-    await requireAdminOrTeacher(request, env);
+    const auth = await requireAdminOrTeacher(request, env);
     const { context, type, data } = (await request.json()) as any;
 
     let systemPrompt = "";
@@ -21838,6 +21848,18 @@ async function handleAIContentHelper(
       systemPrompt = `You are a content optimizer. Improve the provided content for better clarity and engagement.
       Return ONLY JSON format: {"description_en": "...", "description_hi": "..."}`;
       userPrompt = `Context: ${context}. Content: ${data.description_en || ""} / ${data.description_hi || ""}`;
+    }
+
+    // Hourly rate limit for AI content helper (after body validation)
+    const aiHourlyCheck = await checkHourlyLimit(env, auth.id, "ai-content-helper");
+    if (!aiHourlyCheck.allowed) {
+      return new Response(JSON.stringify({ error: aiHourlyCheck.reason }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "3600",
+        },
+      });
     }
 
     const aiResult = await generateAIContent(
@@ -21920,6 +21942,42 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       });
     }
 
+    if (typeof userPrompt !== "string") {
+      return new Response(JSON.stringify({ error: "Prompt must be a string" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const AI_MAX_PROMPT_LENGTH = 4000;
+    if (userPrompt.length > AI_MAX_PROMPT_LENGTH) {
+      return new Response(
+        JSON.stringify({
+          error: `Prompt is too long. Maximum ${AI_MAX_PROMPT_LENGTH} characters allowed.`,
+        }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Resolve requested model against active whitelist
+    const resolvedAiModels = await getAiModelConfig(env, modelId);
+    const resolvedModelId = resolvedAiModels[0]?.id || "@cf/meta/llama-3.1-8b-instruct";
+
+    // Hourly rate limit for AI chat
+    const aiHourlyCheck = await checkHourlyLimit(env, userId, "ai");
+    if (!aiHourlyCheck.allowed) {
+      return new Response(JSON.stringify({ error: aiHourlyCheck.reason }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "3600",
+        },
+      });
+    }
+
     // Save User Prompt to History
     if (userId) {
       try {
@@ -21979,14 +22037,14 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
 
     let systemContext = "";
     if (isTutor) {
-      systemContext = `You are "Yagya Mitra" (à¤¯à¤à¥à¤ à¤®à¤¿à¤¤à¥à¤°), the AI Tutor for Adityanveshan / Yagya Ashram.
+      systemContext = `You are "Yagya Mitra" (ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°), the AI Tutor for Adityanveshan / Yagya Ashram.
 ROLE: You are an intelligent tutor designed to help students learn effectively based on the course materials.
 
 KNOWLEDGE BASE & CONTEXT:
 ${context}
 
 CONVERSATIONAL PROTOCOL:
-1. Speak gently, respectfully, and conversationally (à¤¬à¤¾à¤¤à¥à¤ à¤à¥ à¤¤à¤°à¤¹) primarily in highly fluent Devanagari Hindi (or English if the user strictly asks in English). Ensure your Hindi typing is completely natural, grammatically flawless, and uses appropriate respectful vocabulary.
+1. Speak gently, respectfully, and conversationally (ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¹) primarily in highly fluent Devanagari Hindi (or English if the user strictly asks in English). Ensure your Hindi typing is completely natural, grammatically flawless, and uses appropriate respectful vocabulary.
 2. Consider the student's past performance (exam scores, progress) and course history from the context while answering. Motivate them if scores are low, praise them if scores are high.
 3. Diagnose the student's intent first: concept explanation, doubt solving, summary, example, quiz, revision, or motivation.
 4. If the user asks about the active lesson context or search results, answer from that context first. Use "[Source: ...]" markers if provided in the search results to cite your information. Look at everything in the context.
@@ -22044,7 +22102,7 @@ If the user asks to "create", "delete", "edit", or "add" something AND provided 
     - Adjust the design based on the form's intent (e.g., professional for admission, vibrant for workshops, spiritual for ashram events). Use modern aesthetics (gradients, subtle 3D-like shadows).
 
 ABOUT YAGYA ASHRAM:
-- Name: Adityanveshan (à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤®)
+- Name: Adityanveshan (ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ®)
 - Mission: A traditional yet modern Vedic educational institution focused on preserving Vedic wisdom, character building, and teaching modern skills like Yoga, Sanskrit, and technology.
 - Values: Sanatana Dharma, discipline, selfless service (Seva), and pursuit of absolute truth (Satya).
 - Location: Spiritual heart of India.
@@ -22052,7 +22110,7 @@ ABOUT YAGYA ASHRAM:
 - You should use this knowledge to answer students' queries about the ashram's philosophy and rules.
 `;
     } else {
-      systemContext = `You are "Yagya Mitra" (à¤¯à¤à¥à¤ à¤®à¤¿à¤¤à¥à¤°), the ultimate AI Academic Guide at Adityanveshan.
+      systemContext = `You are "Yagya Mitra" (ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°), the ultimate AI Academic Guide at Adityanveshan.
 
 CORE AUTHORITY:
 You have been provided with a high-fidelity AI-generated 'Content Summary/Transcript' of the current lesson. You must treat this as your primary textbook. Your answers should be authoritative, detailed, and directly based on the specific concepts found in this analysis and the Course Overview.
@@ -22062,7 +22120,7 @@ ${context}
 
 STRATEGIC TUTORING COMMANDS:
 1. **Intent Detection**: First infer whether the student needs a direct answer, lesson summary, example, step-by-step explanation, comparison, quiz, revision plan, or motivation. Respond in that mode.
-2. **Conversational Tone**: Act like a wise, conversational mentor (à¤¬à¤¾à¤¤à¤à¥à¤¤ à¤²à¤¾à¤¯à¤ à¤¹à¥à¤). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
+2. **Conversational Tone**: Act like a wise, conversational mentor (ÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ). Use the context of their previous enrollments and exam/quiz scores to tailor the learning.
 3. **Source-First Answering**: If a question is asked about the video/image/PDF, prioritize the 'Content Summary/Transcript' provided above. Even if it's a video, talk about it as if you are a master of its every second. Look at ALL provided context (sabhi cheejo ko dekhkar).
 4. **Beyond the Content**: If the provided summary is short, use the 'Course Overview' and your own broad educational intelligence to expand the topic, but clearly keep it aligned with Adityanveshan values.
 5. **Structured Mastery**: Always format your response for high readability:
@@ -22146,7 +22204,7 @@ Example JSON structure:
       } else {
         // Workers AI has its own chunk format; convert to OpenAI-compatible SSE
         // so the frontend stream parser works identically for both paths.
-        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+        const aiStream = await env.AI.run(resolvedModelId, {
           messages,
           stream: true,
         });
@@ -22165,7 +22223,7 @@ Example JSON structure:
         aiContent = await generateAIContent(messages, env, true, modelId);
       } else {
         // Direct Workers AI call for students (Bypass Gateway)
-        const aiResult = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+        const aiResult = await env.AI.run(resolvedModelId, {
           messages: messages,
           max_tokens: 4000
         });
@@ -22203,8 +22261,8 @@ Example JSON structure:
         JSON.stringify({
           reply:
             (role === "admin" || role === "teacher")
-              ? `â AI Error: ${aiError.message}`
-              : "à¤®à¤¾à¤«à¤¼ à¤à¤°à¥à¤, à¤à¤­à¥ à¤®à¥à¤°à¤¾ à¤¸à¤¿à¤¸à¥à¤à¤® à¤à¤¦à¥à¤¯à¤¤à¤¨ à¤¹à¥ à¤°à¤¹à¤¾ à¤¹à¥à¥¤ (AI Setup Incomplete or Error)",
+              ? `ÃÂ¢ÃÂÃÂ AI Error: ${aiError.message}`
+              : "ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ«ÃÂ ÃÂ¤ÃÂ¼ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ, ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ­ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ (AI Setup Incomplete or Error)",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -22247,12 +22305,12 @@ Example JSON structure:
         // If it was a data fetch action, we might want to re-ask AI with data,
         // but for now, we just append the success info to the reply or modify it.
         if (actionResult.data) {
-          parsed.reply += `\n\n[à¤¸à¤¿à¤¸à¥à¤à¤® à¤¡à¥à¤à¤¾]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} à¤°à¤¿à¤à¥à¤°à¥à¤¡ à¤®à¤¿à¤²à¥à¥¤`;
+          parsed.reply += `\n\n[ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ® ÃÂ ÃÂ¤ÃÂ¡ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¡ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤`;
         } else {
-          parsed.reply += `\n\nâ [à¤¸à¤¿à¤¸à¥à¤à¤®]: ${actionResult.message}`;
+          parsed.reply += `\n\nÃÂ¢ÃÂÃÂ [ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ®]: ${actionResult.message}`;
         }
       } else {
-        parsed.reply += `\n\nâ [System Error]: ${actionResult.message}`;
+        parsed.reply += `\n\nÃÂ¢ÃÂÃÂ [System Error]: ${actionResult.message}`;
       }
     }
 
@@ -22400,7 +22458,7 @@ async function autoAnalyzeLesson(
     } else if (type === "pdf") {
       // PDF analysis is harder, but we can try to extract some text or describe the intent
       analysis = `[Auto-AI Note]: Automatic text extraction for PDFs is currently limited. Please study the PDF titled "${title}" directly.`;
-      analysis_hi = `[Auto-AI Note]: PDFs à¤à¥ à¤²à¤¿à¤ à¤¸à¥à¤µà¤à¤¾à¤²à¤¿à¤¤ à¤à¥à¤à¥à¤¸à¥à¤ à¤¨à¤¿à¤·à¥à¤à¤°à¥à¤·à¤£ à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤®à¥à¤ à¤¸à¥à¤®à¤¿à¤¤ à¤¹à¥à¥¤ à¤à¥à¤ªà¤¯à¤¾ "${title}" à¤¨à¤¾à¤®à¤ PDF à¤à¤¾ à¤¸à¥à¤§à¥ à¤à¤§à¥à¤¯à¤¯à¤¨ à¤à¤°à¥à¤à¥¤`;
+      analysis_hi = `[Auto-AI Note]: PDFs ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ·ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ·ÃÂ ÃÂ¤ÃÂ£ ÃÂ ÃÂ¤ÃÂµÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¤ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ¤ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ "${title}" ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ PDF ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¾ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ§ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¨ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤`;
     }
 
     if (analysis || analysis_hi) {
@@ -22540,7 +22598,7 @@ const worker = {
 
     for (const path of cronJobs) {
       try {
-        // Secret URL mein leak na ho â header mein bhejo
+        // Secret URL mein leak na ho ÃÂ¢ÃÂÃÂ header mein bhejo
         await fetch(`${baseUrl}${path}`, {
           headers: { "x-cron-secret": cronSecret },
         });
@@ -22557,7 +22615,7 @@ const worker = {
   ): Promise<Response> {
     const url = new URL(request.url);
 
-    // --- Web Push routes removed â all push uses FCM HTTP v1 API ---
+    // --- Web Push routes removed ÃÂ¢ÃÂÃÂ all push uses FCM HTTP v1 API ---
 
     // Handle CORS preflight for all routes
     if (request.method === "OPTIONS") {
@@ -22612,27 +22670,27 @@ const worker = {
         }
 
         // ================================================================
-        // ð¡ï¸ WORKER-SHIELD PATTERN: /api/data
+        // ÃÂ°ÃÂÃÂÃÂ¡ÃÂ¯ÃÂ¸ÃÂ WORKER-SHIELD PATTERN: /api/data
         // ================================================================
         // Rules:
-        //   GET  â Worker directly queries D1 (NO DO invocation)
-        //   POST â Worker forwards to DO (DO does D1 write + WS broadcast)
-        //   WS   â Worker forwards to DO (DO manages WebSocket lifecycle)
+        //   GET  ÃÂ¢ÃÂÃÂ Worker directly queries D1 (NO DO invocation)
+        //   POST ÃÂ¢ÃÂÃÂ Worker forwards to DO (DO does D1 write + WS broadcast)
+        //   WS   ÃÂ¢ÃÂÃÂ Worker forwards to DO (DO manages WebSocket lifecycle)
         // ================================================================
         if (url.pathname === "/api/data") {
           const isWebSocket = request.headers.get("Upgrade") === "websocket";
 
-          // ð¢ FLUTTER: WebSocket upgrade â forward to DO
+          // ÃÂ°ÃÂÃÂÃÂ¢ FLUTTER: WebSocket upgrade ÃÂ¢ÃÂÃÂ forward to DO
           //
           // Auth: Flutter sends session cookie via WebSocket upgrade headers
-          //   (see real_time_service.dart lines 86-97 â 'Cookie' header is set
+          //   (see real_time_service.dart lines 86-97 ÃÂ¢ÃÂÃÂ 'Cookie' header is set
           //    using stored session cookie from ApiService.getSessionCookie()).
-          //   requireAuth() reads "Cookie: session=<jwt>" â this works natively
+          //   requireAuth() reads "Cookie: session=<jwt>" ÃÂ¢ÃÂÃÂ this works natively
           //   in Cloudflare Workers because Upgrade requests carry full HTTP
           //   headers, including cookies.
           //
           //   X-App-JWT header (Play Integrity) is NOT used for user identity
-          //   â its payload has sub:'play_integrity_verified', not userId.
+          //   ÃÂ¢ÃÂÃÂ its payload has sub:'play_integrity_verified', not userId.
           //
           //   Query param auth (e.g. ?token=xxx) is REJECTED by policy:
           //   it leaks credentials in server access logs and URL history.
@@ -22650,7 +22708,7 @@ const worker = {
             return stub.fetch(new Request(doUrl.toString(), request));
           }
 
-          // ð¢ NEXT.JS GET: Worker reads D1 directly â NO DO COST
+          // ÃÂ°ÃÂÃÂÃÂ¢ NEXT.JS GET: Worker reads D1 directly ÃÂ¢ÃÂÃÂ NO DO COST
           if (request.method === "GET") {
             const dataType = url.searchParams.get("type");
             const userId = url.searchParams.get("userId");
@@ -22665,21 +22723,21 @@ const worker = {
             }
 
             // Add more GET handlers here as needed (courses, lessons, etc.)
-            // Always query D1 directly â DO ko mat jagao
+            // Always query D1 directly ÃÂ¢ÃÂÃÂ DO ko mat jagao
 
             return new Response(JSON.stringify({ error: "Invalid GET type" }), {
               status: 400, headers: { "Content-Type": "application/json" }
             });
           }
 
-          // ð¢ NEXT.JS POST/PUT/DELETE: Forward to DO
+          // ÃÂ°ÃÂÃÂÃÂ¢ NEXT.JS POST/PUT/DELETE: Forward to DO
           // DO D1 write karega + WebSocket broadcast karega
           const doId = env.DATA_SYNC_DO.idFromName("data-sync");
           const stub = env.DATA_SYNC_DO.get(doId);
           return stub.fetch(request);
         }
 
-        // Try to resolve user auth (don't throw â admin-only handlers will check)
+        // Try to resolve user auth (don't throw ÃÂ¢ÃÂÃÂ admin-only handlers will check)
         let userAuth: any = null;
         try {
           userAuth = await requireAuth(request, env);
@@ -22710,7 +22768,7 @@ const worker = {
           }
         }
 
-        // KV Backup â read all KV keys/values and store JSON in R2
+        // KV Backup ÃÂ¢ÃÂÃÂ read all KV keys/values and store JSON in R2
         if (url.pathname === "/api/admin/database/backup-kv" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
@@ -22751,7 +22809,7 @@ const worker = {
           }
         }
 
-        // KV Restore â read JSON from R2 and write all keys to target KV namespace
+        // KV Restore ÃÂ¢ÃÂÃÂ read JSON from R2 and write all keys to target KV namespace
         if (url.pathname === "/api/admin/database/restore-kv" && request.method === "POST") {
           if (userAuth?.role !== 'admin') return new Response("Unauthorized", { status: 401 });
           try {
@@ -23403,7 +23461,7 @@ const worker = {
             /^\/api\/admin\/batches\/([^/]+)\/students$/,
           );
           if (batchStudentsMatch) {
-            // Pass both GET and POST to handleAdminBatchStudents â course_id is auto-fetched from the batch
+            // Pass both GET and POST to handleAdminBatchStudents ÃÂ¢ÃÂÃÂ course_id is auto-fetched from the batch
             response = await handleAdminBatchStudents(
               request,
               env,
@@ -23868,7 +23926,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
                   error: "LIVE_SESSION_ID_MISSING",
-                  message: "Live class meeting ID missing hai. à¤à¥à¤ªà¤¯à¤¾ app refresh à¤à¤°à¤à¥ à¤¦à¥à¤¬à¤¾à¤°à¤¾ join à¤à¤°à¥à¤à¥¤",
+                  message: "Live class meeting ID missing hai. ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ app refresh ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ join ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
                 }), {
                   status: 400,
                   headers: { "Content-Type": "application/json" },
@@ -23878,7 +23936,7 @@ else if (url.pathname === "/api/auth/verify-otp")
               if (!isAI && user?.role === "student" && !sessionResult) {
                 return new Response(JSON.stringify({
                   error: "LIVE_SESSION_NOT_FOUND",
-                  message: "Live class session à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¤¾à¥¤ à¤à¥à¤ªà¤¯à¤¾ dashboard refresh à¤à¤°à¤à¥ à¤¦à¥à¤¬à¤¾à¤°à¤¾ join à¤à¤°à¥à¤à¥¤",
+                  message: "Live class session ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¥ÃÂ¤ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂªÃÂ ÃÂ¤ÃÂ¯ÃÂ ÃÂ¤ÃÂ¾ dashboard refresh ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¦ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ¬ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¤ÃÂ¾ join ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
                 }), {
                   status: 404,
                   headers: { "Content-Type": "application/json" },
@@ -23954,7 +24012,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                   if (!creditAccessAvailable) {
                     return new Response(JSON.stringify({
                       error: "CREDIT_ACCESS_DISABLED",
-                      message: "à¤à¤¸ class à¤à¥ à¤²à¤¿à¤ credit-based access enable à¤¨à¤¹à¥à¤ à¤¹à¥à¥¤ Batch à¤®à¥à¤ Per Class Charge (â¹) à¤¸à¥à¤ à¤à¤°à¥à¤à¥¤",
+                      message: "ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ¸ class ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¿ÃÂ ÃÂ¤ÃÂ credit-based access enable ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ Batch ÃÂ ÃÂ¤ÃÂ®ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ Per Class Charge (ÃÂ¢ÃÂÃÂ¹) ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ¤",
                     }), {
                       status: 403,
                       headers: { "Content-Type": "application/json" },
@@ -24065,7 +24123,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                 );
                 response = new Response(
                   JSON.stringify({
-                    error: "à¤²à¤¾à¤à¤µ à¤à¥à¤²à¤¾à¤¸ à¤¶à¥à¤°à¥ à¤¨à¤¹à¥à¤ à¤¹à¥ à¤¸à¤à¥à¥¤ Administrator à¤à¥ notify kar diya gaya hai.",
+                    error: "ÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¤ÃÂµ ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ²ÃÂ ÃÂ¤ÃÂ¾ÃÂ ÃÂ¤ÃÂ¸ ÃÂ ÃÂ¤ÃÂ¶ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ°ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¨ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¤ÃÂ ÃÂ ÃÂ¤ÃÂ¹ÃÂ ÃÂ¥ÃÂ ÃÂ ÃÂ¤ÃÂ¸ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂÃÂ ÃÂ¥ÃÂ¤ Administrator ÃÂ ÃÂ¤ÃÂÃÂ ÃÂ¥ÃÂ notify kar diya gaya hai.",
                   }),
                   { status: 500, headers: { "Content-Type": "application/json" } },
                 );
@@ -24101,7 +24159,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                     .bind(sessionResult.id, payload.sub)
                     .run();
                   if ((result as any)?.meta?.changes === 0) {
-                    console.log(`[Live.Leave] No open attendance â possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
+                    console.log(`[Live.Leave] No open attendance ÃÂ¢ÃÂÃÂ possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
                     response = new Response(JSON.stringify({ success: true, message: "Already left" }), {
                       status: 200,
                       headers: { "Content-Type": "application/json" },
@@ -24719,7 +24777,7 @@ async function handleAdminOrphanedMedia(request: Request, env: Env): Promise<Res
         extractKey(row.audio_url);
       }
 
-      // 2. Fetch all objects stored in R2 bucket (max 100 pages Ã 1000 = 100K objects)
+      // 2. Fetch all objects stored in R2 bucket (max 100 pages ÃÂÃÂ 1000 = 100K objects)
       const r2Objects: any[] = [];
       let truncated = true;
       let cursor: string | undefined = undefined;
@@ -24884,7 +24942,7 @@ async function handleUserCertificate(request: Request, env: Env, certificateId: 
   }
 }
 
-// Stub DO class â required by previously deployed Durable Object binding
+// Stub DO class ÃÂ¢ÃÂÃÂ required by previously deployed Durable Object binding
 export class LiveClassCreditManager { }
 
 async function handleAdminBadges(request: Request, env: Env): Promise<Response> {
@@ -25048,7 +25106,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
     // Get Service Account Credentials from KV or Secret
     const googleServiceAccountStr = await getSecret(env, "PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON");
     if (!googleServiceAccountStr) {
-      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured â session-based auth will be used");
+      console.warn("PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON not configured ÃÂ¢ÃÂÃÂ session-based auth will be used");
       return new Response(JSON.stringify({ token: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -25126,7 +25184,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 
         // Step 3: Validate the response
         // If Play Integrity fails (e.g. debug build, unrecognized app version),
-        // don't block â fall back to session-based auth gracefully.
+        // don't block ÃÂ¢ÃÂÃÂ fall back to session-based auth gracefully.
         // Proper Play Integrity verification is enforced only for production
         // builds published on Google Play Store.
         if (playRes.error || !playRes.tokenPayloadExternal || playRes.tokenPayloadExternal.appIntegrity.appRecognitionVerdict !== 'PLAY_RECOGNIZED') {
@@ -25158,7 +25216,7 @@ export { DataSyncDO } from './data-sync-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
 // Register admin command handlers for AdminCommandProcessor DO.
-// Called synchronously at module init â function declarations are hoisted.
+// Called synchronously at module init ÃÂ¢ÃÂÃÂ function declarations are hoisted.
 registerAdminCommandHandler("/api/notifications/send", handleSendPush);
 registerAdminCommandHandler("/api/admin/broadcast", handleAdminBroadcast);
 
