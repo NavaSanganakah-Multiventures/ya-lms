@@ -1,5 +1,11 @@
-// Mock Cloudflare modules before importing src/index
+// Mock Cloudflare modules and .sql imports before importing src/index
 import Module from 'module';
+import fs from 'fs';
+
+// Teach Node.js how to require .sql files as raw strings
+(require as any).extensions['.sql'] = function (module: any, filename: string) {
+  module.exports = fs.readFileSync(filename, 'utf8');
+};
 
 const originalRequire = (Module.prototype as any).require;
 (Module.prototype as any).require = function (id: string) {
@@ -62,7 +68,7 @@ async function runTests() {
   const env4 = createMockEnv([{ window_start: recentWindow, window_used: 10, rate_limit: 10 }]);
   const r4 = await checkHourlyLimit(env4, 'user-4', 'ai');
   assert(r4.allowed === false, 'Exceeding custom limit should be blocked');
-  assert(typeof r4.reason === 'string' && r4.reason.includes(' Rate limit exceeded'), 'Block reason should mention rate limit');
+  assert(typeof r4.reason === 'string' && r4.reason.includes('Rate limit exceeded'), 'Block reason should mention rate limit');
 
   // 5. Old window resets and allows
   const oldWindow = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
