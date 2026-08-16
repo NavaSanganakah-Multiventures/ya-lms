@@ -14593,6 +14593,15 @@ function roundToTwo(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+export function rupeesToPaise(rupees: any): number {
+  return Math.round((Number(rupees) || 0) * 100);
+}
+
+export function paiseToRupees(paise: any): number {
+  return Math.round(Number(paise) || 0) / 100;
+}
+
+
 const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
@@ -14610,6 +14619,16 @@ function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   return roundToTwo(costPaise / 100);
 }
 
+// Integer-paise variant: returns the charge in paise (single rounding, no float drift). #675
+export function calculateGroupClassCreditsPaise(rateRupees: any, attendedMinutes?: any): number {
+  const safeRate = normalizeNonNegativeInt(rateRupees);
+  if (safeRate <= 0) return 0;
+  const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
+  if (minutes === 0) return 0;
+  return Math.round((safeRate * minutes * 100) / 15);
+}
+
+
 function calculateMaxAttendMinutes(balance: number, rate: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return -1;
@@ -14621,18 +14640,75 @@ function getUnitSeconds(): number {
   return FIFTEEN_MIN_SECONDS;
 }
 
-async function getWalletBalance(env: Env, userId: string): Promise<{ balance_rupees: number; lifetime_deposits_rupees: number; lifetime_withdrawals_rupees: number }> {
+async function getWalletBalance(env: Env, userId: string): Promise<{ balance_paise: number; balance_rupees: number; lifetime_deposits_paise: number; lifetime_deposits_rupees: number; lifetime_withdrawals_paise: number; lifetime_withdrawals_rupees: number }> {
+  // Integer paise is the source of truth; rupees are derived from paise (#675).
   const wallet = (await env.DB.prepare(
-    `SELECT balance_rupees, lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
+    `SELECT balance_paise, lifetime_deposits_paise, lifetime_withdrawals_paise FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
+  const balancePaise = Number(wallet?.balance_paise ?? 0) || 0;
+  const depositsPaise = Number(wallet?.lifetime_deposits_paise ?? 0) || 0;
+  const withdrawalsPaise = Number(wallet?.lifetime_withdrawals_paise ?? 0) || 0;
+
   return {
-    balance_rupees: Number(wallet?.balance_rupees || 0),
-    lifetime_deposits_rupees: Number(wallet?.lifetime_deposits_rupees || 0),
-    lifetime_withdrawals_rupees: Number(wallet?.lifetime_withdrawals_rupees || 0),
+    balance_paise: balancePaise,
+    balance_rupees: paiseToRupees(balancePaise),
+    lifetime_deposits_paise: depositsPaise,
+    lifetime_deposits_rupees: paiseToRupees(depositsPaise),
+    lifetime_withdrawals_paise: withdrawalsPaise,
+    lifetime_withdrawals_rupees: paiseToRupees(withdrawalsPaise),
   };
+}
+
+async function addToWalletPaise(
+  env: Env,
+  userId: string,
+  amountPaise: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ balance_paise: number; balance_rupees: number }> {
+  const safePaise = Math.max(0, Math.round(Number(amountPaise) || 0));
+  if (safePaise <= 0) return await getWalletBalance(env, userId);
+
+  const walletId = generateCustomId("YA-CRW");
+  const ledgerId = generateCustomId("YA-CRL");
+  const amountRupees = paiseToRupees(safePaise);
+
+  // Integer paise is the source of truth; the legacy REAL *_rupees columns are derived
+  // from paise so existing readers keep working during the migration (#675).
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id) DO UPDATE SET
+         balance_paise = balance_paise + ?,
+         lifetime_deposits_paise = lifetime_deposits_paise + ?,
+         balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
+         lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
+         updated_at = CURRENT_TIMESTAMP`,
+    ).bind(walletId, userId, safePaise, safePaise, amountRupees, amountRupees, safePaise, safePaise, safePaise, safePaise),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       LIMIT 1`,
+    ).bind(ledgerId, userId, safePaise, amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
+  ]);
+
+  await deductPendingChargesOnTopup(env, userId);
+
+  const current = await getWalletBalance(env, userId);
+
+  // Broadcast so all open client sessions stay in sync.
+  try {
+    await broadcastToUser(env, userId, "wallet", { balance_rupees: current.balance_rupees, balance_paise: current.balance_paise });
+  } catch (e) {
+    console.error("[addToWallet] broadcast failed:", e);
+  }
+
+  return { balance_paise: current.balance_paise, balance_rupees: current.balance_rupees };
 }
 
 async function addToWallet(
@@ -14642,51 +14718,51 @@ async function addToWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ balance_rupees: number }> {
-  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
-  if (safeAmount <= 0) return await getWalletBalance(env, userId);
+): Promise<{ balance_paise: number; balance_rupees: number }> {
+  return addToWalletPaise(env, userId, rupeesToPaise(amountInr), reason, referenceType, referenceId);
+}
 
-  const walletId = generateCustomId("YA-CRW");
+async function deductFromWalletPaise(
+  env: Env,
+  userId: string,
+  amountPaise: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ ok: boolean; balance_paise: number; balance_rupees: number }> {
+  const safePaise = Math.max(0, Math.round(Number(amountPaise) || 0));
+  const before = await getWalletBalance(env, userId);
+  if (safePaise <= 0) return { ok: true, balance_paise: before.balance_paise, balance_rupees: before.balance_rupees };
+
+  // Atomic batch so wallet debit and ledger insert succeed or fail together - no inconsistent state.
   const ledgerId = generateCustomId("YA-CRL");
-
-  // Execute wallet update and ledger insert atomically via batch (D1 runs batch within a transaction).
-  // The balance_after is read from the same CreditWallets row updated by the first statement.
-  await env.DB.batch([
+  const amountRupees = paiseToRupees(safePaise);
+  const batchResult = await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(user_id) DO UPDATE SET
-         balance_rupees = ROUND(balance_rupees + ?, 2),
-         lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
-         updated_at = CURRENT_TIMESTAMP`,
-    ).bind(walletId, userId, safeAmount, safeAmount, safeAmount, safeAmount),
+      `UPDATE CreditWallets
+       SET balance_paise = balance_paise - ?,
+           lifetime_withdrawals_paise = lifetime_withdrawals_paise + ?,
+           balance_rupees = ROUND((balance_paise - ?) / 100.0, 2),
+           lifetime_withdrawals_rupees = ROUND((lifetime_withdrawals_paise + ?) / 100.0, 2),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND balance_paise >= ?`,
+    ).bind(safePaise, safePaise, safePaise, safePaise, userId, safePaise),
     env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+      `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
-    ).bind(
-      ledgerId,
-      userId,
-      safeAmount,
-      userId,
-      reason,
-      referenceType || null,
-      referenceId || null,
-    ),
+    ).bind(ledgerId, userId, -safePaise, -amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
   ]);
 
-  await deductPendingChargesOnTopup(env, userId);
-
-  const currentBalance = roundToTwo(Number((await getWalletBalance(env, userId)).balance_rupees));
-
-  // Broadcast so all open client sessions stay in sync.
-  try {
-    await broadcastToUser(env, userId, "wallet", { balance_rupees: currentBalance });
-  } catch (e) {
-    console.error("[addToWallet] broadcast failed:", e);
+  // Check if the UPDATE actually changed a row (sufficient balance)
+  const walletResult = batchResult[0] as any;
+  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
+    return { ok: false, balance_paise: before.balance_paise, balance_rupees: before.balance_rupees };
   }
 
-  return { balance_rupees: currentBalance };
+  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
+  const after = await getWalletBalance(env, userId);
+  return { ok: true, balance_paise: after.balance_paise, balance_rupees: after.balance_rupees };
 }
 
 async function deductFromWallet(
@@ -14696,44 +14772,8 @@ async function deductFromWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ ok: boolean; balance_rupees: number }> {
-  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
-  const before = await getWalletBalance(env, userId);
-  if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
-
-  // ð´ FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
-  // insert succeed or fail together â no inconsistent state.
-  const ledgerId = generateCustomId("YA-CRL");
-  const batchResult = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE CreditWallets
-       SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ? AND balance_rupees >= ?`,
-    ).bind(safeAmount, safeAmount, userId, safeAmount),
-    env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ROUND((SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), 2), ?, ?, ?
-       LIMIT 1`,
-    ).bind(
-      ledgerId,
-      userId,
-      -safeAmount,
-      userId,
-      reason,
-      referenceType || null,
-      referenceId || null,
-    ),
-  ]);
-
-  // Check if the UPDATE actually changed a row (sufficient balance)
-  const walletResult = batchResult[0] as any;
-  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
-    return { ok: false, balance_rupees: before.balance_rupees };
-  }
-
-  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
-  const after = await getWalletBalance(env, userId);
-  return { ok: true, balance_rupees: after.balance_rupees };
+): Promise<{ ok: boolean; balance_paise: number; balance_rupees: number }> {
+  return deductFromWalletPaise(env, userId, rupeesToPaise(amountInr), reason, referenceType, referenceId);
 }
 
 // ==========================================================
@@ -14836,12 +14876,13 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
 }
 
 async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
+  // Sums change_paise - returns the total charged for this live session in integer paise (#675).
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(
       CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking')
-           THEN ABS(change_rupees)
+           THEN ABS(change_paise)
            WHEN reason = 'live_class_refund'
-           THEN -ABS(change_rupees)
+           THEN -ABS(change_paise)
            ELSE 0
       END
     ), 0) as total_charged
@@ -15198,8 +15239,8 @@ async function chargeAttendanceGroupClassCredits(
   const session = preloadedSession || await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
-  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
-  if (rate <= 0) return;
+  const ratePaise = Math.max(0, rupeesToPaise(session.cost_per_class_rupees));
+  if (ratePaise <= 0) return;
 
   const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
 
@@ -15208,18 +15249,19 @@ async function chargeAttendanceGroupClassCredits(
 
   if (creditUnit === "per_class") return;
 
-  let requiredAmount = 0;
+  // Compute the required charge in integer paise - a single rounding, no float drift (#675).
+  let requiredPaise = 0;
 
   if (creditUnit === "per_minute") {
-    const perMinuteRate = normalizeNonNegativeInt(session.live_class_cost_per_minute_rupees) || rate;
-    requiredAmount = roundToTwo(perMinuteRate * totalSeconds / 60);
+    const perMinuteRateRupees = normalizeNonNegativeInt(session.live_class_cost_per_minute_rupees) || (ratePaise / 100);
+    requiredPaise = Math.round(rupeesToPaise(perMinuteRateRupees) * totalSeconds / 60);
   } else {
     // fifteen_minute / monthly legacy behaviour: round up to next full minute
     const totalMinutes = Math.ceil(totalSeconds / 60);
-    requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
+    requiredPaise = calculateGroupClassCreditsPaise(ratePaise / 100, totalMinutes);
   }
 
-  if (requiredAmount <= 0) return;
+  if (requiredPaise <= 0) return;
 
   const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
   if (!lockAcquired) {
@@ -15228,39 +15270,38 @@ async function chargeAttendanceGroupClassCredits(
   }
 
   try {
-    const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-    const extraAmountNeeded = roundToTwo(requiredAmount - alreadyCharged);
+    const alreadyChargedPaise = await getCreditsChargedForSession(env, userId, sessionId);
+    const extraPaise = requiredPaise - alreadyChargedPaise;
 
-    let finalChargedAmount = alreadyCharged;
+    let finalChargedPaise = alreadyChargedPaise;
 
-    if (extraAmountNeeded > 0) {
-      const deduction = await deductFromWallet(
+    if (extraPaise > 0) {
+      const deduction = await deductFromWalletPaise(
         env,
         userId,
-        extraAmountNeeded,
+        extraPaise,
         "live_class_duration",
         "live_session",
         sessionId,
       );
       if (!deduction.ok) {
-        console.error(`Failed to deduct â¹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
+        console.error(`Failed to deduct ${extraPaise / 100} from user ${userId} for session ${sessionId}: insufficient balance`);
         await env.DB.prepare(
-          "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
-        ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
+          "INSERT INTO PendingCharges (id, user_id, amount_paise, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraPaise, paiseToRupees(extraPaise), sessionId).run();
       } else {
-        finalChargedAmount += extraAmountNeeded;
+        finalChargedPaise += extraPaise;
       }
-    } else if (extraAmountNeeded < 0) {
-      const refundAmount = Math.abs(extraAmountNeeded);
-      const roundedRefund = roundToTwo(refundAmount);
-      if (roundedRefund > 0) {
-        await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
-        finalChargedAmount -= roundedRefund;
+    } else if (extraPaise < 0) {
+      const refundPaise = Math.abs(extraPaise);
+      if (refundPaise > 0) {
+        await addToWalletPaise(env, userId, refundPaise, "live_class_refund", "live_session", sessionId);
+        finalChargedPaise -= refundPaise;
       }
     }
 
     const unitSeconds = getUnitSeconds();
-    const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
+    const totalPaidSeconds = (finalChargedPaise / ratePaise) * unitSeconds;
     const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
     await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
   } finally {
@@ -15294,7 +15335,7 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   for (const chunk of chunkArray(userIds, 50)) {
     const phUsers = chunk.map(() => "?").join(",");
     const chargedRows = await env.DB.prepare(
-      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
+      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_paise) WHEN reason = 'live_class_refund' THEN -ABS(change_paise) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
     ).bind(sessionId, ...chunk).all();
     for (const r of (chargedRows as any).results || []) chargedMap.set(r.user_id, Number(r.total_charged || 0));
   }
@@ -15307,13 +15348,12 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
     if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
-        const refundAmount = (finalPrepaid * rate) / FIFTEEN_MIN_SECONDS;
-        const roundedRefund = Math.round(refundAmount * 100) / 100;
-        const totalCharged = chargedMap.get(row.user_id) || 0;
-        const safeRefund = Math.min(roundedRefund, totalCharged);
-        if (safeRefund > 0) {
-          await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
-          console.log(`[Live.EndSession] Refunded â¹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+        const refundPaise = Math.round((finalPrepaid * rate * 100) / FIFTEEN_MIN_SECONDS);
+        const totalChargedPaise = chargedMap.get(row.user_id) || 0;
+        const safeRefundPaise = Math.min(refundPaise, totalChargedPaise);
+        if (safeRefundPaise > 0) {
+          await addToWalletPaise(env, row.user_id, safeRefundPaise, "live_class_refund", "live_session", sessionId);
+          console.log(`[Live.EndSession] Refunded ${safeRefundPaise / 100} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
         }
       }
     }
@@ -19391,26 +19431,30 @@ async function handleRazorpayWebhook(
                 // Now they execute in one DB transaction â all succeed or none.
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
+                const renewalPaise = Math.round(Number(renewalAmount || 0) * 100);
+                const renewalRupees = renewalPaise / 100;
                 const batchStmts = [
-                  // Status update (no-op if already active â safe for retry)
+                  // Status update (no-op if already active - safe for retry)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
                   ).bind(periodStart, periodEnd, dbSub.id),
-                  // Credit wallet
+                  // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
-                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
-                       balance_rupees = ROUND(balance_rupees + ?, 2),
-                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       balance_paise = balance_paise + ?,
+                       lifetime_deposits_paise = lifetime_deposits_paise + ?,
+                       balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
+                       lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
                        updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, dbSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  ).bind(walletId, dbSub.user_id, renewalPaise, renewalPaise, renewalRupees, renewalRupees, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
-                  // Accumulate tracking field â add plan value to existing balance (rollover)
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalPaise, renewalRupees, dbSub.user_id, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                  // Accumulate tracking field - add plan value to existing balance (rollover)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
                   ).bind(renewalAmount, dbSub.id),
@@ -19518,25 +19562,29 @@ async function handleRazorpayWebhook(
               if (renewalAmount > 0) {
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
+                const renewalPaise = Math.round(Number(renewalAmount || 0) * 100);
+                const renewalRupees = renewalPaise / 100;
                 const batchStmts = [
                   // Update period dates
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
                   ).bind(periodStart, periodEnd, chargedSub.id),
-                  // Credit wallet
+                  // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
-                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
-                       balance_rupees = ROUND(balance_rupees + ?, 2),
-                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
+                       balance_paise = balance_paise + ?,
+                       lifetime_deposits_paise = lifetime_deposits_paise + ?,
+                       balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
+                       lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
                        updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, chargedSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                  ).bind(walletId, chargedSub.user_id, renewalPaise, renewalPaise, renewalRupees, renewalRupees, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, chargedSub.user_id, renewalAmount, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalPaise, renewalRupees, chargedSub.user_id, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
                   // Accumulate tracking field (rollover)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
