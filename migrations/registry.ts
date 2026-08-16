@@ -14,6 +14,8 @@ import SQL_0040_SUBSCRIPTION_CANCELLATION from './0040_add_subscription_cancella
 import SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS from './0041_add_live_class_charge_locks.sql';
 import SQL_0042_ADD_PER_MINUTE_LIVE_CREDIT from './0042_add_per_minute_live_credit_rate.sql';
 import SQL_0043_ADD_INTEGER_PAISE_COLUMNS from './0043_add_integer_paise_columns.sql';
+import SQL_0044_ADD_PAISE_TO_INDIVIDUAL_BOOKINGS from './0044_add_paise_to_individual_bookings.sql';
+import SQL_0045_RECONCILE_RUPEES_FROM_PAISE from './0045_reconcile_rupees_from_paise.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -102,4 +104,6 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0041', version: 40,  filename: '0041_add_live_class_charge_locks.sql',      sql: SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS },
   { id: 'sql_0042', version: 41,  filename: '0042_add_per_minute_live_credit_rate.sql',     sql: SQL_0042_ADD_PER_MINUTE_LIVE_CREDIT },
   { id: 'sql_0043', version: 42,  filename: '0043_add_integer_paise_columns.sql',              sql: SQL_0043_ADD_INTEGER_PAISE_COLUMNS },
+  { id: 'sql_0044', version: 43,  filename: '0044_add_paise_to_individual_bookings.sql', sql: SQL_0044_ADD_PAISE_TO_INDIVIDUAL_BOOKINGS },
+  { id: 'sql_0045', version: 44,  filename: '0045_reconcile_rupees_from_paise.sql',      sql: SQL_0045_RECONCILE_RUPEES_FROM_PAISE },
 ].sort((a, b) => a.version - b.version);
