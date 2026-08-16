@@ -31,7 +31,11 @@ export default function AdminCreditsPage() {
 
   useEffect(() => {
     let mounted = true;
-    loadPacks().then(() => { if (mounted) setLoading(false); });
+    const init = async () => {
+      await loadPacks();
+      if (mounted) setLoading(false);
+    };
+    init();
     return () => { mounted = false; };
   }, []);
 
@@ -93,14 +97,14 @@ export default function AdminCreditsPage() {
           <h1 className="flex items-center gap-3 text-3xl font-black text-white">
             <Wallet className="h-7 w-7 text-violet-400" /> Wallet Packs
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">Student wallet top-up packs yahan manage karein. ₹ amount se buy hone wale packs.</p>
+          <p className="mt-1 text-sm text-neutral-500">Student wallet top-up packs yahan manage karein. â¹ amount se buy hone wale packs.</p>
         </div>
         <div className="flex gap-3">
           <button onClick={loadPacks} className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-neutral-300 hover:text-white" aria-label="Refresh Data" title="Refresh Data">
             <RefreshCw className="h-4 w-4" />
           </button>
           <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-black text-white hover:bg-violet-700">
-            <Plus className="h-4 w-4" /> नया Pack
+            <Plus className="h-4 w-4" /> à¤¨à¤¯à¤¾ Pack
           </button>
         </div>
       </div>
@@ -115,7 +119,7 @@ export default function AdminCreditsPage() {
               <input value={form.name} onChange={e => updateForm('name', e.target.value)} required className="input-dark mt-2 w-full" placeholder="Starter Self Study" />
             </div>
             <div>
-              <label className="label-xs">Price ₹ *</label>
+              <label className="label-xs">Price â¹ *</label>
               <input type="number" min={1} value={form.amount_rupees} onChange={e => updateForm('amount_rupees', e.target.value)} required className="input-dark mt-2 w-full" placeholder="499" />
             </div>
             <div className="md:col-span-2">
@@ -124,7 +128,7 @@ export default function AdminCreditsPage() {
             </div>
           </div>
           <button type="submit" disabled={saving} className="rounded-xl bg-violet-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">
-            {saving ? 'Saving...' : 'Pack Create करें'}
+            {saving ? 'Saving...' : 'Pack Create à¤à¤°à¥à¤'}
           </button>
         </form>
       )}
@@ -139,7 +143,7 @@ export default function AdminCreditsPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-white">{pack.name}</h2>
-                <p className="mt-2 text-sm text-neutral-400">{pack.description || '—'}</p>
+                <p className="mt-2 text-sm text-neutral-400">{pack.description || 'â'}</p>
               </div>
               <span className={`rounded-full px-3 py-1 text-xs font-black ${pack.is_active === 1 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-neutral-800 text-neutral-500'}`}>
                 {pack.is_active === 1 ? 'Active' : 'Inactive'}
@@ -148,7 +152,7 @@ export default function AdminCreditsPage() {
             <div className="mt-6 grid grid-cols-1 gap-3">
               <div className="rounded-2xl bg-neutral-950 p-4">
                 <div className="text-xs font-black uppercase tracking-widest text-neutral-600">Price</div>
-                <div className="mt-1 text-lg font-black text-white">₹{pack.amount_rupees || 0}</div>
+                <div className="mt-1 text-lg font-black text-white">â¹{pack.amount_rupees || 0}</div>
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
