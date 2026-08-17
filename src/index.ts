@@ -10841,8 +10841,8 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(COALESCE(ROUND(b.cost_per_class_paise / 100.0, 2), 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         ORDER BY c.created_at DESC
@@ -10853,7 +10853,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10880,7 +10880,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -10956,7 +10956,7 @@ async function handleGetBook(
   bookId: string,
 ): Promise<Response> {
   try {
-    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
+    const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
       .bind(bookId)
       .first();
     if (!book)
@@ -11055,8 +11055,8 @@ async function handleListPublicBooks(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, title, title_hi, description, description_hi, price_rupees,
-              thumbnail_url, self_study_enabled, wallet_rupees,
+      `SELECT id, title, title_hi, description, description_hi, ROUND(price_paise / 100.0, 2) AS price_rupees,
+              thumbnail_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -11078,7 +11078,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     // Single book fetch — used by [bookId] page to get title
     if (id) {
-      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
+      const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -11094,8 +11094,8 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     const [rows, countRes] = await Promise.all([
       env.DB.prepare(`
-        SELECT id, title, price_rupees, price_usd, thumbnail_url,
-               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+        SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi,
                created_at
         FROM Books
         ORDER BY created_at DESC
@@ -11726,7 +11726,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -14585,8 +14585,8 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
-               bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
-               bo.wallet_rupees, bo.is_standalone, bo.created_at,
+               ROUND(bo.price_paise / 100.0, 2) AS price_rupees, bo.thumbnail_url, bo.self_study_enabled,
+               ROUND(bo.wallet_paise / 100.0, 2) AS wallet_rupees, bo.is_standalone, bo.created_at,
                MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
@@ -21149,7 +21149,7 @@ async function replaceDynamicVariables(
 
   const enrollment = (await env.DB.prepare(
     `
-    SELECT e.*, c.title as course_title, c.price_rupees as course_price
+    SELECT e.*, c.title as course_title, ROUND(c.price_paise / 100.0, 2) AS course_price
     FROM Enrollments e
     JOIN Courses c ON e.course_id = c.id
     WHERE e.user_id = ?
@@ -24733,7 +24733,7 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
