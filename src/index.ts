@@ -19826,13 +19826,14 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price_rupees) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees) VALUES (?, ?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,
         "Advanced Cloudflare Workers",
         "Learn how to build edge applications.",
         teacherId,
+        490000,
         4900,
       )
       .run();
@@ -21270,15 +21271,17 @@ async function executeAIAction(
             message: "Missing required parameter: title",
           };
         const id = generateCustomId("YA-CRS");
+        const seedPricePaise = inrToPaise(normalizeAmountRupees(params.price_rupees));
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
             params.title,
             params.description ?? "",
             adminId,
-            params.price_rupees ?? 0,
+            seedPricePaise,
+            paiseToRupees(seedPricePaise),
             params.price_usd ?? 0,
             params.category_id ?? null,
           )
@@ -21291,13 +21294,15 @@ async function executeAIAction(
       case "edit_course": {
         if (!params.id)
           return { success: false, message: "Missing required parameter: id" };
+        const editPricePaise = params.price_rupees != null ? inrToPaise(normalizeAmountRupees(params.price_rupees)) : null;
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_paise = COALESCE(?, price_paise), price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            params.price_rupees ?? null,
+            editPricePaise,
+            editPricePaise,
             params.price_usd ?? null,
             params.category_id ?? null,
             params.id,
