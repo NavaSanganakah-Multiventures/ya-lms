@@ -6032,12 +6032,14 @@ async function handleAdminBatches(
           });
       }
       const id = generateBatchId(course_id || book_id);
+      const batchCostPaise = inrToPaise(normalizeAmountRupees(resolvedCostPerClassRupees));
+      const batchMinutePaise = inrToPaise(normalizeAmountRupees(live_class_cost_per_minute_rupees));
       await env.DB.prepare(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_cost_per_minute_rupees, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_paise, cost_per_class_rupees, live_class_cost_per_minute_paise, live_class_cost_per_minute_rupees, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -6055,8 +6057,10 @@ async function handleAdminBatches(
           class_end_time || null,
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
-          normalizeAmountRupees(resolvedCostPerClassRupees),
-          normalizeAmountRupees(live_class_cost_per_minute_rupees),
+          batchCostPaise,
+          paiseToRupees(batchCostPaise),
+          batchMinutePaise,
+          paiseToRupees(batchMinutePaise),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -6197,6 +6201,8 @@ async function handleAdminBatches(
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
       const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeAmountRupees(resolvedCostPerClassRupees);
       const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeAmountRupees(live_class_cost_per_minute_rupees);
+      const updBatchCostPaise = updateBatchCost != null ? inrToPaise(updateBatchCost) : null;
+      const updBatchMinutePaise = updateBatchMinuteCost != null ? inrToPaise(updateBatchMinuteCost) : null;
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -6211,8 +6217,10 @@ async function handleAdminBatches(
           class_end_time = COALESCE(?, class_end_time),
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
-          cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
-          live_class_cost_per_minute_rupees = COALESCE(?, live_class_cost_per_minute_rupees),
+          cost_per_class_paise = COALESCE(?, cost_per_class_paise),
+          cost_per_class_rupees = COALESCE(ROUND(? / 100.0, 2), cost_per_class_rupees),
+          live_class_cost_per_minute_paise = COALESCE(?, live_class_cost_per_minute_paise),
+          live_class_cost_per_minute_rupees = COALESCE(ROUND(? / 100.0, 2), live_class_cost_per_minute_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -6230,8 +6238,10 @@ async function handleAdminBatches(
           class_end_time,
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
-          updateBatchCost,
-          updateBatchMinuteCost,
+          updBatchCostPaise,
+          updBatchCostPaise,
+          updBatchMinutePaise,
+          updBatchMinutePaise,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json,
           id,
@@ -13749,17 +13759,23 @@ async function handleEndLiveSession(
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_amount_rupees = MAX(0, live_class_amount_rupees - COALESCE(
+        SET live_class_amount_paise = MAX(0, COALESCE(live_class_amount_paise, 0) - ROUND(COALESCE(
           (SELECT cost_per_class_rupees FROM LiveSessions ls
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
-        ))
+        ) * 100)),
+        live_class_amount_rupees = ROUND(MAX(0, COALESCE(live_class_amount_paise, 0) - ROUND(COALESCE(
+          (SELECT cost_per_class_rupees FROM LiveSessions ls
+           LEFT JOIN Batches b ON ls.batch_id = b.id
+           WHERE ls.id = ?),
+          0
+        ) * 100)) / 100.0, 2)
         WHERE id IN (
           SELECT id
           FROM Subscriptions s1
           WHERE s1.status = 'active'
-          AND s1.live_class_amount_rupees > 0
+          AND s1.live_class_amount_paise > 0
           AND s1.user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
           AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = s1.plan_id) = 0
           AND s1.created_at = (
@@ -13770,7 +13786,7 @@ async function handleEndLiveSession(
         )
       `,
       )
-        .bind(session.id, session.id)
+        .bind(session.id, session.id, session.id)
         .run();
     } catch (e) {
       console.error("Failed to deduct live class rupees:", e);
