@@ -5661,7 +5661,7 @@ async function handleAdminEnrollments(
       let warnings: string[] = [];
 
       if (payment_status === "paid" && (!amount_paid || amount_paid === 0)) {
-        const course: any = await env.DB.prepare("SELECT price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
+        const course: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
         if (course && course.price_rupees > 0) {
           warnings.push("amount_paid is 0 but course has a price. Student may not have premium access.");
         }
@@ -11556,7 +11556,7 @@ async function handleListLessons(
                 trialExpired = false;
                 isPaid = true;
               }
-              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
+              const courseRes: any = await env.DB.prepare("SELECT ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
               if (courseRes && courseRes.trial_upgrade_price_rupees !== null) {
                 trialUpgradePrice = courseRes.trial_upgrade_price_rupees;
               }
@@ -13510,7 +13510,7 @@ async function handleFormResponseSubmit(
     let courseInfo: any = null;
     if (template.linked_course_id) {
       courseInfo = await env.DB.prepare(
-        "SELECT title, price_rupees FROM Courses WHERE id = ?",
+        "SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?",
       )
         .bind(template.linked_course_id)
         .first();
@@ -15429,7 +15429,7 @@ async function handleBookIndividualClass(
     const userId = payload.sub;
 
     const course = (await env.DB.prepare(
-      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_cost_rupees, individual_class_duration_minutes
+      `SELECT id, teacher_id, individual_class_booking_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, individual_class_duration_minutes
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -16512,7 +16512,7 @@ async function handleEnrollWithCredits(
     }
 
     const course = (await env.DB.prepare(
-      `SELECT id, title, wallet_rupees
+      `SELECT id, title, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -16655,7 +16655,7 @@ async function handleEnroll(
 
     const userId = payload.sub;
     const course: any = await env.DB.prepare(
-      "SELECT id, title, price_rupees FROM Courses WHERE id = ?",
+      "SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?",
     )
       .bind(courseId)
       .first();
@@ -20310,7 +20310,7 @@ Actions:
           WHERE e.user_id = ?
         `,
         ).bind(userId),
-        env.DB.prepare("SELECT id, title, price_rupees FROM Courses"),
+        env.DB.prepare("SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses"),
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),
