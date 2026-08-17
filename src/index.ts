@@ -5680,12 +5680,13 @@ async function handleAdminEnrollments(
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
             txId,
             user_id,
+            inrToPaise(amount_paid),
             amount_paid,
             "INR",
             "course_purchase",
@@ -15050,13 +15051,14 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_rupees, is_active)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO CreditPacks (id, name, description, amount_paise, amount_rupees, is_active)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
+          inrToPaise(amountInr),
           amountInr,
           body.is_active === 0 ? 0 : 1,
         )
@@ -15073,14 +15075,16 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         `UPDATE CreditPacks SET
           name = COALESCE(?, name),
           description = COALESCE(?, description),
-          amount_rupees = COALESCE(?, amount_rupees),
+          amount_paise = COALESCE(?, amount_paise),
+          amount_rupees = COALESCE(ROUND(? / 100.0, 2), amount_rupees),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
         .bind(
           body.name || null,
           body.description ?? null,
-          body.amount_rupees == null ? null : normalizeAmountRupees(body.amount_rupees),
+          body.amount_rupees == null ? null : inrToPaise(normalizeAmountRupees(body.amount_rupees)),
+          body.amount_rupees == null ? null : inrToPaise(normalizeAmountRupees(body.amount_rupees)),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           id,
         )
@@ -15435,10 +15439,10 @@ async function handleBookIndividualClass(
     }
 
     await env.DB.prepare(
-      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_rupees)
-       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_paise, amount_charged_rupees)
+       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)`,
     )
-      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, creditCost)
+      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, rupeesToPaise(creditCost), creditCost)
       .run();
 
     // Create LiveSession
@@ -15544,9 +15548,10 @@ async function handleAdminCancelIndividualBooking(
       return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
     }
 
-    if (booking.amount_charged_rupees > 0 && !booking.amount_refunded_rupees) {
-      await addToWallet(
-        env, booking.student_id, booking.amount_charged_rupees,
+    const chargedPaise = Number(booking.amount_charged_paise) || rupeesToPaise(Number(booking.amount_charged_rupees) || 0);
+    if (chargedPaise > 0 && !booking.amount_refunded_rupees) {
+      await addToWalletPaise(
+        env, booking.student_id, chargedPaise,
         "individual_class_refund", "individual_booking", bookingId,
       );
     }
@@ -15559,9 +15564,9 @@ async function handleAdminCancelIndividualBooking(
     }
 
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_rupees = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_paise = ?, amount_refunded_rupees = ROUND(? / 100.0, 2), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     )
-      .bind(booking.amount_charged_rupees > 0 ? booking.amount_charged_rupees : 0, bookingId)
+      .bind(chargedPaise > 0 ? chargedPaise : 0, chargedPaise > 0 ? chargedPaise : 0, bookingId)
       .run();
 
     removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
@@ -15600,8 +15605,8 @@ async function handleRazorpayCreateTopupOrder(
       if (!pack) {
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
-      amount_rupees = normalizeAmountRupees(pack.amount_rupees);
-      amount_paise = inrToPaise(amount_rupees);
+      amount_paise = Number(pack.amount_paise) || inrToPaise(normalizeAmountRupees(pack.amount_rupees));
+      amount_rupees = paiseToInr(amount_paise);
       relatedId = pack.id;
     }
 
@@ -15627,8 +15632,8 @@ async function handleRazorpayCreateTopupOrder(
       const txId = generateCustomId("YA-TXN");
       // Record actual amount paid (₹0 for full coupon), not the original price
       const discountedAmountRupees = paiseToInr(amount_paise);
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, rupeesToPaise(discountedAmountRupees), discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -15685,13 +15690,14 @@ async function handleRazorpayCreateTopupOrder(
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
         txId,
         payload.sub,
+        amount_paise,
         amount_rupees,
         "INR",
         "credit_purchase",
@@ -15798,11 +15804,11 @@ async function handleRazorpayVerifyTopupPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const amountInr = Number((tx as any).amount_rupees || 0);
-    const wallet = await addToWallet(
+    const amountPaise = Number((tx as any).amount_paise) || rupeesToPaise(Number((tx as any).amount_rupees || 0));
+    const wallet = await addToWalletPaise(
       env,
       payload.sub,
-      amountInr,
+      amountPaise,
       "purchase",
       (tx as any).related_id ? "credit_pack" : "razorpay_order",
       (tx as any).related_id || razorpay_order_id,
@@ -17425,8 +17431,8 @@ async function handleCreatePaymentOrder(
 
       await ensureEnrollment(env, enrollPayload);
 
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
 
       if (quote.coupon) {
@@ -17463,9 +17469,9 @@ async function handleCreatePaymentOrder(
     // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
-      `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(txId, payload.sub, paiseToRupees(amount), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .bind(txId, payload.sub, amount, paiseToRupees(amount), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
     // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
