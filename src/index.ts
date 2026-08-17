@@ -9417,7 +9417,7 @@ async function handleGetMyCourses(
     try {
       const res = await env.DB.prepare(`
         SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10843,7 +10843,7 @@ async function handleListCourses(
       const res = await env.DB.prepare(
         `
         SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         ORDER BY c.created_at DESC
@@ -14472,8 +14472,8 @@ async function handleListLiveSessions(
       `SELECT ls.*, c.self_study_enabled,
               (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
               COALESCE(
-                NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
-                (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0),
+                (SELECT MIN(NULLIF(ROUND(COALESCE(fallback_b.cost_per_class_paise, 0) / 100.0, 2), 0))
                  FROM Batches fallback_b
                  WHERE fallback_b.course_id = ls.course_id
                    AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -14484,8 +14484,8 @@ async function handleListLiveSessions(
                 WHEN c.self_study_enabled = 1
                  AND COALESCE(b.self_study_group_enabled, 1) = 1
                  AND COALESCE(
-                   NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
-                   (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                   NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0),
+                   (SELECT MIN(NULLIF(ROUND(COALESCE(fallback_b.cost_per_class_paise, 0) / 100.0, 2), 0))
                     FROM Batches fallback_b
                     WHERE fallback_b.course_id = ls.course_id
                       AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -14525,7 +14525,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -14539,8 +14539,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -14557,8 +14557,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -14574,7 +14574,7 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT c.*, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
@@ -15152,8 +15152,8 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   return (await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees,
-            COALESCE(b.live_class_cost_per_minute_rupees, 0) as live_class_cost_per_minute_rupees,
+            ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as cost_per_class_rupees,
+            ROUND(COALESCE(b.live_class_cost_per_minute_paise, 0) / 100.0, 2) as live_class_cost_per_minute_rupees,
             b.live_class_credit_unit
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
@@ -16297,7 +16297,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.class_days, b.self_study_group_enabled, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id,
               bo.title as book_title
@@ -16326,7 +16326,7 @@ async function handleGetBookBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.class_days, b.self_study_group_enabled, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id
        FROM Batches b
@@ -16370,7 +16370,7 @@ async function handleEnrollBookBatch(
     }
 
     const batch = await env.DB.prepare(
-      "SELECT id, book_id, name, cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
+      "SELECT id, book_id, name, ROUND(cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
     )
       .bind(batchId)
       .first() as any;
