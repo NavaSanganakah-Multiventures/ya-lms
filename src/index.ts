@@ -17410,12 +17410,12 @@ async function handleCreatePaymentOrder(
     let price_rupees = 0;
 
     if (itemType === "course") {
-      const course: any = await env.DB.prepare("SELECT price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
+      const course: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
       title = course.title;
       price_rupees = course.price_rupees || 0;
     } else if (itemType === "book") {
-      const book: any = await env.DB.prepare("SELECT price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
+      const book: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
       if (!book) return new Response(JSON.stringify({ error: "Book not found" }), { status: 404 });
       title = book.title;
       price_rupees = book.price_rupees || 0;
@@ -17563,14 +17563,14 @@ async function handleVerifyPayment(
     let price_rupees = 0;
 
     if (orderOwner.course_id) {
-      const c: any = await env.DB.prepare("SELECT title, price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
+      const c: any = await env.DB.prepare("SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
       if (c) { title = c.title; price_rupees = c.price_rupees; }
     } else if (orderOwner.book_id) {
-      const b: any = await env.DB.prepare("SELECT title, price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
+      const b: any = await env.DB.prepare("SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
       if (b) { title = b.title; price_rupees = b.price_rupees; }
     }
 
-    const txForAmount: any = await env.DB.prepare("SELECT amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
+    const txForAmount: any = await env.DB.prepare("SELECT ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
     const amountPaid = txForAmount?.amount_rupees ?? price_rupees ?? 0;
 
     const enrollmentUpdate = await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"').bind(amountPaid, razorpay_order_id).run() as any;
