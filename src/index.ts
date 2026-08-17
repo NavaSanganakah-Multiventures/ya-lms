@@ -4905,7 +4905,7 @@ async function handleAdminCourses(
       if (singleCourseMatch && url.pathname !== "/api/admin/courses") {
         const courseId = decodeURIComponent(singleCourseMatch[1]);
         const course = await env.DB.prepare(
-          "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
+          "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
         ).bind(courseId).first();
         if (!course) {
           return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -4918,7 +4918,7 @@ async function handleAdminCourses(
       const offset = (page - 1) * limit;
 
       let query =
-        "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
+        "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
       let countQuery = "SELECT COUNT(*) as total FROM Courses c";
 
       let results;
@@ -5938,7 +5938,7 @@ async function handleAdminBatches(
       const batchIdFilter = batchIdMatch ? batchIdMatch[1] : null;
 
       let query = `
-        SELECT b.*, 
+        SELECT b.*, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees, ROUND(b.live_class_cost_per_minute_paise / 100.0, 2) AS live_class_cost_per_minute_rupees, ROUND(b.no_show_charge_paise / 100.0, 2) AS no_show_charge_rupees,
                c.title as course_title,
                bo.title as book_title
         FROM Batches b
@@ -9416,7 +9416,7 @@ async function handleGetMyCourses(
     let results;
     try {
       const res = await env.DB.prepare(`
-        SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
                COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
@@ -9428,7 +9428,7 @@ async function handleGetMyCourses(
     } catch (e: any) {
       if (e.message?.toLowerCase().includes('no such column')) {
         const res = await env.DB.prepare(`
-          SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+          SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
                  0 as min_live_class_credit_cost
           FROM Enrollments e
           JOIN Courses c ON e.course_id = c.id
@@ -9903,7 +9903,7 @@ async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: str
 
 async function getCourseMerchantRecord(env: Env, courseId: string) {
   return await env.DB.prepare(
-    `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
+    `SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
             ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
             ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
             ml.landing_url, ml.sync_status, ml.sync_error, ml.last_synced_at
@@ -10974,7 +10974,7 @@ async function handleGetBook(
          WHERE l.book_id = ? ORDER BY l.order_index ASC`,
       ).bind(bookId).all(),
       env.DB.prepare(
-        "SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
+        "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
       ).bind(bookId).all(),
     ]);
 
@@ -11469,7 +11469,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
   try {
     await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
-      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+      "SELECT b.*, ROUND(b.price_paise / 100.0, 2) AS price_rupees, ROUND(b.wallet_paise / 100.0, 2) AS wallet_rupees, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -11503,7 +11503,7 @@ async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, cours
 async function handleListCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+      "SELECT b.*, ROUND(b.price_paise / 100.0, 2) AS price_rupees, ROUND(b.wallet_paise / 100.0, 2) AS wallet_rupees, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -14524,7 +14524,7 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
                COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
@@ -14573,7 +14573,7 @@ async function handleGetDashboardData(
       // 4. Available Courses (Not enrolled)
       env.DB.prepare(
         `
-        SELECT c.*, cat.name as category_name,
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -15071,8 +15071,8 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
 
     if (request.method === "GET") {
       const query = adminMode
-        ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
-        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_paise ASC`;
+        ? `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks ORDER BY created_at DESC`
+        : `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks WHERE is_active = 1 ORDER BY amount_paise ASC`;
       const { results } = await env.DB.prepare(query).all();
       return new Response(JSON.stringify({ packs: results || [] }), {
         status: 200,
@@ -15576,7 +15576,7 @@ async function handleAdminCancelIndividualBooking(
   try {
     await requireAdmin(request, env);
     const booking = (await env.DB.prepare(
-      `SELECT * FROM IndividualBookings WHERE id = ?`,
+      `SELECT *, ROUND(amount_charged_paise / 100.0, 2) AS amount_charged_rupees, ROUND(amount_refunded_paise / 100.0, 2) AS amount_refunded_rupees FROM IndividualBookings WHERE id = ?`,
     )
       .bind(bookingId)
       .first()) as any;
@@ -15637,7 +15637,7 @@ async function handleRazorpayCreateTopupOrder(
 
     if (pack_id) {
       const pack = (await env.DB.prepare(
-        `SELECT * FROM CreditPacks WHERE id = ? AND is_active = 1`,
+        `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks WHERE id = ? AND is_active = 1`,
       )
         .bind(pack_id)
         .first()) as any;
@@ -17666,7 +17666,7 @@ async function getUserAccessProfile(
   };
 
   const sub: any = await env.DB.prepare(
-    `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
+    `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
             ROUND(p.wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, p.live_session_access
      FROM Subscriptions s
      JOIN SubscriptionPlans p ON s.plan_id = p.id
@@ -17937,7 +17937,7 @@ async function handleGetUserSubscription(
     const payload = await requireAuth(request, env);
     // Priority: active/authenticated first, then created/halted
     let sub: any = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
+      `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
        WHERE s.user_id = ? AND s.status IN ('active', 'authenticated')
@@ -17948,7 +17948,7 @@ async function handleGetUserSubscription(
 
     if (!sub) {
       sub = await env.DB.prepare(
-        `SELECT s.*, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
+        `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
          FROM Subscriptions s
          JOIN SubscriptionPlans p ON s.plan_id = p.id
          WHERE s.user_id = ? AND s.status IN ('created', 'halted')
@@ -17985,7 +17985,7 @@ async function handleCreateSubscription(
     const { planId } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18185,7 +18185,7 @@ async function handleCancelSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT *, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -18392,7 +18392,7 @@ async function handleStudentPlanPool(
 ): Promise<Response> {
   try {
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18467,7 +18467,7 @@ async function handleStudentPreSelect(
     } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18741,7 +18741,7 @@ async function handleAdminSubscriptionPlans(
     // GET — List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SubscriptionPlans ORDER BY amount_paise ASC",
+        "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans ORDER BY amount_paise ASC",
       ).all();
       return new Response(JSON.stringify({ plans: results }), {
         status: 200,
@@ -19173,7 +19173,7 @@ async function handleAdminAssignSubscription(
 
     // 1. Fetch Plan & User
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ?",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ?",
     )
       .bind(planId)
       .first();
