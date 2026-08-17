@@ -1353,7 +1353,8 @@ function inrToPaise(inr: number): number {
   return Math.round(Math.max(0, Number(inr) || 0) * 100);
 }
 function paiseToInr(paise: number): number {
-  return Math.floor(Math.max(0, Number(paise) || 0) / 100);
+  // #675: round (not floor) so fractional rupees aren't lost when converting paise -> rupees.
+  return Math.round(Math.max(0, Number(paise) || 0)) / 100;
 }
 
 function getPositiveIntegerSetting(
@@ -4984,8 +4985,8 @@ async function handleAdminCourses(
         );
       }
 
-      const costInr = normalizeNonNegativeInt(wallet_rupees);
-      const individualClassCostInr = normalizeNonNegativeInt(individual_class_cost_rupees);
+      const costInr = normalizeAmountRupees(wallet_rupees);
+      const individualClassCostInr = normalizeAmountRupees(individual_class_cost_rupees);
 
       await env.DB.prepare(
         `
@@ -5149,8 +5150,8 @@ async function handleAdminCourses(
 
       const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
 
-      const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
-      const updateIndividualClassCostInr = individual_class_cost_rupees == null ? null : normalizeNonNegativeInt(individual_class_cost_rupees);
+      const updateCostInr = wallet_rupees == null ? null : normalizeAmountRupees(wallet_rupees);
+      const updateIndividualClassCostInr = individual_class_cost_rupees == null ? null : normalizeAmountRupees(individual_class_cost_rupees);
 
       const existingCourse: any = await env.DB.prepare(
         "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
@@ -6054,8 +6055,8 @@ async function handleAdminBatches(
           class_end_time || null,
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
-          normalizeNonNegativeInt(resolvedCostPerClassRupees),
-          normalizeNonNegativeInt(live_class_cost_per_minute_rupees),
+          normalizeAmountRupees(resolvedCostPerClassRupees),
+          normalizeAmountRupees(live_class_cost_per_minute_rupees),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -6194,8 +6195,8 @@ async function handleAdminBatches(
       } = (await request.json()) as any;
       // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
-      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeNonNegativeInt(resolvedCostPerClassRupees);
-      const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeNonNegativeInt(live_class_cost_per_minute_rupees);
+      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeAmountRupees(resolvedCostPerClassRupees);
+      const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeAmountRupees(live_class_cost_per_minute_rupees);
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -11111,7 +11112,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     }
 
     const id = generateCustomId("YA-BOK");
-    const bookCost = normalizeNonNegativeInt(body.wallet_rupees);
+    const bookCost = normalizeAmountRupees(body.wallet_rupees);
     await env.DB.prepare(
       "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
@@ -11119,7 +11120,7 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
         id,
         body.title.trim(),
         body.description || '',
-        normalizeNonNegativeInt(body.price_rupees),
+        normalizeAmountRupees(body.price_rupees),
         normalizeNonNegativeInt(body.price_usd),
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
@@ -11165,7 +11166,7 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       .bind(
         body.title.trim(),
         body.description || '',
-        body.price_rupees != null ? normalizeNonNegativeInt(body.price_rupees) : null,
+        body.price_rupees != null ? normalizeAmountRupees(body.price_rupees) : null,
         body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
@@ -14589,8 +14590,18 @@ function normalizeNonNegativeInt(value: any, fallback = 0): number {
 }
 
 // Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
+// Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
 function roundToTwo(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// Normalize a rupee amount, preserving up to 2 decimals (rejects negatives).
+// Use this for rupee price/cost/amount inputs. Do NOT use normalizeNonNegativeInt for
+// rupee values - it parseInt-floors decimals (e.g. 499.99 -> 499, 0.50 -> 0). #675
+function normalizeAmountRupees(value: any): number {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
 }
 
 export function rupeesToPaise(rupees: any): number {
@@ -15034,7 +15045,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     if (request.method === "POST") {
       const body = (await request.json()) as any;
       const packId = generateCustomId("YA-CRP");
-      const amountInr = normalizeNonNegativeInt(body.amount_rupees);
+      const amountInr = normalizeAmountRupees(body.amount_rupees);
       if (!body.name || amountInr <= 0) {
         return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
       }
@@ -15069,7 +15080,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         .bind(
           body.name || null,
           body.description ?? null,
-          body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
+          body.amount_rupees == null ? null : normalizeAmountRupees(body.amount_rupees),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           id,
         )
@@ -15253,7 +15264,7 @@ async function chargeAttendanceGroupClassCredits(
   let requiredPaise = 0;
 
   if (creditUnit === "per_minute") {
-    const perMinuteRateRupees = normalizeNonNegativeInt(session.live_class_cost_per_minute_rupees) || (ratePaise / 100);
+    const perMinuteRateRupees = normalizeAmountRupees(session.live_class_cost_per_minute_rupees) || (ratePaise / 100);
     requiredPaise = Math.round(rupeesToPaise(perMinuteRateRupees) * totalSeconds / 60);
   } else {
     // fifteen_minute / monthly legacy behaviour: round up to next full minute
@@ -15589,7 +15600,7 @@ async function handleRazorpayCreateTopupOrder(
       if (!pack) {
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
-      amount_rupees = normalizeNonNegativeInt(pack.amount_rupees);
+      amount_rupees = normalizeAmountRupees(pack.amount_rupees);
       amount_paise = inrToPaise(amount_rupees);
       relatedId = pack.id;
     }
@@ -17399,7 +17410,7 @@ async function handleCreatePaymentOrder(
 
     let quote;
     try {
-      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_rupees * 100, couponCode }, payload.sub);
+      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: inrToPaise(price_rupees), couponCode }, payload.sub);
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -17454,7 +17465,7 @@ async function handleCreatePaymentOrder(
     await env.DB.prepare(
       `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .bind(txId, payload.sub, paiseToRupees(amount), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
     // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
