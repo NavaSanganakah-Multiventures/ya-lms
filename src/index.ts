@@ -4987,15 +4987,18 @@ async function handleAdminCourses(
 
       const costInr = normalizeAmountRupees(wallet_rupees);
       const individualClassCostInr = normalizeAmountRupees(individual_class_cost_rupees);
+      const coursePricePaise = inrToPaise(normalizeAmountRupees(price_rupees));
+      const courseWalletPaise = inrToPaise(costInr);
+      const courseIndividualCostPaise = inrToPaise(individualClassCostInr);
 
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price_paise, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
-          wallet_rupees, individual_class_cost_rupees,
+          wallet_paise, wallet_rupees, individual_class_cost_paise, individual_class_cost_rupees,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5005,7 +5008,8 @@ async function handleAdminCourses(
           description || "",
           description_hi || null,
           finalTeacherId,
-          price_rupees ?? 0,
+          coursePricePaise,
+          paiseToRupees(coursePricePaise),
           price_usd ?? 0,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5014,7 +5018,9 @@ async function handleAdminCourses(
           self_study_only ? 1 : 0,
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
+          courseWalletPaise,
           costInr,
+          courseIndividualCostPaise,
           individualClassCostInr,
           seo_title_en || null,
           seo_title_hi || null,
@@ -5157,6 +5163,9 @@ async function handleAdminCourses(
         "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
       ).bind(id).first();
 
+      const updCoursePricePaise = price_rupees != null ? inrToPaise(normalizeAmountRupees(price_rupees)) : null;
+      const updCourseWalletPaise = updateCostInr != null ? inrToPaise(updateCostInr) : null;
+      const updCourseIndividualPaise = updateIndividualClassCostInr != null ? inrToPaise(updateIndividualClassCostInr) : null;
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -5164,7 +5173,8 @@ async function handleAdminCourses(
           title_hi = COALESCE(?, title_hi),
           description = COALESCE(?, description),
           description_hi = COALESCE(?, description_hi),
-          price_rupees = COALESCE(?, price_rupees),
+          price_paise = COALESCE(?, price_paise),
+          price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
           merchant_default_image_url = COALESCE(?, merchant_default_image_url),
@@ -5174,8 +5184,10 @@ async function handleAdminCourses(
           self_study_only = COALESCE(?, self_study_only),
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
-          wallet_rupees = COALESCE(?, wallet_rupees),
-          individual_class_cost_rupees = COALESCE(?, individual_class_cost_rupees),
+          wallet_paise = COALESCE(?, wallet_paise),
+          wallet_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_rupees),
+          individual_class_cost_paise = COALESCE(?, individual_class_cost_paise),
+          individual_class_cost_rupees = COALESCE(ROUND(? / 100.0, 2), individual_class_cost_rupees),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -5190,7 +5202,8 @@ async function handleAdminCourses(
           title_hi || null,
           description || null,
           description_hi || null,
-          price_rupees ?? null,
+          updCoursePricePaise,
+          updCoursePricePaise,
           price_usd ?? null,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5200,8 +5213,10 @@ async function handleAdminCourses(
           self_study_only == null ? null : self_study_only ? 1 : 0,
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
-          updateCostInr,
-          updateIndividualClassCostInr,
+          updCourseWalletPaise,
+          updCourseWalletPaise,
+          updCourseIndividualPaise,
+          updCourseIndividualPaise,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -11123,18 +11138,22 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
 
     const id = generateCustomId("YA-BOK");
     const bookCost = normalizeAmountRupees(body.wallet_rupees);
+    const bookPricePaise = inrToPaise(normalizeAmountRupees(body.price_rupees));
+    const bookWalletPaise = inrToPaise(bookCost);
     await env.DB.prepare(
-      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO Books (id, title, description, price_paise, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_paise, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         id,
         body.title.trim(),
         body.description || '',
-        normalizeAmountRupees(body.price_rupees),
+        bookPricePaise,
+        paiseToRupees(bookPricePaise),
         normalizeNonNegativeInt(body.price_usd),
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
         body.self_study_enabled ? 1 : 0,
+        bookWalletPaise,
         bookCost,
       ).run();
     return new Response(JSON.stringify({ success: true, id }), {
@@ -11164,24 +11183,28 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       });
     }
 
-    const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+    const updateBookCost = body.wallet_rupees != null ? normalizeAmountRupees(body.wallet_rupees) : null;
 
     const existingBook: any = await env.DB.prepare(
       "SELECT thumbnail_url FROM Books WHERE id = ?"
     ).bind(bookId).first();
 
+    const updBookPricePaise = body.price_rupees != null ? inrToPaise(normalizeAmountRupees(body.price_rupees)) : null;
+    const updBookWalletPaise = updateBookCost != null ? inrToPaise(updateBookCost) : null;
     await env.DB.prepare(
-      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
+      "UPDATE Books SET title = ?, description = ?, price_paise = COALESCE(?, price_paise), price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_paise = COALESCE(?, wallet_paise), wallet_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_rupees) WHERE id = ?"
     )
       .bind(
         body.title.trim(),
         body.description || '',
-        body.price_rupees != null ? normalizeAmountRupees(body.price_rupees) : null,
+        updBookPricePaise,
+        updBookPricePaise,
         body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
         body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
-        updateBookCost,
+        updBookWalletPaise,
+        updBookWalletPaise,
         bookId,
       ).run();
 
@@ -19838,13 +19861,14 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price_rupees) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees) VALUES (?, ?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,
         "Advanced Cloudflare Workers",
         "Learn how to build edge applications.",
         teacherId,
+        490000,
         4900,
       )
       .run();
@@ -21282,15 +21306,17 @@ async function executeAIAction(
             message: "Missing required parameter: title",
           };
         const id = generateCustomId("YA-CRS");
+        const seedPricePaise = inrToPaise(normalizeAmountRupees(params.price_rupees));
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
             params.title,
             params.description ?? "",
             adminId,
-            params.price_rupees ?? 0,
+            seedPricePaise,
+            paiseToRupees(seedPricePaise),
             params.price_usd ?? 0,
             params.category_id ?? null,
           )
@@ -21303,13 +21329,15 @@ async function executeAIAction(
       case "edit_course": {
         if (!params.id)
           return { success: false, message: "Missing required parameter: id" };
+        const editPricePaise = params.price_rupees != null ? inrToPaise(normalizeAmountRupees(params.price_rupees)) : null;
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_paise = COALESCE(?, price_paise), price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            params.price_rupees ?? null,
+            editPricePaise,
+            editPricePaise,
             params.price_usd ?? null,
             params.category_id ?? null,
             params.id,
