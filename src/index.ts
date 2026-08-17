@@ -10881,7 +10881,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -10957,7 +10957,7 @@ async function handleGetBook(
   bookId: string,
 ): Promise<Response> {
   try {
-    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
+    const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
       .bind(bookId)
       .first();
     if (!book)
@@ -11056,8 +11056,8 @@ async function handleListPublicBooks(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, title, title_hi, description, description_hi, price_rupees,
-              thumbnail_url, self_study_enabled, wallet_rupees,
+      `SELECT id, title, title_hi, description, description_hi, ROUND(price_paise / 100.0, 2) AS price_rupees,
+              thumbnail_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -11079,7 +11079,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     // Single book fetch — used by [bookId] page to get title
     if (id) {
-      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
+      const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -11095,8 +11095,8 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     const [rows, countRes] = await Promise.all([
       env.DB.prepare(`
-        SELECT id, title, price_rupees, price_usd, thumbnail_url,
-               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+        SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi,
                created_at
         FROM Books
         ORDER BY created_at DESC
@@ -11727,7 +11727,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -14743,7 +14743,7 @@ async function addToWalletPaise(
     ).bind(walletId, userId, safePaise, safePaise, amountRupees, amountRupees, safePaise, safePaise, safePaise, safePaise),
     env.DB.prepare(
       `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
     ).bind(ledgerId, userId, safePaise, amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
   ]);
@@ -14800,7 +14800,7 @@ async function deductFromWalletPaise(
     ).bind(safePaise, safePaise, safePaise, safePaise, userId, safePaise),
     env.DB.prepare(
       `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
     ).bind(ledgerId, userId, -safePaise, -amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
   ]);
@@ -15033,15 +15033,15 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
     const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
 
     const totalUsed = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0`,
+      `SELECT COALESCE(ROUND(SUM(ABS(change_paise)) / 100.0, 2), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_paise < 0`,
     ).bind(analyticsUserId).first()) as any;
 
     const monthlyUsage = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0 AND created_at >= date('now', 'start of month')`,
+      `SELECT COALESCE(ROUND(SUM(ABS(change_paise)) / 100.0, 2), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_paise < 0 AND created_at >= date('now', 'start of month')`,
     ).bind(analyticsUserId).first()) as any;
 
     const history = (await env.DB.prepare(
-      `SELECT change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `SELECT ROUND(change_paise / 100.0, 2) AS change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     ).bind(analyticsUserId).all()) as any;
 
     const walletBalance = await getWalletBalance(env, analyticsUserId);
@@ -19539,7 +19539,7 @@ async function handleRazorpayWebhook(
                   // Ledger entry
                   env.DB.prepare(
                     `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
                   ).bind(ledgerId, dbSub.user_id, renewalPaise, renewalRupees, dbSub.user_id, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
                   // Accumulate tracking field - add plan value to existing balance (rollover)
                   env.DB.prepare(
@@ -19669,7 +19669,7 @@ async function handleRazorpayWebhook(
                   // Ledger entry
                   env.DB.prepare(
                     `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
                   ).bind(ledgerId, chargedSub.user_id, renewalPaise, renewalRupees, chargedSub.user_id, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
                   // Accumulate tracking field (rollover)
                   env.DB.prepare(
@@ -22796,7 +22796,7 @@ const worker = {
 
             if (dataType === "wallet" && userId) {
               const wallet: any = await env.DB.prepare(
-                "SELECT balance_rupees, lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
+                "SELECT ROUND(balance_paise / 100.0, 2) AS balance_rupees, ROUND(lifetime_deposits_paise / 100.0, 2) AS lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
               ).bind(userId).first();
               return new Response(JSON.stringify(wallet || { balance_rupees: 0 }), {
                 headers: { "Content-Type": "application/json" }
@@ -24750,7 +24750,7 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, individual_class_cost_rupees, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
