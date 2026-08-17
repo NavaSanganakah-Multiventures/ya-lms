@@ -7076,9 +7076,9 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     for (const { userId } of pendingCharges) {
       const insertResult = await env.DB.prepare(
         `INSERT OR IGNORE INTO PendingCharges
-         (id, user_id, amount_rupees, reason, reference_type, reference_id, status)
-         VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
-      ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+         (id, user_id, amount_paise, amount_rupees, reason, reference_type, reference_id, status)
+         VALUES (?, ?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
+      ).bind(generateCustomId("YA-PCH"), userId, inrToPaise(chargeAmount), chargeAmount, sessionId).run();
 
       // changes === 0 means a duplicate was ignored — another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
