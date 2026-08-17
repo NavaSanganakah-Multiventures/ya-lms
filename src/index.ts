@@ -13783,18 +13783,18 @@ async function handleEndLiveSession(
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_amount_paise = MAX(0, COALESCE(live_class_amount_paise, 0) - ROUND(COALESCE(
-          (SELECT cost_per_class_rupees FROM LiveSessions ls
+        SET live_class_amount_paise = MAX(0, COALESCE(live_class_amount_paise, 0) - COALESCE(
+          (SELECT b.cost_per_class_paise FROM LiveSessions ls
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
-        ) * 100)),
-        live_class_amount_rupees = ROUND(MAX(0, COALESCE(live_class_amount_paise, 0) - ROUND(COALESCE(
-          (SELECT cost_per_class_rupees FROM LiveSessions ls
+        )),
+        live_class_amount_rupees = ROUND(MAX(0, COALESCE(live_class_amount_paise, 0) - COALESCE(
+          (SELECT b.cost_per_class_paise FROM LiveSessions ls
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
-        ) * 100)) / 100.0, 2)
+        )) / 100.0, 2)
         WHERE id IN (
           SELECT id
           FROM Subscriptions s1
@@ -17667,7 +17667,7 @@ async function getUserAccessProfile(
 
   const sub: any = await env.DB.prepare(
     `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
-            p.wallet_amount_rupees, p.live_session_access
+            ROUND(p.wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, p.live_session_access
      FROM Subscriptions s
      JOIN SubscriptionPlans p ON s.plan_id = p.id
      WHERE s.user_id = ? AND s.status = 'active'
@@ -17910,14 +17910,14 @@ async function handleListSubscriptionPlans(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+      `SELECT id, name, interval, interval_count, ROUND(amount_paise / 100.0, 2) AS amount_rupees, razorpay_plan_id,
               course_access_type, max_course_selection,
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
-              wallet_amount_rupees,
-              live_session_access, live_class_amount_rupees,
-              is_lifetime, lifetime_price_rupees
-       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
+              ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees,
+              live_session_access, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees,
+              is_lifetime, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees
+       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_paise ASC`,
     ).all();
     return new Response(JSON.stringify({ plans: results }), {
       status: 200,
@@ -18402,7 +18402,7 @@ async function handleStudentPlanPool(
       });
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, c.title, c.description, c.price_rupees
+      `SELECT pcp.item_id, pcp.access_mode, c.title, c.description, ROUND(c.price_paise / 100.0, 2) AS price_rupees
        FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`,
     )
@@ -18672,7 +18672,7 @@ async function handleGetMySelections(
       );
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT uss.item_id, c.title, c.description, c.price_rupees
+      `SELECT uss.item_id, c.title, c.description, ROUND(c.price_paise / 100.0, 2) AS price_rupees
        FROM UserSubscriptionSelections uss JOIN Courses c ON uss.item_id = c.id
        WHERE uss.subscription_id = ? AND uss.item_type = 'course'`,
     )
