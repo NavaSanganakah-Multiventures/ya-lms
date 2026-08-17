@@ -18785,18 +18785,23 @@ async function handleAdminSubscriptionPlans(
 
       // Save to D1 with all benefit fields
       const id = generateCustomId("YA-PLN");
+      const planAmountPaise = inrToPaise(normalizeAmountRupees(amount_rupees));
+      const planWalletPaise = inrToPaise(normalizeAmountRupees(wallet_amount_rupees));
+      const planLiveClassPaise = inrToPaise(normalizeAmountRupees(live_class_amount_rupees));
+      const planLifetimePaise = inrToPaise(normalizeAmountRupees(lifetime_price_rupees));
       await env.DB.prepare(
-        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_paise, amount_rupees, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         wallet_amount_rupees, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wallet_amount_paise, wallet_amount_rupees, live_session_access, live_class_amount_paise, live_class_amount_rupees, is_lifetime, lifetime_price_paise, lifetime_price_rupees)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
           name,
           interval,
           interval_count || 1,
-          amount_rupees,
+          planAmountPaise,
+          paiseToRupees(planAmountPaise),
           razorpayPlanId,
           course_access_type,
           max_course_selection,
@@ -18804,11 +18809,14 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection,
           book_access_type,
           max_book_selection,
-          wallet_amount_rupees,
+          planWalletPaise,
+          paiseToRupees(planWalletPaise),
           live_session_access ? 1 : 0,
-          live_class_amount_rupees,
+          planLiveClassPaise,
+          paiseToRupees(planLiveClassPaise),
           is_lifetime ? 1 : 0,
-          lifetime_price_rupees,
+          planLifetimePaise,
+          paiseToRupees(planLifetimePaise),
         )
         .run();
 
@@ -18871,12 +18879,17 @@ async function handleAdminSubscriptionPlans(
         }
       }
 
+      const updAmountPaise = amount_rupees != null ? inrToPaise(normalizeAmountRupees(amount_rupees)) : null;
+      const updWalletPaise = wallet_amount_rupees != null ? inrToPaise(normalizeAmountRupees(wallet_amount_rupees)) : null;
+      const updLiveClassPaise = live_class_amount_rupees != null ? inrToPaise(normalizeAmountRupees(live_class_amount_rupees)) : null;
+      const updLifetimePaise = lifetime_price_rupees != null ? inrToPaise(normalizeAmountRupees(lifetime_price_rupees)) : null;
       await env.DB.prepare(
         `UPDATE SubscriptionPlans SET
          name = COALESCE(?, name),
          interval = COALESCE(?, interval),
          interval_count = COALESCE(?, interval_count),
-         amount_rupees = COALESCE(?, amount_rupees),
+         amount_paise = COALESCE(?, amount_paise),
+         amount_rupees = COALESCE(ROUND(? / 100.0, 2), amount_rupees),
          razorpay_plan_id = COALESCE(?, razorpay_plan_id),
          course_access_type = COALESCE(?, course_access_type),
          max_course_selection = COALESCE(?, max_course_selection),
@@ -18884,11 +18897,14 @@ async function handleAdminSubscriptionPlans(
          max_batch_selection = COALESCE(?, max_batch_selection),
          book_access_type = COALESCE(?, book_access_type),
          max_book_selection = COALESCE(?, max_book_selection),
-         wallet_amount_rupees = COALESCE(?, wallet_amount_rupees),
+         wallet_amount_paise = COALESCE(?, wallet_amount_paise),
+         wallet_amount_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_amount_rupees),
          live_session_access = COALESCE(?, live_session_access),
-         live_class_amount_rupees = COALESCE(?, live_class_amount_rupees),
+         live_class_amount_paise = COALESCE(?, live_class_amount_paise),
+         live_class_amount_rupees = COALESCE(ROUND(? / 100.0, 2), live_class_amount_rupees),
          is_lifetime = COALESCE(?, is_lifetime),
-         lifetime_price_rupees = COALESCE(?, lifetime_price_rupees),
+         lifetime_price_paise = COALESCE(?, lifetime_price_paise),
+         lifetime_price_rupees = COALESCE(ROUND(? / 100.0, 2), lifetime_price_rupees),
          is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -18896,7 +18912,8 @@ async function handleAdminSubscriptionPlans(
           name || null,
           interval || null,
           interval_count != null ? interval_count : null,
-          amount_rupees != null ? amount_rupees : null,
+          updAmountPaise,
+          updAmountPaise,
           razorpay_plan_id || null,
           course_access_type || null,
           max_course_selection != null ? max_course_selection : null,
@@ -18904,11 +18921,14 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection != null ? max_batch_selection : null,
           book_access_type || null,
           max_book_selection != null ? max_book_selection : null,
-          wallet_amount_rupees != null ? wallet_amount_rupees : null,
+          updWalletPaise,
+          updWalletPaise,
           live_session_access != null ? live_session_access : null,
-          live_class_amount_rupees != null ? live_class_amount_rupees : null,
+          updLiveClassPaise,
+          updLiveClassPaise,
           is_lifetime != null ? is_lifetime : null,
-          lifetime_price_rupees != null ? lifetime_price_rupees : null,
+          updLifetimePaise,
+          updLifetimePaise,
           is_active !== undefined ? is_active : null,
           planId,
         )
@@ -19180,8 +19200,8 @@ async function handleAdminAssignSubscription(
     // 3. Save to DB
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_rupees, is_lifetime)
-       VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_paise, live_class_amount_rupees, is_lifetime)
+       VALUES (?, ?, ?, ?, ?, 'created', ?, ?, ?)`,
     )
       .bind(
         subId,
@@ -19189,6 +19209,7 @@ async function handleAdminAssignSubscription(
         planId,
         rzpSubscriptionId,
         rzpPaymentLink,
+        Number(plan.live_class_amount_paise) || 0,
         plan.live_class_amount_rupees || 0,
         plan.is_lifetime || 0,
       )
@@ -19412,7 +19433,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_paise, p.live_class_amount_paise
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -19421,19 +19442,19 @@ async function handleRazorpayWebhook(
 
           if (dbSub) {
             // Add wallet topup based on plan
-            if ((dbSub.wallet_amount_rupees || 0) > 0) {
-              await addToWallet(
+            if ((dbSub.wallet_amount_paise || 0) > 0) {
+              await addToWalletPaise(
                 env,
                 dbSub.user_id,
-                Number(dbSub.wallet_amount_rupees),
+                Number(dbSub.wallet_amount_paise),
                 "wallet_topup",
                 "subscription",
                 dbSub.id,
               );
             }
-            if (dbSub.live_class_amount_rupees > 0) {
-              const renewalAmount = dbSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
+            if ((dbSub.live_class_amount_paise || 0) > 0) {
+              const renewalPaise = Number(dbSub.live_class_amount_paise) || 0;
+              if (renewalPaise > 0) {
                 // 🔴 FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
                 // Previously: status update, then addToWallet, then tracking field update
                 // were 3 separate calls. If the worker crashed after status update
@@ -19442,8 +19463,7 @@ async function handleRazorpayWebhook(
                 // Now they execute in one DB transaction — all succeed or none.
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
-                const renewalPaise = Math.round(Number(renewalAmount || 0) * 100);
-                const renewalRupees = renewalPaise / 100;
+                const renewalRupees = paiseToRupees(renewalPaise);
                 const batchStmts = [
                   // Status update (no-op if already active - safe for retry)
                   env.DB.prepare(
@@ -19467,8 +19487,8 @@ async function handleRazorpayWebhook(
                   ).bind(ledgerId, dbSub.user_id, renewalPaise, renewalRupees, dbSub.user_id, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
                   // Accumulate tracking field - add plan value to existing balance (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-                  ).bind(renewalAmount, dbSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ?, live_class_amount_rupees = ROUND((COALESCE(live_class_amount_paise, 0) + ?) / 100.0, 2) WHERE id = ?`,
+                  ).bind(renewalPaise, renewalPaise, dbSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
@@ -19560,21 +19580,20 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_rupees, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_paise, p.live_class_amount_paise
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
             .first();
           if (chargedSub) {
-            if (chargedSub.live_class_amount_rupees > 0) {
+            if ((chargedSub.live_class_amount_paise || 0) > 0) {
               // 🔴 FIX: Atomic batch for status update, wallet credit, tracking field.
               // Prevents permanent credit loss if worker crashes mid-way.
-              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
+              const renewalPaise = Number(chargedSub.live_class_amount_paise) || 0;
+              if (renewalPaise > 0) {
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
-                const renewalPaise = Math.round(Number(renewalAmount || 0) * 100);
-                const renewalRupees = renewalPaise / 100;
+                const renewalRupees = paiseToRupees(renewalPaise);
                 const batchStmts = [
                   // Update period dates
                   env.DB.prepare(
@@ -19598,17 +19617,17 @@ async function handleRazorpayWebhook(
                   ).bind(ledgerId, chargedSub.user_id, renewalPaise, renewalRupees, chargedSub.user_id, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
                   // Accumulate tracking field (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-                  ).bind(renewalAmount, chargedSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ?, live_class_amount_rupees = ROUND((COALESCE(live_class_amount_paise, 0) + ?) / 100.0, 2) WHERE id = ?`,
+                  ).bind(renewalPaise, renewalPaise, chargedSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
             }
-            if ((chargedSub.wallet_amount_rupees || 0) > 0) {
-              await addToWallet(
+            if ((chargedSub.wallet_amount_paise || 0) > 0) {
+              await addToWalletPaise(
                 env,
                 chargedSub.user_id,
-                Number(chargedSub.wallet_amount_rupees),
+                Number(chargedSub.wallet_amount_paise),
                 "wallet_topup",
                 "subscription",
                 chargedSub.id,
