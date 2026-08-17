@@ -3758,16 +3758,16 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
       env.DB.prepare(`
         SELECT
-          SUM(amount_rupees) as total_revenue,
-          SUM(CASE
+          ROUND(SUM(amount_paise) / 100.0, 2) as total_revenue,
+          ROUND(SUM(CASE
             WHEN created_at >= date('now', 'start of month')
-            THEN amount_rupees ELSE 0
-          END) as current_month,
-          SUM(CASE
+            THEN amount_paise ELSE 0
+          END) / 100.0, 2) as current_month,
+          ROUND(SUM(CASE
             WHEN created_at >= date('now', 'start of month', '-1 month')
              AND created_at < date('now', 'start of month')
-            THEN amount_rupees ELSE 0
-          END) as previous_month
+            THEN amount_paise ELSE 0
+          END) / 100.0, 2) as previous_month
         FROM Transactions
         WHERE status = 'successful'
       `),
@@ -4028,7 +4028,7 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             t.amount_rupees,
+             ROUND(t.amount_paise / 100.0, 2) AS amount_rupees,
              t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
@@ -4049,9 +4049,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT
-        SUM(amount_rupees) as total_revenue,
+        ROUND(SUM(amount_paise) / 100.0, 2) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_rupees ELSE 0 END) as monthly_revenue
+        ROUND(SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_paise ELSE 0 END) / 100.0, 2) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -7011,7 +7011,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     if (!session) return;
 
     const batch: any = await env.DB.prepare(
-      "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
+      "SELECT ROUND(no_show_charge_paise / 100.0, 2) AS no_show_charge_rupees FROM Batches WHERE id = ?"
     ).bind(session.batch_id).first();
 
     const chargeAmount = batch?.no_show_charge_rupees ?? 2;
@@ -7077,9 +7077,9 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     for (const { userId } of pendingCharges) {
       const insertResult = await env.DB.prepare(
         `INSERT OR IGNORE INTO PendingCharges
-         (id, user_id, amount_rupees, reason, reference_type, reference_id, status)
-         VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
-      ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+         (id, user_id, amount_paise, amount_rupees, reason, reference_type, reference_id, status)
+         VALUES (?, ?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
+      ).bind(generateCustomId("YA-PCH"), userId, inrToPaise(chargeAmount), chargeAmount, sessionId).run();
 
       // changes === 0 means a duplicate was ignored — another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
@@ -7102,7 +7102,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 async function deductPendingChargesOnTopup(env: Env, userId: string): Promise<void> {
   try {
     const pendingCharges: any = await env.DB.prepare(
-      "SELECT id, amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
+      "SELECT id, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
     ).bind(userId).all();
 
     if (!pendingCharges.results?.length) return;
@@ -15072,7 +15072,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     if (request.method === "GET") {
       const query = adminMode
         ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
-        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
+        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_paise ASC`;
       const { results } = await env.DB.prepare(query).all();
       return new Response(JSON.stringify({ packs: results || [] }), {
         status: 200,
@@ -17937,7 +17937,7 @@ async function handleGetUserSubscription(
     const payload = await requireAuth(request, env);
     // Priority: active/authenticated first, then created/halted
     let sub: any = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+      `SELECT s.*, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
        WHERE s.user_id = ? AND s.status IN ('active', 'authenticated')
@@ -17948,7 +17948,7 @@ async function handleGetUserSubscription(
 
     if (!sub) {
       sub = await env.DB.prepare(
-        `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+        `SELECT s.*, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
          FROM Subscriptions s
          JOIN SubscriptionPlans p ON s.plan_id = p.id
          WHERE s.user_id = ? AND s.status IN ('created', 'halted')
@@ -18741,7 +18741,7 @@ async function handleAdminSubscriptionPlans(
     // GET — List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
+        "SELECT * FROM SubscriptionPlans ORDER BY amount_paise ASC",
       ).all();
       return new Response(JSON.stringify({ plans: results }), {
         status: 200,
@@ -18906,7 +18906,7 @@ async function handleAdminSubscriptionPlans(
         : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : null);
 
       const existingPlan: any = await env.DB.prepare(
-        "SELECT amount_rupees, interval, interval_count, razorpay_plan_id FROM SubscriptionPlans WHERE id = ?"
+        "SELECT ROUND(amount_paise / 100.0, 2) AS amount_rupees, interval, interval_count, razorpay_plan_id FROM SubscriptionPlans WHERE id = ?"
       ).bind(planId).first();
       if (!existingPlan) {
         return new Response(JSON.stringify({ error: "Plan not found" }), { status: 404 });
@@ -19390,7 +19390,7 @@ async function handleRazorpayWebhook(
 
         // Fallback: fetch from Transactions table if Razorpay amount unavailable
         const txForAmount: any = await env.DB.prepare(
-          "SELECT id, amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
+          "SELECT id, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
         )
           .bind(orderId)
           .first();
@@ -19433,7 +19433,7 @@ async function handleRazorpayWebhook(
         // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
         // D1 (SQLite-based) RETURNING clause support nahi karta — do step mein karte hain
         const creditTxFind: any = await env.DB.prepare(
-          "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+          "SELECT id, user_id, ROUND(amount_paise / 100.0, 2) AS amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
           .bind(orderId)
           .first();
@@ -24780,7 +24780,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
   try {
     await requireAdmin(request, env);
 
-    const revenue = await env.DB.prepare("SELECT SUM(amount_rupees) as total FROM Transactions WHERE status = 'successful'").first();
+    const revenue = await env.DB.prepare("SELECT ROUND(SUM(amount_paise) / 100.0, 2) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
     const books = await env.DB.prepare("SELECT COUNT(id) as total FROM Books").first();
