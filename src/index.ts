@@ -4994,11 +4994,11 @@ async function handleAdminCourses(
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price_paise, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price_paise, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
-          wallet_paise, wallet_rupees, individual_class_cost_paise, individual_class_cost_rupees,
+          wallet_paise, individual_class_cost_paise,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -5009,7 +5009,6 @@ async function handleAdminCourses(
           description_hi || null,
           finalTeacherId,
           coursePricePaise,
-          paiseToRupees(coursePricePaise),
           price_usd ?? 0,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5019,9 +5018,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           courseWalletPaise,
-          costInr,
           courseIndividualCostPaise,
-          individualClassCostInr,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -5174,7 +5171,6 @@ async function handleAdminCourses(
           description = COALESCE(?, description),
           description_hi = COALESCE(?, description_hi),
           price_paise = COALESCE(?, price_paise),
-          price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
           merchant_default_image_url = COALESCE(?, merchant_default_image_url),
@@ -5185,9 +5181,7 @@ async function handleAdminCourses(
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
           wallet_paise = COALESCE(?, wallet_paise),
-          wallet_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_rupees),
           individual_class_cost_paise = COALESCE(?, individual_class_cost_paise),
-          individual_class_cost_rupees = COALESCE(ROUND(? / 100.0, 2), individual_class_cost_rupees),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -5203,7 +5197,6 @@ async function handleAdminCourses(
           description || null,
           description_hi || null,
           updCoursePricePaise,
-          updCoursePricePaise,
           price_usd ?? null,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5214,8 +5207,6 @@ async function handleAdminCourses(
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
           updCourseWalletPaise,
-          updCourseWalletPaise,
-          updCourseIndividualPaise,
           updCourseIndividualPaise,
           seo_title_en || null,
           seo_title_hi || null,
@@ -5695,14 +5686,13 @@ async function handleAdminEnrollments(
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
             txId,
             user_id,
             inrToPaise(amount_paid),
-            amount_paid,
             "INR",
             "course_purchase",
             "successful",
@@ -6054,8 +6044,8 @@ async function handleAdminBatches(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_paise, cost_per_class_rupees, live_class_cost_per_minute_paise, live_class_cost_per_minute_rupees, live_class_credit_unit, seo_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_paise, live_class_cost_per_minute_paise, live_class_credit_unit, seo_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -6074,9 +6064,7 @@ async function handleAdminBatches(
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
           batchCostPaise,
-          paiseToRupees(batchCostPaise),
           batchMinutePaise,
-          paiseToRupees(batchMinutePaise),
           normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json || null,
         )
@@ -6234,9 +6222,7 @@ async function handleAdminBatches(
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
           cost_per_class_paise = COALESCE(?, cost_per_class_paise),
-          cost_per_class_rupees = COALESCE(ROUND(? / 100.0, 2), cost_per_class_rupees),
           live_class_cost_per_minute_paise = COALESCE(?, live_class_cost_per_minute_paise),
-          live_class_cost_per_minute_rupees = COALESCE(ROUND(? / 100.0, 2), live_class_cost_per_minute_rupees),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
@@ -6255,8 +6241,6 @@ async function handleAdminBatches(
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
           updBatchCostPaise,
-          updBatchCostPaise,
-          updBatchMinutePaise,
           updBatchMinutePaise,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
           seo_json,
@@ -7077,9 +7061,9 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     for (const { userId } of pendingCharges) {
       const insertResult = await env.DB.prepare(
         `INSERT OR IGNORE INTO PendingCharges
-         (id, user_id, amount_paise, amount_rupees, reason, reference_type, reference_id, status)
-         VALUES (?, ?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
-      ).bind(generateCustomId("YA-PCH"), userId, inrToPaise(chargeAmount), chargeAmount, sessionId).run();
+         (id, user_id, amount_paise, reason, reference_type, reference_id, status)
+         VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
+      ).bind(generateCustomId("YA-PCH"), userId, inrToPaise(chargeAmount), sessionId).run();
 
       // changes === 0 means a duplicate was ignored — another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
@@ -11142,20 +11126,18 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     const bookPricePaise = inrToPaise(normalizeAmountRupees(body.price_rupees));
     const bookWalletPaise = inrToPaise(bookCost);
     await env.DB.prepare(
-      "INSERT INTO Books (id, title, description, price_paise, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_paise, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO Books (id, title, description, price_paise, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_paise) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         id,
         body.title.trim(),
         body.description || '',
         bookPricePaise,
-        paiseToRupees(bookPricePaise),
         normalizeNonNegativeInt(body.price_usd),
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
         body.self_study_enabled ? 1 : 0,
         bookWalletPaise,
-        bookCost,
       ).run();
     return new Response(JSON.stringify({ success: true, id }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -11193,18 +11175,16 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
     const updBookPricePaise = body.price_rupees != null ? inrToPaise(normalizeAmountRupees(body.price_rupees)) : null;
     const updBookWalletPaise = updateBookCost != null ? inrToPaise(updateBookCost) : null;
     await env.DB.prepare(
-      "UPDATE Books SET title = ?, description = ?, price_paise = COALESCE(?, price_paise), price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_paise = COALESCE(?, wallet_paise), wallet_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_rupees) WHERE id = ?"
+      "UPDATE Books SET title = ?, description = ?, price_paise = COALESCE(?, price_paise), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_paise = COALESCE(?, wallet_paise) WHERE id = ?"
     )
       .bind(
         body.title.trim(),
         body.description || '',
         updBookPricePaise,
-        updBookPricePaise,
         body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
         body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
-        updBookWalletPaise,
         updBookWalletPaise,
         bookId,
       ).run();
@@ -13788,13 +13768,7 @@ async function handleEndLiveSession(
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
-        )),
-        live_class_amount_rupees = ROUND(MAX(0, COALESCE(live_class_amount_paise, 0) - COALESCE(
-          (SELECT b.cost_per_class_paise FROM LiveSessions ls
-           LEFT JOIN Batches b ON ls.batch_id = b.id
-           WHERE ls.id = ?),
-          0
-        )) / 100.0, 2)
+        ))
         WHERE id IN (
           SELECT id
           FROM Subscriptions s1
@@ -13810,7 +13784,7 @@ async function handleEndLiveSession(
         )
       `,
       )
-        .bind(session.id, session.id, session.id)
+        .bind(session.id, session.id)
         .run();
     } catch (e) {
       console.error("Failed to deduct live class rupees:", e);
@@ -14732,20 +14706,18 @@ async function addToWalletPaise(
   // from paise so existing readers keep working during the migration (#675).
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(user_id) DO UPDATE SET
          balance_paise = balance_paise + ?,
          lifetime_deposits_paise = lifetime_deposits_paise + ?,
-         balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
-         lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
-         updated_at = CURRENT_TIMESTAMP`,
-    ).bind(walletId, userId, safePaise, safePaise, amountRupees, amountRupees, safePaise, safePaise, safePaise, safePaise),
+                           updated_at = CURRENT_TIMESTAMP`,
+    ).bind(walletId, userId, safePaise, safePaise, safePaise, safePaise),
     env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+      `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
-    ).bind(ledgerId, userId, safePaise, amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
+    ).bind(ledgerId, userId, safePaise, userId, reason, referenceType || null, referenceId || null),
   ]);
 
   await deductPendingChargesOnTopup(env, userId);
@@ -14793,16 +14765,14 @@ async function deductFromWalletPaise(
       `UPDATE CreditWallets
        SET balance_paise = balance_paise - ?,
            lifetime_withdrawals_paise = lifetime_withdrawals_paise + ?,
-           balance_rupees = ROUND((balance_paise - ?) / 100.0, 2),
-           lifetime_withdrawals_rupees = ROUND((lifetime_withdrawals_paise + ?) / 100.0, 2),
-           updated_at = CURRENT_TIMESTAMP
+                                 updated_at = CURRENT_TIMESTAMP
        WHERE user_id = ? AND balance_paise >= ?`,
-    ).bind(safePaise, safePaise, safePaise, safePaise, userId, safePaise),
+    ).bind(safePaise, safePaise, userId, safePaise),
     env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+      `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
-    ).bind(ledgerId, userId, -safePaise, -amountRupees, userId, userId, reason, referenceType || null, referenceId || null),
+    ).bind(ledgerId, userId, -safePaise, userId, reason, referenceType || null, referenceId || null),
   ]);
 
   // Check if the UPDATE actually changed a row (sufficient balance)
@@ -15090,15 +15060,14 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_paise, amount_rupees, is_active)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO CreditPacks (id, name, description, amount_paise, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
           inrToPaise(amountInr),
-          amountInr,
           body.is_active === 0 ? 0 : 1,
         )
         .run();
@@ -15115,14 +15084,12 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
           name = COALESCE(?, name),
           description = COALESCE(?, description),
           amount_paise = COALESCE(?, amount_paise),
-          amount_rupees = COALESCE(ROUND(? / 100.0, 2), amount_rupees),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
         .bind(
           body.name || null,
           body.description ?? null,
-          body.amount_rupees == null ? null : inrToPaise(normalizeAmountRupees(body.amount_rupees)),
           body.amount_rupees == null ? null : inrToPaise(normalizeAmountRupees(body.amount_rupees)),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
           id,
@@ -15341,8 +15308,8 @@ async function chargeAttendanceGroupClassCredits(
       if (!deduction.ok) {
         console.error(`Failed to deduct ${extraPaise / 100} from user ${userId} for session ${sessionId}: insufficient balance`);
         await env.DB.prepare(
-          "INSERT INTO PendingCharges (id, user_id, amount_paise, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, ?, 'live_class_duration', 'live_session', ?)"
-        ).bind(generateCustomId("YA-PCH"), userId, extraPaise, paiseToRupees(extraPaise), sessionId).run();
+          "INSERT INTO PendingCharges (id, user_id, amount_paise, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraPaise, sessionId).run();
       } else {
         finalChargedPaise += extraPaise;
       }
@@ -15478,10 +15445,10 @@ async function handleBookIndividualClass(
     }
 
     await env.DB.prepare(
-      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_paise, amount_charged_rupees)
-       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)`,
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_paise)
+       VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
     )
-      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, rupeesToPaise(creditCost), creditCost)
+      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, rupeesToPaise(creditCost))
       .run();
 
     // Create LiveSession
@@ -15603,9 +15570,9 @@ async function handleAdminCancelIndividualBooking(
     }
 
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_paise = ?, amount_refunded_rupees = ROUND(? / 100.0, 2), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_paise = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     )
-      .bind(chargedPaise > 0 ? chargedPaise : 0, chargedPaise > 0 ? chargedPaise : 0, bookingId)
+      .bind(chargedPaise > 0 ? chargedPaise : 0, bookingId)
       .run();
 
     removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
@@ -15671,8 +15638,8 @@ async function handleRazorpayCreateTopupOrder(
       const txId = generateCustomId("YA-TXN");
       // Record actual amount paid (₹0 for full coupon), not the original price
       const discountedAmountRupees = paiseToInr(amount_paise);
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, rupeesToPaise(discountedAmountRupees), discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, rupeesToPaise(discountedAmountRupees), "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -15729,15 +15696,14 @@ async function handleRazorpayCreateTopupOrder(
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, razorpay_order_id, payment_source, related_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
         txId,
         payload.sub,
         amount_paise,
-        amount_rupees,
         "INR",
         "credit_purchase",
         "created",
@@ -17481,8 +17447,8 @@ async function handleCreatePaymentOrder(
 
       await ensureEnrollment(env, enrollPayload);
 
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, 0, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
 
       if (quote.coupon) {
@@ -17519,9 +17485,9 @@ async function handleCreatePaymentOrder(
     // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
-      `INSERT INTO Transactions (id, user_id, amount_paise, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(txId, payload.sub, amount, paiseToRupees(amount), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .bind(txId, payload.sub, amount, "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
     // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
@@ -18846,10 +18812,10 @@ async function handleAdminSubscriptionPlans(
       const planLiveClassPaise = inrToPaise(normalizeAmountRupees(live_class_amount_rupees));
       const planLifetimePaise = inrToPaise(normalizeAmountRupees(lifetime_price_rupees));
       await env.DB.prepare(
-        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_paise, amount_rupees, razorpay_plan_id,
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_paise, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         wallet_amount_paise, wallet_amount_rupees, live_session_access, live_class_amount_paise, live_class_amount_rupees, is_lifetime, lifetime_price_paise, lifetime_price_rupees)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wallet_amount_paise, live_session_access, live_class_amount_paise, is_lifetime, lifetime_price_paise)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -18857,7 +18823,6 @@ async function handleAdminSubscriptionPlans(
           interval,
           interval_count || 1,
           planAmountPaise,
-          paiseToRupees(planAmountPaise),
           razorpayPlanId,
           course_access_type,
           max_course_selection,
@@ -18866,13 +18831,10 @@ async function handleAdminSubscriptionPlans(
           book_access_type,
           max_book_selection,
           planWalletPaise,
-          paiseToRupees(planWalletPaise),
           live_session_access ? 1 : 0,
           planLiveClassPaise,
-          paiseToRupees(planLiveClassPaise),
           is_lifetime ? 1 : 0,
           planLifetimePaise,
-          paiseToRupees(planLifetimePaise),
         )
         .run();
 
@@ -18945,7 +18907,6 @@ async function handleAdminSubscriptionPlans(
          interval = COALESCE(?, interval),
          interval_count = COALESCE(?, interval_count),
          amount_paise = COALESCE(?, amount_paise),
-         amount_rupees = COALESCE(ROUND(? / 100.0, 2), amount_rupees),
          razorpay_plan_id = COALESCE(?, razorpay_plan_id),
          course_access_type = COALESCE(?, course_access_type),
          max_course_selection = COALESCE(?, max_course_selection),
@@ -18954,13 +18915,10 @@ async function handleAdminSubscriptionPlans(
          book_access_type = COALESCE(?, book_access_type),
          max_book_selection = COALESCE(?, max_book_selection),
          wallet_amount_paise = COALESCE(?, wallet_amount_paise),
-         wallet_amount_rupees = COALESCE(ROUND(? / 100.0, 2), wallet_amount_rupees),
          live_session_access = COALESCE(?, live_session_access),
          live_class_amount_paise = COALESCE(?, live_class_amount_paise),
-         live_class_amount_rupees = COALESCE(ROUND(? / 100.0, 2), live_class_amount_rupees),
          is_lifetime = COALESCE(?, is_lifetime),
          lifetime_price_paise = COALESCE(?, lifetime_price_paise),
-         lifetime_price_rupees = COALESCE(ROUND(? / 100.0, 2), lifetime_price_rupees),
          is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -18968,7 +18926,6 @@ async function handleAdminSubscriptionPlans(
           name || null,
           interval || null,
           interval_count != null ? interval_count : null,
-          updAmountPaise,
           updAmountPaise,
           razorpay_plan_id || null,
           course_access_type || null,
@@ -18978,12 +18935,9 @@ async function handleAdminSubscriptionPlans(
           book_access_type || null,
           max_book_selection != null ? max_book_selection : null,
           updWalletPaise,
-          updWalletPaise,
           live_session_access != null ? live_session_access : null,
           updLiveClassPaise,
-          updLiveClassPaise,
           is_lifetime != null ? is_lifetime : null,
-          updLifetimePaise,
           updLifetimePaise,
           is_active !== undefined ? is_active : null,
           planId,
@@ -19256,8 +19210,8 @@ async function handleAdminAssignSubscription(
     // 3. Save to DB
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_paise, live_class_amount_rupees, is_lifetime)
-       VALUES (?, ?, ?, ?, ?, 'created', ?, ?, ?)`,
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_paise, is_lifetime)
+       VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
     )
       .bind(
         subId,
@@ -19266,7 +19220,6 @@ async function handleAdminAssignSubscription(
         rzpSubscriptionId,
         rzpPaymentLink,
         Number(plan.live_class_amount_paise) || 0,
-        plan.live_class_amount_rupees || 0,
         plan.is_lifetime || 0,
       )
       .run();
@@ -19527,24 +19480,22 @@ async function handleRazorpayWebhook(
                   ).bind(periodStart, periodEnd, dbSub.id),
                   // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
                        balance_paise = balance_paise + ?,
                        lifetime_deposits_paise = lifetime_deposits_paise + ?,
-                       balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
-                       lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
-                       updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, dbSub.user_id, renewalPaise, renewalPaise, renewalRupees, renewalRupees, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
+                                                                     updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, dbSub.user_id, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, dbSub.user_id, renewalPaise, renewalRupees, dbSub.user_id, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalPaise, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
                   // Accumulate tracking field - add plan value to existing balance (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ?, live_class_amount_rupees = ROUND((COALESCE(live_class_amount_paise, 0) + ?) / 100.0, 2) WHERE id = ?`,
-                  ).bind(renewalPaise, renewalPaise, dbSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ? WHERE id = ?`,
+                  ).bind(renewalPaise, dbSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
@@ -19657,24 +19608,22 @@ async function handleRazorpayWebhook(
                   ).bind(periodStart, periodEnd, chargedSub.id),
                   // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, balance_rupees, lifetime_deposits_rupees, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
                        balance_paise = balance_paise + ?,
                        lifetime_deposits_paise = lifetime_deposits_paise + ?,
-                       balance_rupees = ROUND((balance_paise + ?) / 100.0, 2),
-                       lifetime_deposits_rupees = ROUND((lifetime_deposits_paise + ?) / 100.0, 2),
-                       updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, chargedSub.user_id, renewalPaise, renewalPaise, renewalRupees, renewalRupees, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
+                                                                     updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, chargedSub.user_id, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_paise, change_rupees, balance_after_paise, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), (SELECT ROUND(balance_paise / 100.0, 2) FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, chargedSub.user_id, renewalPaise, renewalRupees, chargedSub.user_id, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalPaise, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
                   // Accumulate tracking field (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ?, live_class_amount_rupees = ROUND((COALESCE(live_class_amount_paise, 0) + ?) / 100.0, 2) WHERE id = ?`,
-                  ).bind(renewalPaise, renewalPaise, chargedSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ? WHERE id = ?`,
+                  ).bind(renewalPaise, chargedSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
@@ -19878,7 +19827,7 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_paise) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,
@@ -19886,7 +19835,6 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
         "Learn how to build edge applications.",
         teacherId,
         490000,
-        4900,
       )
       .run();
 
@@ -21325,7 +21273,7 @@ async function executeAIAction(
         const id = generateCustomId("YA-CRS");
         const seedPricePaise = inrToPaise(normalizeAmountRupees(params.price_rupees));
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
@@ -21333,7 +21281,6 @@ async function executeAIAction(
             params.description ?? "",
             adminId,
             seedPricePaise,
-            paiseToRupees(seedPricePaise),
             params.price_usd ?? 0,
             params.category_id ?? null,
           )
@@ -21348,12 +21295,11 @@ async function executeAIAction(
           return { success: false, message: "Missing required parameter: id" };
         const editPricePaise = params.price_rupees != null ? inrToPaise(normalizeAmountRupees(params.price_rupees)) : null;
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_paise = COALESCE(?, price_paise), price_rupees = COALESCE(ROUND(? / 100.0, 2), price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_paise = COALESCE(?, price_paise), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            editPricePaise,
             editPricePaise,
             params.price_usd ?? null,
             params.category_id ?? null,
