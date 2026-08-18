@@ -10826,7 +10826,7 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10838,7 +10838,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -21114,7 +21114,7 @@ async function replaceDynamicVariables(
 
   const enrollment = (await env.DB.prepare(
     `
-    SELECT e.*, c.title as course_title, c.price_rupees as course_price
+    SELECT e.*, c.title as course_title, ROUND(c.price_paise / 100.0, 2) AS course_price
     FROM Enrollments e
     JOIN Courses c ON e.course_id = c.id
     WHERE e.user_id = ?
