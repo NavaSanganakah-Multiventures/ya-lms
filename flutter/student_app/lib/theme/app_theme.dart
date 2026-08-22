@@ -44,6 +44,7 @@ class AppTheme {
   static const Color textPrimary = Color(0xFF0F172A); // Slate 900
   static const Color textSecondary = Color(0xFF475569); // Slate 600
   static const Color textTertiary = Color(0xFF64748B); // Slate 500
+  static const Color moccasinLight = Color(0xFFFEF3C7); // Compatibility: old screens still use this
 
   // Dark palette
   static const Color darkBackground = Color(0xFF020617); // Slate 950
@@ -55,6 +56,9 @@ class AppTheme {
   static const Color darkMuted = Color(0xFF64748B);
 
   // ── Theme-aware color helpers ─────────────────────────────
+  static Color moccasinLightOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF2A2418) : moccasinLight;
+
   static bool isDark(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
 
