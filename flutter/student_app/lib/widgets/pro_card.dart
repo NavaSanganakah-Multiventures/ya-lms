@@ -27,33 +27,53 @@ class ProCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = Container(
+    final radius = borderRadius ?? AppTheme.radiusLg;
+    final bg = backgroundColor ?? AppTheme.surfaceOf(context);
+    final cardSide = side ??
+        BorderSide(
+          color: AppTheme.borderOf(context).withAlphaOpacity(0.6),
+          width: 1.0,
+        );
+
+    if (onTap != null) {
+      // Background, border and shadow live on the Container; a transparent
+      // Material sits on top so the InkWell ripple is painted above the card
+      // fill (otherwise the opaque background hides it) and stays visible.
+      // clipBehavior keeps the ripple within the rounded corners.
+      return Container(
+        margin: margin ?? EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.fromBorderSide(cardSide),
+          boxShadow: shadow ?? AppTheme.softShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(radius),
+            child: Padding(
+              padding: padding ?? const EdgeInsets.all(AppTheme.space4),
+              child: child,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
       margin: margin ?? EdgeInsets.zero,
       padding: padding ?? const EdgeInsets.all(AppTheme.space4),
       decoration: BoxDecoration(
-        color: backgroundColor ?? AppTheme.surfaceOf(context),
-        borderRadius: BorderRadius.circular(borderRadius ?? AppTheme.radiusLg),
-        border: Border.all(
-          color: AppTheme.borderOf(context).withAlphaOpacity(0.6),
-          width: 1.0,
-        ),
+        color: bg,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.fromBorderSide(cardSide),
         boxShadow: shadow ?? AppTheme.softShadow,
       ),
       child: child,
     );
-
-    if (onTap != null) {
-      return Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(borderRadius ?? AppTheme.radiusLg),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(borderRadius ?? AppTheme.radiusLg),
-          child: card,
-        ),
-      );
-    }
-    return card;
   }
 }
 
