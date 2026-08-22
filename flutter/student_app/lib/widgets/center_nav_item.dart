@@ -46,25 +46,27 @@ class _CenterNavItemState extends State<CenterNavItem>
           scale: scale,
           child: Padding(
             padding: const EdgeInsets.only(bottom: AppTheme.space2),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: widget.onTap,
-                borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                child: Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.premiumGradient,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.accent.withAlpha((100 * glowOpacity).round()),
-                        blurRadius: 16 + (pulseValue * 8),
-                        spreadRadius: 2 + (pulseValue * 2),
-                      ),
-                    ],
+            child: Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                gradient: AppTheme.premiumGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.accent
+                        .withAlpha((100 * glowOpacity).round()),
+                    blurRadius: 16 + (pulseValue * 8),
+                    spreadRadius: 2 + (pulseValue * 2),
                   ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: widget.onTap,
                   child: const Icon(
                     Icons.auto_awesome_rounded,
                     color: AppTheme.surface,
