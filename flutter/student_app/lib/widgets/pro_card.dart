@@ -33,8 +33,9 @@ class ProCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? AppTheme.surfaceOf(context),
         borderRadius: BorderRadius.circular(borderRadius ?? AppTheme.radiusLg),
-        border: Border.from_borderSide(
-          side ?? BorderSide(color: AppTheme.borderOf(context).withAlphaOpacity(0.6)),
+        border: Border.all(
+          color: AppTheme.borderOf(context).withAlphaOpacity(0.6),
+          width: 1.0,
         ),
         boxShadow: shadow ?? AppTheme.softShadow,
       ),
