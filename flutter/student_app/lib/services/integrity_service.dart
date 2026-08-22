@@ -29,15 +29,19 @@ class IntegrityService {
  });
 
  if (token != null) {
- final response = await Dio(BaseOptions(baseUrl: ApiService.baseUrl)).post(
- '/api/auth/app-token',
- data: {'token': token},
- options: Options(
- headers: {'Content-Type': 'application/json'},
- sendTimeout: Duration(seconds: 10),
- receiveTimeout: Duration(seconds: 10),
- ),
- );
+ // Sign the request exactly like every other API call.
+      final headers = await ApiService.getHeaders('POST', '/api/auth/app-token');
+      // Do not send a stale X-App-JWT to the endpoint that mints a new one.
+      headers.remove('X-App-JWT');
+      final response = await Dio(BaseOptions(baseUrl: ApiService.baseUrl)).post(
+        '/api/auth/app-token',
+        data: {'token': token},
+        options: Options(
+          headers: headers,
+          sendTimeout: Duration(seconds: 10),
+          receiveTimeout: Duration(seconds: 10),
+        ),
+      );
 
  if (response.statusCode == 200) {
  final data = response.data;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -42,6 +43,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  bool _checkingCoupon = false;
  Map<String, dynamic>? _quote;
  String _quoteMessage = '';
+
+  // Billing validation helpers
+  bool get _isNameValid => _nameCtrl.text.trim().isNotEmpty;
+  bool get _isEmailValid => RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(_emailCtrl.text.trim());
+  bool get _isPhoneValid => _phoneCtrl.text.trim().length == 10 && RegExp(r'^[0-9]{10}$').hasMatch(_phoneCtrl.text.trim());
+  bool get _isLine1Valid => _line1Ctrl.text.trim().isNotEmpty;
+  bool get _isCityValid => _cityCtrl.text.trim().isNotEmpty;
+  bool get _isStateValid => _stateCtrl.text.trim().isNotEmpty;
+  bool get _isPincodeValid => _pincodeCtrl.text.trim().length == 6 && RegExp(r'^[0-9]{6}$').hasMatch(_pincodeCtrl.text.trim());
 
  bool get _isCreditFlow =>
  widget.itemType == 'credit_pack';
@@ -150,7 +160,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  'ai-custom';
 
  final res = await ApiService.getQuote({
- 'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
+    'itemType': _isCreditFlow ? 'ai_credits' : widget.itemType,
  'itemId': itemId,
  'amount_paise': (widget.amountInr * 100).toInt(),
  'couponCode': code,
@@ -576,8 +586,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  children: [
  TextField(
  controller: _nameCtrl,
- decoration: _inputDecoration('Naam (Full name) *'),
+ decoration: _inputDecoration('Naam (Full name) *', errorText: _showAddress && !_isNameValid ? 'Naam zaroori hai' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  SizedBox(height: 12),
  Row(
@@ -586,8 +597,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  child: TextField(
  controller: _emailCtrl,
  keyboardType: TextInputType.emailAddress,
- decoration: _inputDecoration('Email *'),
+ decoration: _inputDecoration('Email *', errorText: _showAddress && !_isEmailValid ? 'Sahi email daalein' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  ),
  SizedBox(width: 12),
@@ -595,8 +607,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  child: TextField(
  controller: _phoneCtrl,
  keyboardType: TextInputType.phone,
- decoration: _inputDecoration('Phone *'),
+ inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+ maxLength: 10,
+ buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+ decoration: _inputDecoration('Phone *', errorText: _showAddress && !_isPhoneValid ? '10 digit ka phone number daalein' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  ),
  ],
@@ -604,8 +620,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  SizedBox(height: 12),
  TextField(
  controller: _line1Ctrl,
- decoration: _inputDecoration('Address line 1 *'),
+ decoration: _inputDecoration('Address line 1 *', errorText: _showAddress && !_isLine1Valid ? 'Address line 1 zaroori hai' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  SizedBox(height: 12),
  TextField(
@@ -619,16 +636,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  Expanded(
  child: TextField(
  controller: _cityCtrl,
- decoration: _inputDecoration('City *'),
+ decoration: _inputDecoration('City *', errorText: _showAddress && !_isCityValid ? 'City zaroori hai' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  ),
  SizedBox(width: 12),
  Expanded(
  child: TextField(
  controller: _stateCtrl,
- decoration: _inputDecoration('State *'),
+ decoration: _inputDecoration('State *', errorText: _showAddress && !_isStateValid ? 'State zaroori hai' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  ),
  ],
@@ -637,8 +656,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  TextField(
  controller: _pincodeCtrl,
  keyboardType: TextInputType.number,
- decoration: _inputDecoration('PIN Code *'),
+ inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+ maxLength: 6,
+ buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+ decoration: _inputDecoration('PIN Code *', errorText: _showAddress && !_isPincodeValid ? '6 digit ka PIN code daalein' : null),
  style: _inputStyle(),
+ onChanged: (_) => setState(() {}),
  ),
  ],
  ),
@@ -874,19 +897,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
  );
  }
 
- InputDecoration _inputDecoration(String label) {
- return InputDecoration(
- hintText: label,
- hintStyle: TextStyle(color: AppTheme.textSecondaryOf(context), fontSize: 14),
- filled: true,
- fillColor: AppTheme.elevatedOf(context),
- border: OutlineInputBorder(
- borderRadius: BorderRadius.circular(12),
- borderSide: BorderSide.none,
- ),
- contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
- );
- }
+  InputDecoration _inputDecoration(String label, {String? errorText}) {
+    return InputDecoration(
+      hintText: label,
+      hintStyle: TextStyle(color: AppTheme.textSecondaryOf(context), fontSize: 14),
+      filled: true,
+      fillColor: AppTheme.elevatedOf(context),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      errorText: errorText,
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppTheme.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppTheme.danger, width: 2),
+      ),
+      contentPadding:
+          EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
 
  TextStyle _inputStyle() {
  return TextStyle(

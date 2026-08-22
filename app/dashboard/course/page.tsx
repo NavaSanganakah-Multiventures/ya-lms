@@ -492,7 +492,7 @@ function CourseDetailContent() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">Price</span>
-                    <span className="text-orange-300 font-bold">₹{course.individual_class_credit_cost}</span>
+                    <span className="text-orange-300 font-bold">₹{Number(course.individual_class_cost_rupees || 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">Duration</span>
@@ -523,7 +523,7 @@ function CourseDetailContent() {
                   className="flex items-center justify-center gap-2 w-full py-3 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-xl font-bold transition-all"
                 >
                   {bookingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
-                  {bookingLoading ? 'Booking...' : `Confirm — ₹${course.individual_class_credit_cost}`}
+                  {bookingLoading ? 'Booking...' : `Confirm — ₹${Number(course.individual_class_cost_rupees || 0).toFixed(2)}`}
                 </button>
               </div>
             )}

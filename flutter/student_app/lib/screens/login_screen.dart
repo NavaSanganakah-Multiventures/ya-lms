@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/interactive_3d_card.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -30,12 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
  return;
  }
  
- if (identifier.contains('@') && !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(identifier)) {
- _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: user@email.com)');
- return;
- }
+ if (identifier.contains('@')) {
+      if (!RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(identifier)) {
+        _showMessage('कृपया सही ईमेल दर्ज करें (उदाहरण: student@email.com)');
+        return;
+      }
+    } else if (identifier.length < 3) {
+      _showMessage('कृपया सही Student ID दर्ज करें (कम से कम 3 अक्षर)');
+      return;
+    }
 
- setState(() => _isLoading = true);
+  setState(() => _isLoading = true);
  try {
  final provider = Provider.of<AuthProvider>(context, listen: false);
  final result = await provider.sendOtp(identifier);
@@ -56,20 +62,25 @@ class _LoginScreenState extends State<LoginScreen> {
  }
  }
 
- Future<void> _verifyOtp() async {
- final otp = _otpController.text.trim();
- if (otp.length < 4) {
- _showMessage('कृपया सही OTP दर्ज करें');
- return;
- }
+  Future<void> _verifyOtp() async {
+  final otp = _otpController.text.trim();
+  if (otp.length < 4) {
+  _showMessage('कृपया सही OTP दर्ज करें');
+  return;
+  }
+  final identifier = _identifierController.text.trim();
+  if (identifier.isEmpty) {
+  _showMessage('कृपया पहले अपना ईमेल या Student ID दर्ज करें');
+  return;
+  }
 
  setState(() => _isLoading = true);
  try {
  final provider = Provider.of<AuthProvider>(context, listen: false);
- final result = await provider.verifyOtp(
- _identifierController.text.trim(),
- otp,
- );
+  final result = await provider.verifyOtp(
+  identifier,
+  otp,
+  );
  if (mounted && result['success'] != true) {
  _showMessage(result['message']?.toString() ?? 'OTP मान्य नहीं है');
  }
@@ -110,7 +121,8 @@ class _LoginScreenState extends State<LoginScreen> {
  children: [
  _BrandHeader(),
  SizedBox(height: 32),
- Card(
+ Interactive3DCard(
+ padding: EdgeInsets.zero,
  child: Padding(
  padding: EdgeInsets.all(24),
  child: Column(

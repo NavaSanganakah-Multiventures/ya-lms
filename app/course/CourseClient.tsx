@@ -389,9 +389,9 @@ export default function CourseClient() {
                       <span className="inline-flex items-center gap-1 text-neutral-400"><Wallet className="h-3.5 w-3.5" /> Your Balance</span>
                       <span className="text-white">₹{balance_rupees.toFixed(2)}</span>
                     </div>
-                    {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_credit_cost || 0) > 0 && (
+                    {Number(course.individual_class_booking_enabled || 0) === 1 && Number(course.individual_class_cost_rupees || 0) > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs text-orange-200/80">{t('course.individual_class')}: ₹{course.individual_class_credit_cost}{' / '}{course.individual_class_duration_minutes || 30}{' min'}</p>
+                        <p className="text-xs text-orange-200/80">{t('course.individual_class')}: ₹{course.individual_class_cost_rupees}{' / '}{course.individual_class_duration_minutes || 30}{' min'}</p>
                         <button
                           onClick={() => { setShowBookingModal(true); setBookingResult(null); setBookingError(null); }}
                           className="flex items-center justify-center gap-2 w-full py-2 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-500/30 text-orange-300 rounded-lg font-bold text-xs transition-all"
@@ -545,7 +545,7 @@ export default function CourseClient() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">{t('course.credits_required')}</span>
-                    <span className="text-orange-300 font-bold">₹{course?.individual_class_credit_cost}</span>
+                    <span className="text-orange-300 font-bold">₹{course?.individual_class_cost_rupees}</span>
                   </div>
                   <div className="flex justify-between rounded-lg bg-neutral-950 px-3 py-2">
                     <span className="text-neutral-500">{t('course.duration')}</span>
@@ -576,7 +576,7 @@ export default function CourseClient() {
                   className="flex items-center justify-center gap-2 w-full py-3 bg-orange-600 hover:bg-orange-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white rounded-xl font-bold transition-all"
                 >
                   {bookingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
-                  {bookingLoading ? t('course.booking') : `${t('course.confirm')} — ₹${course?.individual_class_credit_cost}`}
+                  {bookingLoading ? t('course.booking') : `${t('course.confirm')} — ₹${course?.individual_class_cost_rupees}`}
                 </button>
               </div>
             )}

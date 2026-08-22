@@ -45,11 +45,11 @@ class ThemeProvider with ChangeNotifier {
  }
  }
 
- void toggle() {
- if (_themeMode == ThemeMode.light) {
- setThemeMode(ThemeMode.dark);
- } else {
- setThemeMode(ThemeMode.light);
- }
- }
+  void toggle() {
+  if (_themeMode == ThemeMode.system || _themeMode == ThemeMode.light) {
+    setThemeMode(ThemeMode.dark);
+  } else {
+    setThemeMode(ThemeMode.system);
+  }
+  }
 }

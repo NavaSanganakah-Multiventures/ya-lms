@@ -86,13 +86,13 @@ export default function DashboardPage() {
   }, [fetchDashboardInfo]);
 
   useRealtimeChannel('global', (event) => {
-    if (['course_published', 'live_class_started', 'live_class_ended', 'course_updated'].includes(event.action || '')) {
+    if (['course_updated', 'live_session_updated'].includes(event.action || '')) {
       fetchDashboardInfo();
     }
   });
 
   useRealtimeChannel('user:me', (event) => {
-    if (['enrollment_success', 'lesson_completed', 'course_completed', 'wallet_updated'].includes(event.action || '')) {
+    if (['enrollment_updated', 'lesson_updated', 'progress_updated', 'wallet_updated'].includes(event.action || '')) {
       fetchDashboardInfo();
     }
   });

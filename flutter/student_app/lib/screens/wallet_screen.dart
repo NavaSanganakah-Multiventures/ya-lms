@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -46,12 +47,18 @@ class _WalletScreenState extends State<WalletScreen> {
  super.initState();
  _amountController = TextEditingController(text: _customAmount.round().toString());
  _fetchWalletData();
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-   if (!mounted) return;
-   if (event['entity'] == 'wallet') {
-     _fetchWalletData(skipCache: true);
-   }
- });
+   _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+     if (!mounted) return;
+     // [NEW] DataSyncDO sends: { type: "wallet", data: { balance_rupees: 500 } }
+     if (event['type'] == 'wallet') {
+       final data = event['data'] as Map<String, dynamic>?;
+       if (data != null && data.containsKey('balance_rupees')) {
+         setState(() {
+           _balanceData = data;
+         });
+       }
+     }
+   });
  }
 
  @override
@@ -87,18 +94,33 @@ class _WalletScreenState extends State<WalletScreen> {
  Map<String, dynamic> settingsData = {};
  List<dynamic> ledgerData = [];
 
+ // Run all 4 wallet API calls in parallel for faster load.
+ Future<dynamic> safeCall(String label, Future<dynamic> Function() call) async {
  try {
- final balanceResponse = await ApiService.getWalletBalance();
- if (balanceResponse.statusCode == 200) {
- balanceData = balanceResponse.data;
- }
+ return await call();
  } catch (e) {
- debugPrint('Wallet: balance fetch failed: $e');
+ debugPrint('Wallet: $label fetch failed: $e');
+ return null;
+ }
  }
 
- try {
- final packsResponse = await ApiService.getCreditPacks();
- if (packsResponse.statusCode == 200) {
+ final results = await Future.wait([
+ safeCall('balance', () => ApiService.getWalletBalance()),
+ safeCall('packs', () => ApiService.getCreditPacks()),
+ safeCall('settings', () => ApiService.getSettings()),
+ safeCall('ledger', () => ApiService.getWalletLedger()),
+ ]);
+
+ final balanceResponse = results[0];
+ final packsResponse = results[1];
+ final settingsResponse = results[2];
+ final ledgerResponse = results[3];
+
+ if (balanceResponse != null && balanceResponse.statusCode == 200) {
+ balanceData = balanceResponse.data;
+ }
+
+ if (packsResponse != null && packsResponse.statusCode == 200) {
  final packsData = packsResponse.data;
  creditPacks = ApiUtils.extractList(packsData, 'packs')
  .where((pack) =>
@@ -108,28 +130,15 @@ class _WalletScreenState extends State<WalletScreen> {
  pack['is_active'] == true))
  .toList();
  }
- } catch (e) {
- debugPrint('Wallet: packs fetch failed: $e');
- }
 
- try {
- final settingsResponse = await ApiService.getSettings();
- if (settingsResponse.statusCode == 200) {
+ if (settingsResponse != null && settingsResponse.statusCode == 200) {
  final settingsDataJson = settingsResponse.data;
  settingsData = settingsDataJson['settings'] ?? {};
  }
- } catch (e) {
- debugPrint('Wallet: settings fetch failed: $e');
- }
 
- try {
- final ledgerResponse = await ApiService.getWalletLedger();
- if (ledgerResponse.statusCode == 200) {
+ if (ledgerResponse != null && ledgerResponse.statusCode == 200) {
  final lData = ledgerResponse.data;
  ledgerData = lData['ledger'] ?? [];
- }
- } catch (e) {
- debugPrint('Wallet: ledger fetch failed: $e');
  }
 
  if (!mounted) return;
@@ -164,9 +173,22 @@ class _WalletScreenState extends State<WalletScreen> {
  _isLoading = false;
  _isShowingCached = false;
  });
- }
+  }
 
- void _applyWalletData(Map<String, dynamic> data) {
+  Future<void> _refreshBalanceQuietly() async {
+    try {
+      final response = await ApiService.getWalletBalance();
+      if (mounted && response.statusCode == 200) {
+        setState(() {
+          _balanceData = response.data;
+        });
+      }
+    } catch (e) {
+      debugPrint('Wallet quiet refresh failed: $e');
+    }
+  }
+
+  void _applyWalletData(Map<String, dynamic> data) {
  _balanceData = data['balanceData'] as Map<String, dynamic>?;
  _pricing = Map<String, dynamic>.from(data['pricing'] as Map? ?? {});
  _creditPacks = List<dynamic>.from(data['creditPacks'] as List? ?? []);
@@ -385,9 +407,10 @@ class _WalletScreenState extends State<WalletScreen> {
  ),
  SizedBox(height: 20),
 
- TextField(
- controller: _amountController,
- keyboardType: TextInputType.numberWithOptions(decimal: false),
+  TextField(
+  controller: _amountController,
+  keyboardType: TextInputType.numberWithOptions(decimal: false),
+  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
  decoration: InputDecoration(
  labelText: 'Amount (₹)',
  prefixText: '₹ ',

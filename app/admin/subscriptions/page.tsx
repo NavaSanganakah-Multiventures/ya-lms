@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Crown, Plus, Trash2, ToggleLeft, ToggleRight, Loader2, CheckCircle2, AlertTriangle, ExternalLink, RefreshCw, IndianRupee, ChevronDown, ChevronUp, BookOpen, Layers, Bot, Video, X } from 'lucide-react';
+import { Crown, Plus, Trash2, ToggleLeft, ToggleRight, Loader2, CheckCircle2, AlertTriangle, ExternalLink, RefreshCw, IndianRupee, ChevronDown, ChevronUp, BookOpen, Layers, Video, X, Wallet } from 'lucide-react';
 
 const INTERVAL_OPTS = [
   { value: 'monthly', label: 'Monthly' },
@@ -9,22 +9,13 @@ const INTERVAL_OPTS = [
 ];
 const ACCESS_OPTS = ['none','all','static','user_choice'];
 const BATCH_OPTS = ['none','static','user_choice'];
-const PERIOD_OPTS = [
-  { value: 'none', label: 'No Reset (No AI)' },
-  { value: 'hourly', label: 'Hourly' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-  { value: 'plan', label: 'Plan Total (Never resets)' },
-];
 
 const EMPTY_FORM = {
   name: '', interval: 'monthly', amount_rupees: '', description: '',
   course_access_type: 'none', max_course_selection: 0,
   batch_access_type: 'none', max_batch_selection: 0,
   book_access_type: 'none', max_book_selection: 0,
-  ai_credits: 0, ai_credits_period: 'none', ai_rate_limit_per_hour: 0,
+  wallet_amount_rupees: 0,
   live_session_access: false, live_class_amount_rupees: 3000, is_lifetime: false, lifetime_price_rupees: 2100,
 };
 
@@ -116,8 +107,8 @@ export default function AdminSubscriptionsPage() {
     showMsg('success', d.message||'Done'); reloadData();
   };
 
-  const addToPool = async (planId:string, itemType:string, itemId:string, accessMode:string, bonusCredits:number) => {
-    await fetch(`/api/admin/subscription/plans/${planId}/pool`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{item_type:itemType,item_id:itemId,access_mode:accessMode,bonus_ai_credits:bonusCredits}])});
+  const addToPool = async (planId:string, itemType:string, itemId:string, accessMode:string) => {
+    await fetch(`/api/admin/subscription/plans/${planId}/pool`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{item_type:itemType,item_id:itemId,access_mode:accessMode}])});
     await loadPool(planId);
   };
 
@@ -131,7 +122,6 @@ export default function AdminSubscriptionsPage() {
   const accessLabel:Record<string,string> = {none:'🚫 None',all:'📚 All Courses',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
   const batchLabel:Record<string,string> = {none:'🚫 None',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
   const bookLabel:Record<string,string> = {none:'🚫 None',all:'📖 All Books',static:'📌 Static (Admin picks)',user_choice:'🎯 User Choice (Student picks)'};
-  const periodLabel:Record<string,string> = {none:'No AI',hourly:'Hourly',daily:'Daily',weekly:'Weekly',monthly:'Monthly',yearly:'Yearly',plan:'Plan Total'};
 
   return (
     <div className="space-y-8">
@@ -256,24 +246,12 @@ export default function AdminSubscriptionsPage() {
               {(form.book_access_type==='static'||form.book_access_type==='user_choice') && <p className="text-xs text-neutral-500">Plan create होने के बाद &quot;Content Pool&quot; section में books add करें।</p>}
             </div>
 
-            {/* AI Credits */}
+            {/* Wallet Topup */}
             <div className="p-6 bg-neutral-950 rounded-2xl border border-neutral-800 space-y-4">
-              <div className="flex items-center gap-2 font-black text-white"><Bot className="w-5 h-5 text-violet-400"/>🤖 AI Credits</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="text-xs text-neutral-400 font-bold">Credits (-1 = Unlimited)</label>
-                  <input type="number" min={-1} value={form.ai_credits} onChange={e=>f('ai_credits',+e.target.value)} className="input-dark w-full mt-2"/>
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-400 font-bold">Reset Period</label>
-                  <select value={form.ai_credits_period} onChange={e=>f('ai_credits_period',e.target.value)} className="input-dark w-full mt-2">
-                    {PERIOD_OPTS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-400 font-bold">Rate Limit/hour (0=No limit)</label>
-                  <input type="number" min={0} value={form.ai_rate_limit_per_hour} onChange={e=>f('ai_rate_limit_per_hour',+e.target.value)} className="input-dark w-full mt-2"/>
-                </div>
+              <div className="flex items-center gap-2 font-black text-white"><Wallet className="w-5 h-5 text-emerald-400"/>💰 Wallet Topup</div>
+              <div>
+                <label className="text-xs text-neutral-400 font-bold">Subscription activate hote hi wallet me kitne ₹ add honge</label>
+                <input type="number" min={0} value={form.wallet_amount_rupees} onChange={e=>f('wallet_amount_rupees',+e.target.value)} className="input-dark w-full mt-2"/>
               </div>
             </div>
 
@@ -321,8 +299,7 @@ export default function AdminSubscriptionsPage() {
                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full text-xs font-bold border border-blue-500/20">{accessLabel[plan.course_access_type]||'📚 None'}</span>
                   <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">{batchLabel[plan.batch_access_type]||'👥 None'}</span>
                   <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold border border-amber-500/20">{bookLabel[plan.book_access_type]||'📖 None'}</span>
-                  <span className="px-2 py-0.5 bg-violet-500/10 text-violet-400 rounded-full text-xs font-bold border border-violet-500/20">🤖 {plan.ai_credits===0?'No AI':plan.ai_credits===-1?'∞':plan.ai_credits} {plan.ai_credits!==0?`/ ${periodLabel[plan.ai_credits_period]}`:''}</span>
-                  {plan.ai_rate_limit_per_hour>0 && <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full text-xs font-bold border border-orange-500/20">⚡ {plan.ai_rate_limit_per_hour}/hr</span>}
+                  {(plan.wallet_amount_rupees||0)>0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-xs font-bold border border-emerald-500/20">💰 +₹{plan.wallet_amount_rupees} wallet</span>}
                   {plan.live_session_access===1 && <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded-full text-xs font-bold border border-red-500/20">📹 Live</span>}
                   {plan.razorpay_plan_id && <a href={`https://dashboard.razorpay.com/app/subscriptions/plans/${plan.razorpay_plan_id}`} target="_blank" rel="noopener noreferrer" className="px-2 py-0.5 bg-neutral-800 text-neutral-400 rounded-full text-xs font-mono border border-neutral-700 flex items-center gap-1 hover:text-white">{plan.razorpay_plan_id}<ExternalLink className="w-2.5 h-2.5"/></a>}
                 </div>
@@ -353,7 +330,7 @@ export default function AdminSubscriptionsPage() {
                             <div key={item.item_id} className="flex items-center justify-between p-3 bg-neutral-950 rounded-xl border border-neutral-800">
                               <div>
                                 <p className="text-white text-sm font-bold">{item.course_title||item.item_id}</p>
-                                <p className="text-xs text-neutral-500">{item.access_mode==='static'?'📌 Static':'🎯 User Choice'} {item.bonus_ai_credits>0?`• +${item.bonus_ai_credits} AI credits`:''}</p>
+                                <p className="text-xs text-neutral-500">{item.access_mode==='static'?'📌 Static':'🎯 User Choice'}</p>
                               </div>
                               <button onClick={()=>removeFromPool(plan.id,'course',item.item_id)} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg" aria-label="Remove course" title="Remove course"><X className="w-4 h-4"/></button>
                             </div>
@@ -363,7 +340,7 @@ export default function AdminSubscriptionsPage() {
                           <p className="text-xs text-neutral-500 font-bold mb-3">Course Add करें:</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                             {courses.filter((c:any)=>!courseIdsInPool?.has(c.id)).map((c:any)=>(
-                              <button key={c.id} onClick={()=>addToPool(plan.id,'course',c.id,plan.course_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
+                              <button key={c.id} onClick={()=>addToPool(plan.id,'course',c.id,plan.course_access_type==='user_choice'?'user_choice':'static')} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{c.title}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
                               </button>
@@ -392,7 +369,7 @@ export default function AdminSubscriptionsPage() {
                           <p className="text-xs text-neutral-500 font-bold mb-3">Batch Add करें:</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
                             {batches.filter((b:any)=>!batchIdsInPool?.has(b.id)).map((b:any)=>(
-                              <button key={b.id} onClick={()=>addToPool(plan.id,'batch',b.id,plan.batch_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
+                              <button key={b.id} onClick={()=>addToPool(plan.id,'batch',b.id,plan.batch_access_type==='user_choice'?'user_choice':'static')} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{b.name}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
                               </button>
@@ -421,7 +398,7 @@ export default function AdminSubscriptionsPage() {
                           <p className="text-xs text-neutral-500 font-bold mb-3">Book Add करें:</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                             {books.filter((b:any)=>!bookIdsInPool?.has(b.id)).map((b:any)=>(
-                              <button key={b.id} onClick={()=>addToPool(plan.id,'book',b.id,plan.book_access_type==='user_choice'?'user_choice':'static',0)} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
+                              <button key={b.id} onClick={()=>addToPool(plan.id,'book',b.id,plan.book_access_type==='user_choice'?'user_choice':'static')} className="text-left p-3 bg-neutral-900 hover:bg-neutral-800 rounded-lg border border-neutral-800 hover:border-neutral-600 transition-all">
                                 <p className="text-white text-xs font-bold">{b.title}</p>
                                 <p className="text-neutral-500 text-[10px]">+ Add to pool</p>
                               </button>

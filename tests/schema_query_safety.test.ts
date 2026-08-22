@@ -8,9 +8,9 @@ async function runTests() {
   assert.equal(isSafeSchemaQuery('ALTER TABLE Users ADD COLUMN last_seen TEXT'), true);
   assert.equal(isSafeSchemaQuery('DROP TABLE IF EXISTS Users'), false);
   assert.equal(isSafeSchemaQuery('DROP INDEX IF EXISTS idx_users'), false);
-  assert.equal(isSafeSchemaQuery('UPDATE Users SET full_name = "x" WHERE id = 1'), true);
+  assert.equal(isSafeSchemaQuery('UPDATE Users SET full_name = "x" WHERE id = 1'), false);
   assert.equal(isSafeSchemaQuery('UPDATE Users SET full_name = "x"'), false);
-  assert.equal(isSafeSchemaQuery('DELETE FROM Users WHERE id = 1'), true);
+  assert.equal(isSafeSchemaQuery('DELETE FROM Users WHERE id = 1'), false);
   assert.equal(isSafeSchemaQuery('DELETE FROM Users'), false);
 
   console.log('✅ schema query safety tests passed!');

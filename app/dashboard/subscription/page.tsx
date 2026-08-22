@@ -13,6 +13,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
   created:       { label: 'बनाया गया',    color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',   icon: Clock },
   pending:       { label: 'लंबित',        color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',   icon: Clock },
   halted:        { label: 'रुका हुआ',     color: 'text-red-400 bg-red-500/10 border-red-500/20',            icon: AlertTriangle },
+  cancel_pending:{ label: 'रद्दी के लिए अनुरोधित', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', icon: Clock },
   cancelled:     { label: 'रद्द',         color: 'text-neutral-400 bg-neutral-500/10 border-neutral-700',   icon: XCircle },
   completed:     { label: 'पूर्ण',        color: 'text-neutral-400 bg-neutral-500/10 border-neutral-700',   icon: CheckCircle2 },
   expired:       { label: 'समाप्त',       color: 'text-neutral-400 bg-neutral-500/10 border-neutral-700',   icon: XCircle },
@@ -173,7 +174,7 @@ export default function SubscriptionPage() {
                 </div>
 
                 {/* Actions */}
-                {hasActiveSub && (
+                {hasActiveSub && subscription.status !== 'cancel_pending' && (
                   <div className="px-8 pb-8">
                     {!showCancelConfirm ? (
                       <button onClick={() => setShowCancelConfirm(true)}
@@ -202,6 +203,19 @@ export default function SubscriptionPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Cancellation already requested */}
+                {hasActiveSub && subscription.status === 'cancel_pending' && (
+                  <div className="px-8 pb-8">
+                    <div className="p-5 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-start gap-3">
+                      <Clock className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-orange-300 font-black text-sm">रद्द करने का अनुरोध भेज दिया गया</p>
+                        <p className="text-neutral-400 text-xs mt-1">वर्तमान अवधि के अंत तक एक्सेस बना रहेगा।</p>
+                      </div>
+                    </div>
                   </div>
                 )}
 

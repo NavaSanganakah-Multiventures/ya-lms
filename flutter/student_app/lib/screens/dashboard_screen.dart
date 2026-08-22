@@ -45,14 +45,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
  void initState() {
  super.initState();
  _fetchDashboard();
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-   if (!mounted) return;
-   final entity = event['entity'];
-   final action = event['action'];
-   if (entity == 'wallet' || entity == 'enrollment' || entity == 'live_session' || action == 'course_published') {
-     _fetchDashboard(skipCache: true);
-   }
- });
+  _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+    if (!mounted) return;
+    final entity = event['entity'];
+    final action = event['action'];
+    if (entity == 'wallet' || entity == 'enrollment' || entity == 'live_session' || action == 'course_published' || event['type'] == 'wallet') {
+      await _refreshDashQuietly();
+    }
+  });
  }
 
  @override
@@ -176,9 +176,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
  } catch (e) {
  debugPrint('_cacheDashboard failed: $e');
  }
- }
+  }
 
- Future<void> _fetchCoursesFallback() async {
+  Future<void> _refreshDashQuietly() async {
+    try {
+      final response = await ApiService.getDashboardData();
+      if (mounted && response.statusCode == 200) {
+        final data = response.data;
+        setState(() {
+          _applyDashboardData(data);
+        });
+        await _cacheDashboard(data);
+      }
+    } catch (e) {
+      debugPrint('Dashboard quiet refresh failed: $e');
+    }
+  }
+
+  Future<void> _fetchCoursesFallback() async {
  try {
  final response = await ApiService.getCourses();
  if (!mounted) return;

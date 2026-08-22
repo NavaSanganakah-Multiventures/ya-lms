@@ -229,7 +229,7 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         setUserToCredit(null);
-        showSuccess("Credits added successfully");
+        showSuccess("Balance added successfully");
         fetchUsers();
       } else {
         const data = await res.json() as { error?: string };
@@ -642,7 +642,7 @@ export default function AdminUsersPage() {
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl sm:rounded-3xl w-full max-w-3xl overflow-y-auto max-h-[95vh] shadow-2xl">
             <div className="p-6 border-b border-neutral-800 flex justify-between items-center bg-violet-500/10">
               <h3 className="text-xl font-bold text-violet-500 flex items-center gap-2">
-                <Coins className="w-5 h-5" /> क्रेडिट दें
+                <Coins className="w-5 h-5" /> बैलेंस दें
               </h3>
               <button onClick={() => setUserToCredit(null)} aria-label="Close modal" className="p-2 hover:bg-violet-500/20 rounded-lg text-violet-500 transition-colors">
                 <X className="w-5 h-5" />
@@ -650,7 +650,7 @@ export default function AdminUsersPage() {
             </div>
             <form onSubmit={handleConfirmCredit} className="p-8 space-y-6">
               <div className="bg-violet-500/10 text-violet-400 p-4 rounded-xl border border-violet-500/20 text-sm leading-relaxed mb-4">
-                आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को क्रेडिट देने जा रहे हैं।
+                आप <strong>{userToCredit.full_name || userToCredit.email}</strong> को ₹ बैलेंस देने जा रहे हैं।
               </div>
 
               <div className="space-y-2">
@@ -697,7 +697,7 @@ export default function AdminUsersPage() {
                   disabled={isSubmitting || !creditOtpSent || !creditOtp || creditAmount <= 0}
                   className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-violet-500/20"
                 >
-                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CheckCircle2 className="w-5 h-5" /> क्रेडिट दें</>}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CheckCircle2 className="w-5 h-5" /> बैलेंस दें</>}
                 </button>
               </div>
             </form>
@@ -927,7 +927,7 @@ export default function AdminUsersPage() {
                 </div>
               ) : ledgerData.length === 0 ? (
                 <div className="text-center py-12 text-neutral-500 italic">
-                  कोई क्रेडिट हिस्ट्री नहीं मिली (No credit history found).
+                  कोई बैलेंस हिस्ट्री नहीं मिली (No balance history found).
                 </div>
               ) : (
                 <div className="space-y-3">

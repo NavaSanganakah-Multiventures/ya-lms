@@ -9,6 +9,17 @@ import SQL_0034_KV_BACKUPS from './0034_add_kv_backups_table.sql';
 import SQL_0035_FIX_SUBSCRIPTION_AMOUNT from './0035_fix_subscription_amount_to_rupees.sql';
 import SQL_0036_ENROLLMENT_PENDING_STATUS from './0036_add_pending_to_enrollment_check.sql';
 import SQL_0037_FIX_SUBSCRIPTION_AMOUNT from './0037_fix_double_migrated_subscription_amount.sql';
+import SQL_0038_DROP_AI_CREDITS_ADD_WALLET_TOPUP from './0038_drop_ai_credits_add_wallet_topup.sql';
+import SQL_0040_SUBSCRIPTION_CANCELLATION from './0040_add_subscription_cancellation_flag.sql';
+import SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS from './0041_add_live_class_charge_locks.sql';
+import SQL_0042_ADD_PER_MINUTE_LIVE_CREDIT from './0042_add_per_minute_live_credit_rate.sql';
+import SQL_0043_ADD_INTEGER_PAISE_COLUMNS from './0043_add_integer_paise_columns.sql';
+import SQL_0044_ADD_PAISE_TO_INDIVIDUAL_BOOKINGS from './0044_add_paise_to_individual_bookings.sql';
+import SQL_0045_RECONCILE_RUPEES_FROM_PAISE from './0045_reconcile_rupees_from_paise.sql';
+import SQL_0046_ADD_REMAINING_PAISE_COLUMNS from './0046_add_remaining_paise_columns.sql';
+import SQL_0047_RECONCILE_PAISE_FROM_RUPEES from './0047_reconcile_paise_from_rupees.sql';
+import SQL_0048_COUPON_FIXED_PAISE from './0048_coupon_fixed_discount_paise.sql';
+import SQL_0049_DROP_RUPEE_COLUMNS from './0049_drop_rupee_columns.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -92,4 +103,15 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0035', version: 35,  filename: '0035_fix_subscription_amount_to_rupees.sql', sql: SQL_0035_FIX_SUBSCRIPTION_AMOUNT },
   { id: 'sql_0036', version: 36,  filename: '0036_add_pending_to_enrollment_check.sql',    sql: SQL_0036_ENROLLMENT_PENDING_STATUS },
   { id: 'sql_0037', version: 37,  filename: '0037_fix_double_migrated_subscription_amount.sql', sql: SQL_0037_FIX_SUBSCRIPTION_AMOUNT },
+  { id: 'sql_0038', version: 38,  filename: '0038_drop_ai_credits_add_wallet_topup.sql', sql: SQL_0038_DROP_AI_CREDITS_ADD_WALLET_TOPUP },
+  { id: 'sql_0040', version: 39,  filename: '0040_add_subscription_cancellation_flag.sql', sql: SQL_0040_SUBSCRIPTION_CANCELLATION },
+  { id: 'sql_0041', version: 40,  filename: '0041_add_live_class_charge_locks.sql',      sql: SQL_0041_ADD_LIVE_CLASS_CHARGE_LOCKS },
+  { id: 'sql_0042', version: 41,  filename: '0042_add_per_minute_live_credit_rate.sql',     sql: SQL_0042_ADD_PER_MINUTE_LIVE_CREDIT },
+  { id: 'sql_0043', version: 42,  filename: '0043_add_integer_paise_columns.sql',              sql: SQL_0043_ADD_INTEGER_PAISE_COLUMNS },
+  { id: 'sql_0044', version: 43,  filename: '0044_add_paise_to_individual_bookings.sql', sql: SQL_0044_ADD_PAISE_TO_INDIVIDUAL_BOOKINGS },
+  { id: 'sql_0045', version: 44,  filename: '0045_reconcile_rupees_from_paise.sql',      sql: SQL_0045_RECONCILE_RUPEES_FROM_PAISE },
+  { id: 'sql_0046', version: 45,  filename: '0046_add_remaining_paise_columns.sql',  sql: SQL_0046_ADD_REMAINING_PAISE_COLUMNS },
+  { id: 'sql_0047', version: 46,  filename: '0047_reconcile_paise_from_rupees.sql',  sql: SQL_0047_RECONCILE_PAISE_FROM_RUPEES },
+  { id: 'sql_0048', version: 47,  filename: '0048_coupon_fixed_discount_paise.sql',  sql: SQL_0048_COUPON_FIXED_PAISE },
+  { id: 'sql_0049', version: 48,  filename: '0049_drop_rupee_columns.sql',  sql: SQL_0049_DROP_RUPEE_COLUMNS },
 ].sort((a, b) => a.version - b.version);

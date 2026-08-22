@@ -20,11 +20,10 @@ interface Course {
   category_id: string;
   category_name?: string;
   self_study_enabled: boolean;
-  self_study_credit_cost: number;
   wallet_rupees: number;
   self_study_only: boolean;
   individual_class_booking_enabled: boolean;
-  individual_class_credit_cost: number;
+  individual_class_cost_rupees: number;
   individual_class_duration_minutes: number;
   seo_title_en?: string;
   seo_title_hi?: string;
@@ -97,11 +96,10 @@ export default function AdminCoursesPage() {
     teacher_id: '',
     category_id: '',
     self_study_enabled: false,
-    self_study_credit_cost: 0,
     wallet_rupees: 0,
     self_study_only: false,
     individual_class_booking_enabled: false,
-    individual_class_credit_cost: 0,
+    individual_class_cost_rupees: 0,
     individual_class_duration_minutes: 30,
     seo_title_en: '',
     seo_title_hi: '',
@@ -202,11 +200,10 @@ export default function AdminCoursesPage() {
           teacher_id: currentUser?.id || '',
           category_id: '',
           self_study_enabled: false,
-          self_study_credit_cost: 0,
           wallet_rupees: 0,
           self_study_only: false,
           individual_class_booking_enabled: false,
-          individual_class_credit_cost: 0,
+          individual_class_cost_rupees: 0,
           individual_class_duration_minutes: 30,
           seo_title_en: '',
           seo_title_hi: '',
@@ -1101,8 +1098,8 @@ export default function AdminCoursesPage() {
 
                     <div className="col-span-2 rounded-2xl border border-violet-500/20 bg-violet-500/10 p-5 space-y-4">
                       <div>
-                        <h3 className="text-sm font-black text-violet-200">Self Study Credit Mode</h3>
-                        <p className="text-xs text-neutral-400 mt-1">Is course ko credit-based self-study flow me chalane ke liye settings.</p>
+                        <h3 className="text-sm font-black text-violet-200">Self-Study Mode (Wallet ₹)</h3>
+                        <p className="text-xs text-neutral-400 mt-1">Is course ko wallet ₹ se chalane ke liye settings — unlock price aur self-study plan options.</p>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <label className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm font-bold text-neutral-200">
@@ -1151,8 +1148,8 @@ export default function AdminCoursesPage() {
                             type="number"
                             min={0}
                             step={1}
-                            value={editingCourse ? (editingCourse.individual_class_credit_cost || 0) : newCourse.individual_class_credit_cost}
-                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_credit_cost: parseFloat(e.target.value) || 0})}
+                            value={editingCourse ? (editingCourse.individual_class_cost_rupees || 0) : newCourse.individual_class_cost_rupees}
+                            onChange={e => editingCourse ? setEditingCourse({...editingCourse, individual_class_cost_rupees: parseFloat(e.target.value) || 0}) : setNewCourse({...newCourse, individual_class_cost_rupees: parseFloat(e.target.value) || 0})}
                             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-violet-500/50 outline-none"
                           />
                         </div>

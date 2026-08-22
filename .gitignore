@@ -50,3 +50,5 @@ flutter/**/windows/
 upload_*
 flutter/student_app/android/local.properties
 flutter/admin_app/android/local.properties
+flutter/student_app/apk/*
+flutter/student_app/build/app/outputs/apk/debug/

@@ -9,8 +9,7 @@ import { EmailMessage } from "cloudflare:email";
 import { runAutoMigration } from '../db-migrate';
 import { LessonTranscriptionWorkflow } from './workflows';
 import { indexLessonToAISearch } from './shared-utils';
-import { UserConnectionDO } from './user-connection-do';
-import { notifyUser, notifyUsers, notifyCourseEnrolled, notifyGlobal } from './realtime-helpers';
+import { DataSyncDO } from './data-sync-do';
 import { NotificationManager } from './durable-objects/notification-manager';
 import { AdminCommandProcessor, registerAdminCommandHandler } from './durable-objects/admin-command-processor';
 import { validateRegistrationRequest } from './routes/auth';
@@ -1345,19 +1344,17 @@ function parsePagination(
   return { page, limit, offset: (page - 1) * limit };
 }
 
-const DEFAULT_AI_CREDITS_PER_RUPEE = 10;
-const DEFAULT_AI_FEATURED_AMOUNT_RUPEES = 101;
-const DEFAULT_AI_FEATURED_CREDITS = 1000;
 const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
-// Single source of truth: all balances are stored in rupees (balance_rupees).
+// Single source of truth: all monetary amounts are stored in integer paise.
 // Razorpay API requires amounts in paise. Use these helpers everywhere.
 function inrToPaise(inr: number): number {
   return Math.round(Math.max(0, Number(inr) || 0) * 100);
 }
 function paiseToInr(paise: number): number {
-  return Math.floor(Math.max(0, Number(paise) || 0) / 100);
+  // #675: round (not floor) so fractional rupees aren't lost when converting paise -> rupees.
+  return Math.round(Math.max(0, Number(paise) || 0)) / 100;
 }
 
 function getPositiveIntegerSetting(
@@ -1368,32 +1365,6 @@ function getPositiveIntegerSetting(
   const value = Number(settings[key]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
-}
-
-function calculateAICreditsForPurchase(
-  amountPaise: number,
-  settings: Record<string, string>,
-): number {
-  const amountInr = Math.floor(amountPaise / 100);
-  const featuredAmountInr = getPositiveIntegerSetting(
-    settings,
-    "ai_featured_pack_amount_rupees",
-    DEFAULT_AI_FEATURED_AMOUNT_RUPEES,
-  );
-  const featuredCredits = getPositiveIntegerSetting(
-    settings,
-    "ai_featured_pack_credits",
-    DEFAULT_AI_FEATURED_CREDITS,
-  );
-
-  if (amountPaise === featuredAmountInr * 100) return featuredCredits;
-
-  const creditsPerInr = getPositiveIntegerSetting(
-    settings,
-    "ai_credits_per_rupee",
-    DEFAULT_AI_CREDITS_PER_RUPEE,
-  );
-  return amountInr * creditsPerInr;
 }
 
 async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
@@ -3249,6 +3220,70 @@ function generateBatchId(courseId: string): string {
   return `YA-BTC-${suffix}-${dateStr}-${randomPart}`;
 }
 
+// ================================================================
+// 📡 BROADCAST HELPERS — DataSyncDO ke through WebSocket broadcast
+// ================================================================
+
+/**
+ * Broadcast full data payload to a specific user's WebSocket clients.
+ * The DataSyncDO sends the data WITHOUT doing any D1 write
+ * (main worker already did the D1 write before calling this).
+ */
+async function broadcastToUser(env: Env, userId: string, type: string, data: any): Promise<void> {
+  try {
+    const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+    const stub = env.DATA_SYNC_DO.get(doId);
+    await stub.fetch("http://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type, userId, data }),
+    });
+  } catch (e) {
+    console.error(`[Broadcast] Failed for user ${userId}:`, e);
+  }
+}
+
+/**
+ * Broadcast full data payload to a list of users' WebSocket clients.
+ */
+async function broadcastToUsers(env: Env, userIds: string[], type: string, data: any): Promise<void> {
+  if (userIds.length === 0) return;
+  await Promise.allSettled(userIds.map((uid) => broadcastToUser(env, uid, type, data)));
+}
+
+/**
+ * Broadcast full data payload to ALL connected WebSocket clients.
+ */
+async function broadcastToAll(env: Env, type: string, data: any): Promise<void> {
+  try {
+    const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+    const stub = env.DATA_SYNC_DO.get(doId);
+    await stub.fetch("http://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type, data }),  // No userId → broadcasts to ALL WS
+    });
+  } catch (e) {
+    console.error("[Broadcast] Global broadcast failed:", e);
+  }
+}
+
+/**
+ * Broadcast to all enrolled users of a course.
+ * Fetches enrolled user IDs from D1, then broadcasts to each.
+ */
+async function broadcastToCourseEnrollees(env: Env, DB: D1Database, courseId: string, type: string, data: any): Promise<void> {
+  try {
+    const enrollments: any = await DB.prepare(
+      "SELECT user_id FROM Enrollments WHERE course_id = ? AND (status = 'active' OR status = 'enrolled')",
+    ).bind(courseId).all();
+    const userIds: string[] = enrollments.results?.map((r: any) => r.user_id) || [];
+    if (userIds.length > 0) {
+      await broadcastToUsers(env, userIds, type, data);
+    }
+  } catch (e) {
+    console.error(`[Broadcast] Failed to notify course ${courseId} enrollees:`, e);
+  }
+}
+
 function getCookie(request: Request, name: string): string | null {
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;
@@ -3723,16 +3758,16 @@ async function handleAdminStats(request: Request, env: Env): Promise<Response> {
       `),
       env.DB.prepare(`
         SELECT
-          SUM(amount_rupees) as total_revenue,
-          SUM(CASE
+          ROUND(SUM(amount_paise) / 100.0, 2) as total_revenue,
+          ROUND(SUM(CASE
             WHEN created_at >= date('now', 'start of month')
-            THEN amount_rupees ELSE 0
-          END) as current_month,
-          SUM(CASE
+            THEN amount_paise ELSE 0
+          END) / 100.0, 2) as current_month,
+          ROUND(SUM(CASE
             WHEN created_at >= date('now', 'start of month', '-1 month')
              AND created_at < date('now', 'start of month')
-            THEN amount_rupees ELSE 0
-          END) as previous_month
+            THEN amount_paise ELSE 0
+          END) / 100.0, 2) as previous_month
         FROM Transactions
         WHERE status = 'successful'
       `),
@@ -3993,7 +4028,7 @@ async function handleAdminAccounting(
     const { results } = await env.DB.prepare(
       `
       SELECT t.id,
-             t.amount_rupees,
+             ROUND(t.amount_paise / 100.0, 2) AS amount_rupees,
              t.status, t.payment_source, t.created_at, t.type,
              u.full_name as user_name, u.email as user_email,
              c.title as course_title
@@ -4014,9 +4049,9 @@ async function handleAdminAccounting(
     const stats = await env.DB.prepare(
       `
       SELECT
-        SUM(amount_rupees) as total_revenue,
+        ROUND(SUM(amount_paise) / 100.0, 2) as total_revenue,
         COUNT(*) as total_transactions,
-        SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_rupees ELSE 0 END) as monthly_revenue
+        ROUND(SUM(CASE WHEN created_at >= date('now', 'start of month') THEN amount_paise ELSE 0 END) / 100.0, 2) as monthly_revenue
       FROM Transactions
       WHERE status = 'successful'
     `,
@@ -4183,10 +4218,7 @@ async function handleAdminSecrets(
         const keyErr = validateKvKey(key);
         if (keyErr) return keyErr;
         await env.PLATFORM_SECRETS.delete(key);
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action: "deleted", entity: "secret",
-          data: { key },
-        }).catch((e: any) => console.error("notifyGlobal error (delete):", e));
+        broadcastToAll(env, "secret", { key });
         return new Response(JSON.stringify({ success: true, key, deleted: true }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4220,10 +4252,7 @@ async function handleAdminSecrets(
         } else {
           await env.PLATFORM_SECRETS.put(key, strValue);
         }
-        notifyGlobal(env, {
-          type: "channel_event", channel: "admin_secrets", action, entity: "secret",
-          data: { key },
-        }).catch((e: any) => console.error("notifyGlobal error (single):", e));
+        broadcastToAll(env, "secret", { key });
         return new Response(JSON.stringify({ success: true, key }), {
           status: 200, headers: { "Content-Type": "application/json" },
         });
@@ -4258,10 +4287,7 @@ async function handleAdminSecrets(
           value === "" ? env.PLATFORM_SECRETS.delete(key) : env.PLATFORM_SECRETS.put(key, value)
         ));
       }
-      notifyGlobal(env, {
-        type: "channel_event", channel: "admin_secrets", action: "bulk_updated", entity: "secret",
-        data: { keys: changedKeys },
-      }).catch((e: any) => console.error("notifyGlobal error (bulk):", e));
+      broadcastToAll(env, "secret", { keys: changedKeys });
       return new Response(JSON.stringify({ success: true }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
@@ -4409,13 +4435,22 @@ async function handleAdminAddBalance(
       getClientIP(request),
     ).catch((e) => console.error("[GiveCredits] logAdminActivity failed", e));
 
-    await notifyUser(env, userId, {
-      type: "notification",
-      channel: "user:me",
-      action: "wallet_updated",
-      entity: "wallet",
-      data: { message: `Admin added ₹${amount} to your wallet. New balance: ₹${wallet.balance_rupees}`, balance_rupees: wallet.balance_rupees }
-    }).catch(e => console.error("[GiveCredits] notifyUser failed", e));
+    // 🎯 [NEW] DataSyncDO ke through broadcast karo — full balance data
+    try {
+      const dataDoId = env.DATA_SYNC_DO.idFromName("data-sync");
+      const dataStub = env.DATA_SYNC_DO.get(dataDoId);
+      await dataStub.fetch("http://do/broadcast", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "wallet",
+          action: "broadcast",
+          userId: userId,
+          data: { balance_rupees: wallet.balance_rupees }
+        }),
+      }).catch(e => console.error("[GiveCredits] DataSyncDO broadcast failed:", e));
+    } catch (e) {
+      console.error("[GiveCredits] DataSyncDO error:", e);
+    }
 
     return new Response(JSON.stringify({ message: "Balance added successfully", balance_rupees: wallet.balance_rupees }), {
       status: 200,
@@ -4726,6 +4761,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 
       // Send Welcome Email
       const welcomeTitle = "🎉 आपका Adityanveshan LMS में स्वागत है!";
+      const appUrl = await getPublicAppUrl(env);
       const welcomeBody = `
         <p>नमस्ते <strong>${full_name || "छात्र"}</strong>,</p>
         <p>आपका खाता <strong>आचार्य ${adminName}</strong> जी द्वारा सफलतापूर्वक बना दिया गया है।</p>
@@ -4734,7 +4770,7 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
           <p style="margin:8px 0;">ईमेल: <strong>${email}</strong></p>
           <p style="margin:0;">आप OTP के माध्यम से लॉगिन कर सकते हैं।</p>
         </div>
-        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="https://ya-lms.pages.dev/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
+        <p>आप यहाँ से लॉगिन कर सकते हैं: <a href="${appUrl}/auth/login" style="color:#4f46e5;font-weight:bold;">Login Now</a></p>
       `;
       await safeSendEmail(
         env,
@@ -4869,7 +4905,7 @@ async function handleAdminCourses(
       if (singleCourseMatch && url.pathname !== "/api/admin/courses") {
         const courseId = decodeURIComponent(singleCourseMatch[1]);
         const course = await env.DB.prepare(
-          "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
+          "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id WHERE c.id = ?"
         ).bind(courseId).first();
         if (!course) {
           return new Response(JSON.stringify({ error: "Course not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -4882,7 +4918,7 @@ async function handleAdminCourses(
       const offset = (page - 1) * limit;
 
       let query =
-        "SELECT c.*, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
+        "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, u.email as teacher_email, cat.name as category_name, ml.sync_enabled as merchant_sync_enabled, ml.sync_status as merchant_sync_status, ml.last_synced_at as merchant_last_synced_at FROM Courses c LEFT JOIN Users u ON c.teacher_id = u.id LEFT JOIN Categories cat ON c.category_id = cat.id LEFT JOIN CourseMerchantListings ml ON ml.course_id = c.id";
       let countQuery = "SELECT COUNT(*) as total FROM Courses c";
 
       let results;
@@ -4924,6 +4960,7 @@ async function handleAdminCourses(
         self_study_only,
         individual_class_booking_enabled,
         individual_class_duration_minutes,
+        individual_class_cost_rupees,
         seo_title_en,
         seo_title_hi,
         seo_description_en,
@@ -4948,16 +4985,20 @@ async function handleAdminCourses(
         );
       }
 
-      const costInr = normalizeNonNegativeInt(wallet_rupees);
+      const costInr = normalizeAmountRupees(wallet_rupees);
+      const individualClassCostInr = normalizeAmountRupees(individual_class_cost_rupees);
+      const coursePricePaise = inrToPaise(normalizeAmountRupees(price_rupees));
+      const courseWalletPaise = inrToPaise(costInr);
+      const courseIndividualCostPaise = inrToPaise(individualClassCostInr);
 
       await env.DB.prepare(
         `
         INSERT INTO Courses (
-          id, title, title_hi, description, description_hi, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, category_id,
+          id, title, title_hi, description, description_hi, teacher_id, price_paise, price_usd, thumbnail_url, merchant_default_image_url, category_id,
           self_study_enabled, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes,
-          wallet_rupees,
+          wallet_paise, individual_class_cost_paise,
           seo_title_en, seo_title_hi, seo_description_en, seo_description_hi, seo_keywords_en, seo_keywords_hi
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
         .bind(
@@ -4967,7 +5008,7 @@ async function handleAdminCourses(
           description || "",
           description_hi || null,
           finalTeacherId,
-          price_rupees ?? 0,
+          coursePricePaise,
           price_usd ?? 0,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -4976,7 +5017,8 @@ async function handleAdminCourses(
           self_study_only ? 1 : 0,
           individual_class_booking_enabled ? 1 : 0,
           normalizeNonNegativeInt(individual_class_duration_minutes, 30),
-          costInr,
+          courseWalletPaise,
+          courseIndividualCostPaise,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -4987,13 +5029,7 @@ async function handleAdminCourses(
         .run();
 
       // Global Broadcast: नया कोर्स पब्लिश होने पर सभी यूज़र्स को तुरंत अपडेट दें
-      notifyGlobal(env, {
-        type: "data",
-        channel: "global",
-        action: "course_published",
-        entity: "course",
-        data: { courseId, title: title || "Untitled Course" }
-      }).catch(e => console.error("[Realtime] Global broadcast failed:", e));
+      broadcastToAll(env, "course", { courseId, title: title || "Untitled Course" });
 
       let announcementResult = {};
       if (normalizeBoolean(send_announcement_email) || normalizeBoolean(auto_post_social)) {
@@ -5092,6 +5128,7 @@ async function handleAdminCourses(
         self_study_only,
         individual_class_booking_enabled,
         individual_class_duration_minutes,
+        individual_class_cost_rupees,
         send_announcement_push,
         seo_title_en,
         seo_title_hi,
@@ -5116,12 +5153,16 @@ async function handleAdminCourses(
 
       const newTeacherId = userAuth.role === "teacher" ? undefined : teacher_id;
 
-      const updateCostInr = wallet_rupees == null ? null : normalizeNonNegativeInt(wallet_rupees);
+      const updateCostInr = wallet_rupees == null ? null : normalizeAmountRupees(wallet_rupees);
+      const updateIndividualClassCostInr = individual_class_cost_rupees == null ? null : normalizeAmountRupees(individual_class_cost_rupees);
 
       const existingCourse: any = await env.DB.prepare(
         "SELECT thumbnail_url, merchant_default_image_url FROM Courses WHERE id = ?"
       ).bind(id).first();
 
+      const updCoursePricePaise = price_rupees != null ? inrToPaise(normalizeAmountRupees(price_rupees)) : null;
+      const updCourseWalletPaise = updateCostInr != null ? inrToPaise(updateCostInr) : null;
+      const updCourseIndividualPaise = updateIndividualClassCostInr != null ? inrToPaise(updateIndividualClassCostInr) : null;
       await env.DB.prepare(
         `
         UPDATE Courses SET
@@ -5129,7 +5170,7 @@ async function handleAdminCourses(
           title_hi = COALESCE(?, title_hi),
           description = COALESCE(?, description),
           description_hi = COALESCE(?, description_hi),
-          price_rupees = COALESCE(?, price_rupees),
+          price_paise = COALESCE(?, price_paise),
           price_usd = COALESCE(?, price_usd),
           thumbnail_url = COALESCE(?, thumbnail_url),
           merchant_default_image_url = COALESCE(?, merchant_default_image_url),
@@ -5139,7 +5180,8 @@ async function handleAdminCourses(
           self_study_only = COALESCE(?, self_study_only),
           individual_class_booking_enabled = COALESCE(?, individual_class_booking_enabled),
           individual_class_duration_minutes = COALESCE(?, individual_class_duration_minutes),
-          wallet_rupees = COALESCE(?, wallet_rupees),
+          wallet_paise = COALESCE(?, wallet_paise),
+          individual_class_cost_paise = COALESCE(?, individual_class_cost_paise),
           seo_title_en = COALESCE(?, seo_title_en),
           seo_title_hi = COALESCE(?, seo_title_hi),
           seo_description_en = COALESCE(?, seo_description_en),
@@ -5154,7 +5196,7 @@ async function handleAdminCourses(
           title_hi || null,
           description || null,
           description_hi || null,
-          price_rupees ?? null,
+          updCoursePricePaise,
           price_usd ?? null,
           thumbnail_url || null,
           merchant_default_image_url || null,
@@ -5164,7 +5206,8 @@ async function handleAdminCourses(
           self_study_only == null ? null : self_study_only ? 1 : 0,
           individual_class_booking_enabled == null ? null : individual_class_booking_enabled ? 1 : 0,
           individual_class_duration_minutes == null ? null : normalizeNonNegativeInt(individual_class_duration_minutes, 30),
-          updateCostInr,
+          updCourseWalletPaise,
+          updCourseIndividualPaise,
           seo_title_en || null,
           seo_title_hi || null,
           seo_description_en || null,
@@ -5609,7 +5652,7 @@ async function handleAdminEnrollments(
       let warnings: string[] = [];
 
       if (payment_status === "paid" && (!amount_paid || amount_paid === 0)) {
-        const course: any = await env.DB.prepare("SELECT price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
+        const course: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?").bind(course_id).first();
         if (course && course.price_rupees > 0) {
           warnings.push("amount_paid is 0 but course has a price. Student may not have premium access.");
         }
@@ -5643,13 +5686,13 @@ async function handleAdminEnrollments(
       ) {
         const txId = generateCustomId("YA-TXN");
         await env.DB.prepare(
-          `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id)
+          `INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
           .bind(
             txId,
             user_id,
-            amount_paid,
+            inrToPaise(amount_paid),
             "INR",
             "course_purchase",
             "successful",
@@ -5885,7 +5928,7 @@ async function handleAdminBatches(
       const batchIdFilter = batchIdMatch ? batchIdMatch[1] : null;
 
       let query = `
-        SELECT b.*, 
+        SELECT b.*, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees, ROUND(b.live_class_cost_per_minute_paise / 100.0, 2) AS live_class_cost_per_minute_rupees, ROUND(b.no_show_charge_paise / 100.0, 2) AS no_show_charge_rupees,
                c.title as course_title,
                bo.title as book_title
         FROM Batches b
@@ -5944,8 +5987,8 @@ async function handleAdminBatches(
         self_study_group_enabled,
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
         live_class_credit_unit,
-        credit_deduction_timing,
         seo_json,
         send_announcement_email,
         announcement_audience,
@@ -5995,11 +6038,13 @@ async function handleAdminBatches(
           });
       }
       const id = generateBatchId(course_id || book_id);
+      const batchCostPaise = inrToPaise(normalizeAmountRupees(resolvedCostPerClassRupees));
+      const batchMinutePaise = inrToPaise(normalizeAmountRupees(live_class_cost_per_minute_rupees));
       await env.DB.prepare(
         `
         INSERT INTO Batches (
           id, course_id, book_id, name, name_hi, description_en, description_hi,
-          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_rupees, live_class_credit_unit, credit_deduction_timing, seo_json
+          start_date, end_date, status, class_start_time, class_end_time, class_days, self_study_group_enabled, cost_per_class_paise, live_class_cost_per_minute_paise, live_class_credit_unit, seo_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
@@ -6018,9 +6063,9 @@ async function handleAdminBatches(
           class_end_time || null,
           class_days || null,
           self_study_group_enabled == null ? 1 : self_study_group_enabled ? 1 : 0,
-          normalizeNonNegativeInt(resolvedCostPerClassRupees),
+          batchCostPaise,
+          batchMinutePaise,
           normalizeGroupClassCreditUnit(live_class_credit_unit),
-          credit_deduction_timing || null,
           seo_json || null,
         )
         .run();
@@ -6151,14 +6196,17 @@ async function handleAdminBatches(
         self_study_group_enabled,
         cost_per_class_rupees,
         cost_per_class_inr: rawCostPerClassInr,
+        live_class_cost_per_minute_rupees,
         live_class_credit_unit,
-        credit_deduction_timing,
         seo_json,
         send_update_email,
       } = (await request.json()) as any;
       // Backward compat: accept cost_per_class_inr if cost_per_class_rupees not provided
       const resolvedCostPerClassRupees = cost_per_class_rupees ?? rawCostPerClassInr;
-      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeNonNegativeInt(resolvedCostPerClassRupees);
+      const updateBatchCost = resolvedCostPerClassRupees == null ? null : normalizeAmountRupees(resolvedCostPerClassRupees);
+      const updateBatchMinuteCost = live_class_cost_per_minute_rupees == null ? null : normalizeAmountRupees(live_class_cost_per_minute_rupees);
+      const updBatchCostPaise = updateBatchCost != null ? inrToPaise(updateBatchCost) : null;
+      const updBatchMinutePaise = updateBatchMinuteCost != null ? inrToPaise(updateBatchMinuteCost) : null;
       await env.DB.prepare(
         `
         UPDATE Batches SET
@@ -6173,9 +6221,9 @@ async function handleAdminBatches(
           class_end_time = COALESCE(?, class_end_time),
           class_days = COALESCE(?, class_days),
           self_study_group_enabled = COALESCE(?, self_study_group_enabled),
-          cost_per_class_rupees = COALESCE(?, cost_per_class_rupees),
+          cost_per_class_paise = COALESCE(?, cost_per_class_paise),
+          live_class_cost_per_minute_paise = COALESCE(?, live_class_cost_per_minute_paise),
           live_class_credit_unit = COALESCE(?, live_class_credit_unit),
-          credit_deduction_timing = COALESCE(?, credit_deduction_timing),
           seo_json = COALESCE(?, seo_json)
         WHERE id = ?
       `,
@@ -6192,9 +6240,9 @@ async function handleAdminBatches(
           class_end_time,
           class_days,
           self_study_group_enabled == null ? null : self_study_group_enabled ? 1 : 0,
-          updateBatchCost,
+          updBatchCostPaise,
+          updBatchMinutePaise,
           live_class_credit_unit == null ? null : normalizeGroupClassCreditUnit(live_class_credit_unit),
-          credit_deduction_timing,
           seo_json,
           id,
         )
@@ -6477,13 +6525,7 @@ export async function createNotification(
       .bind(id, userId, title, message, type)
       .run();
 
-    notifyUser(env, userId, {
-      type: "notification",
-      channel: "user:me",
-      action: "new_notification",
-      entity: "notification",
-      data: { id, title, message, type },
-    }).catch((e) => console.error("[Notification] WebSocket notify failed:", e));
+    broadcastToUser(env, userId, "notification", { id, title, message, type });
 
     if (skipPush) return;
 
@@ -6950,10 +6992,10 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
       "SELECT id, course_id, batch_id FROM LiveSessions WHERE id = ?"
     ).bind(sessionId).first();
 
-    if (!session || !session.batch_id) return;
+    if (!session) return;
 
     const batch: any = await env.DB.prepare(
-      "SELECT no_show_charge_rupees FROM Batches WHERE id = ?"
+      "SELECT ROUND(no_show_charge_paise / 100.0, 2) AS no_show_charge_rupees FROM Batches WHERE id = ?"
     ).bind(session.batch_id).first();
 
     const chargeAmount = batch?.no_show_charge_rupees ?? 2;
@@ -6968,7 +7010,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     } else {
       enrolledStudents = await env.DB.prepare(
         `SELECT DISTINCT e.user_id FROM Enrollments e
-         WHERE e.course_id = ? AND e.status IN ('active', 'completed')`
+         WHERE e.course_id = ? AND e.batch_id IS NULL AND e.status IN ('active', 'completed')`
       ).bind(session.course_id).all();
     }
 
@@ -7019,9 +7061,9 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
     for (const { userId } of pendingCharges) {
       const insertResult = await env.DB.prepare(
         `INSERT OR IGNORE INTO PendingCharges
-         (id, user_id, amount_rupees, reason, reference_type, reference_id, status)
+         (id, user_id, amount_paise, reason, reference_type, reference_id, status)
          VALUES (?, ?, ?, 'no_show_charge', 'live_session', ?, 'pending')`
-      ).bind(generateCustomId("YA-PCH"), userId, chargeAmount, sessionId).run();
+      ).bind(generateCustomId("YA-PCH"), userId, inrToPaise(chargeAmount), sessionId).run();
 
       // changes === 0 means a duplicate was ignored — another call already inserted
       if ((insertResult as any)?.meta?.changes === 0) continue;
@@ -7044,7 +7086,7 @@ async function chargeNoShowStudents(env: Env, sessionId: string): Promise<void> 
 async function deductPendingChargesOnTopup(env: Env, userId: string): Promise<void> {
   try {
     const pendingCharges: any = await env.DB.prepare(
-      "SELECT id, amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
+      "SELECT id, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM PendingCharges WHERE user_id = ? AND status = 'pending' ORDER BY created_at ASC"
     ).bind(userId).all();
 
     if (!pendingCharges.results?.length) return;
@@ -9358,8 +9400,8 @@ async function handleGetMyCourses(
     let results;
     try {
       const res = await env.DB.prepare(`
-        SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -9370,7 +9412,7 @@ async function handleGetMyCourses(
     } catch (e: any) {
       if (e.message?.toLowerCase().includes('no such column')) {
         const res = await env.DB.prepare(`
-          SELECT c.*, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
+          SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.id as enrollment_id, e.payment_status, e.payment_source, e.amount_paid, e.status as enrollment_status, e.progress,
                  0 as min_live_class_credit_cost
           FROM Enrollments e
           JOIN Courses c ON e.course_id = c.id
@@ -9552,13 +9594,7 @@ async function handleUpdateProfile(
       )
       .run();
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "profile_updated",
-      entity: "user",
-      data: { updated: true },
-    });
+    await broadcastToUser(env, payload.sub, "user", { updated: true });
 
     return new Response(
       JSON.stringify({
@@ -9630,13 +9666,7 @@ async function handleMarkNotificationRead(
         .run();
     }
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "notifications_read",
-      entity: "notification",
-      data: { all: !id, id },
-    });
+    await broadcastToUser(env, payload.sub, "notification", { all: !id, id });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -9857,7 +9887,7 @@ async function ensureCourseMerchantAccess(env: Env, userAuth: any, courseId: str
 
 async function getCourseMerchantRecord(env: Env, courseId: string) {
   return await env.DB.prepare(
-    `SELECT c.*, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
+    `SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, ml.id as merchant_listing_id, ml.sync_enabled, ml.offer_id,
             ml.product_resource_name, ml.data_source_name, ml.content_language, ml.feed_label, ml.target_country,
             ml.currency, ml.availability, ml.condition, ml.brand, ml.google_product_category, ml.image_url,
             ml.landing_url, ml.sync_status, ml.sync_error, ml.last_synced_at
@@ -10796,8 +10826,8 @@ async function handleListCourses(
     try {
       const res = await env.DB.prepare(
         `
-        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         ORDER BY c.created_at DESC
@@ -10808,7 +10838,7 @@ async function handleListCourses(
       if (dbError.message && dbError.message.includes("no such column")) {
         const res = await env.DB.prepare(
           `
-          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, c.price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, c.wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, c.teacher_id, cat.name as category_name,
+          SELECT c.id, c.title, c.title_hi, c.description, c.description_hi, ROUND(c.price_paise / 100.0, 2) AS price_rupees, c.price_usd, c.thumbnail_url, c.self_study_enabled, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, c.self_study_only, c.individual_class_booking_enabled, c.individual_class_duration_minutes, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, c.teacher_id, cat.name as category_name,
                  0 as min_live_class_credit_cost
           FROM Courses c
           LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -10835,7 +10865,7 @@ async function handleGetCourse(
   courseId: string,
 ): Promise<Response> {
   try {
-    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+    const course = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
       .bind(courseId)
       .first();
     if (!course)
@@ -10911,7 +10941,7 @@ async function handleGetBook(
   bookId: string,
 ): Promise<Response> {
   try {
-    const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
+    const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?")
       .bind(bookId)
       .first();
     if (!book)
@@ -10928,7 +10958,7 @@ async function handleGetBook(
          WHERE l.book_id = ? ORDER BY l.order_index ASC`,
       ).bind(bookId).all(),
       env.DB.prepare(
-        "SELECT c.*, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
+        "SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cb.order_index as link_order FROM Courses c JOIN CourseBooks cb ON c.id = cb.course_id WHERE cb.book_id = ? ORDER BY cb.order_index ASC",
       ).bind(bookId).all(),
     ]);
 
@@ -11010,8 +11040,8 @@ async function handleListPublicBooks(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, title, title_hi, description, description_hi, price_rupees,
-              thumbnail_url, self_study_enabled, wallet_rupees,
+      `SELECT id, title, title_hi, description, description_hi, ROUND(price_paise / 100.0, 2) AS price_rupees,
+              thumbnail_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees,
               is_standalone
        FROM Books
        ORDER BY created_at DESC`,
@@ -11033,7 +11063,7 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     // Single book fetch — used by [bookId] page to get title
     if (id) {
-      const book = await env.DB.prepare("SELECT id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
+      const book = await env.DB.prepare("SELECT id, title, description, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi, description_hi, created_at FROM Books WHERE id = ?").bind(id).first();
       if (!book) {
         return new Response(JSON.stringify({ error: "Book not found" }), {
           status: 404,
@@ -11049,8 +11079,8 @@ async function handleAdminListBooks(request: Request, env: Env, bookId?: string)
 
     const [rows, countRes] = await Promise.all([
       env.DB.prepare(`
-        SELECT id, title, price_rupees, price_usd, thumbnail_url,
-               is_standalone, self_study_enabled, wallet_rupees, title_hi,
+        SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url,
+               is_standalone, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, title_hi,
                created_at
         FROM Books
         ORDER BY created_at DESC
@@ -11092,20 +11122,22 @@ async function handleAdminCreateBook(request: Request, env: Env): Promise<Respon
     }
 
     const id = generateCustomId("YA-BOK");
-    const bookCost = normalizeNonNegativeInt(body.wallet_rupees);
+    const bookCost = normalizeAmountRupees(body.wallet_rupees);
+    const bookPricePaise = inrToPaise(normalizeAmountRupees(body.price_rupees));
+    const bookWalletPaise = inrToPaise(bookCost);
     await env.DB.prepare(
-      "INSERT INTO Books (id, title, description, price_rupees, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_rupees) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO Books (id, title, description, price_paise, price_usd, thumbnail_url, is_standalone, self_study_enabled, wallet_paise) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         id,
         body.title.trim(),
         body.description || '',
-        normalizeNonNegativeInt(body.price_rupees),
+        bookPricePaise,
         normalizeNonNegativeInt(body.price_usd),
         body.thumbnail_url || null,
         body.is_standalone ? 1 : 0,
         body.self_study_enabled ? 1 : 0,
-        bookCost,
+        bookWalletPaise,
       ).run();
     return new Response(JSON.stringify({ success: true, id }), {
       headers: { ...(await getCORSHeaders(request, env)), "Content-Type": "application/json" },
@@ -11134,24 +11166,26 @@ async function handleAdminUpdateBook(request: Request, env: Env, bookId: string)
       });
     }
 
-    const updateBookCost = body.wallet_rupees != null ? normalizeNonNegativeInt(body.wallet_rupees) : null;
+    const updateBookCost = body.wallet_rupees != null ? normalizeAmountRupees(body.wallet_rupees) : null;
 
     const existingBook: any = await env.DB.prepare(
       "SELECT thumbnail_url FROM Books WHERE id = ?"
     ).bind(bookId).first();
 
+    const updBookPricePaise = body.price_rupees != null ? inrToPaise(normalizeAmountRupees(body.price_rupees)) : null;
+    const updBookWalletPaise = updateBookCost != null ? inrToPaise(updateBookCost) : null;
     await env.DB.prepare(
-      "UPDATE Books SET title = ?, description = ?, price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_rupees = COALESCE(?, wallet_rupees) WHERE id = ?"
+      "UPDATE Books SET title = ?, description = ?, price_paise = COALESCE(?, price_paise), price_usd = COALESCE(?, price_usd), thumbnail_url = COALESCE(?, thumbnail_url), is_standalone = COALESCE(?, is_standalone), self_study_enabled = COALESCE(?, self_study_enabled), wallet_paise = COALESCE(?, wallet_paise) WHERE id = ?"
     )
       .bind(
         body.title.trim(),
         body.description || '',
-        body.price_rupees != null ? normalizeNonNegativeInt(body.price_rupees) : null,
+        updBookPricePaise,
         body.price_usd != null ? normalizeNonNegativeInt(body.price_usd) : null,
         body.thumbnail_url ?? null,
         body.is_standalone != null ? (body.is_standalone ? 1 : 0) : null,
         body.self_study_enabled != null ? (body.self_study_enabled ? 1 : 0) : null,
-        updateBookCost,
+        updBookWalletPaise,
         bookId,
       ).run();
 
@@ -11415,7 +11449,7 @@ async function handleAdminGetCourseBooks(request: Request, env: Env, courseId: s
   try {
     await requireAdminOrTeacher(request, env);
     const { results } = await env.DB.prepare(
-      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+      "SELECT b.*, ROUND(b.price_paise / 100.0, 2) AS price_rupees, ROUND(b.wallet_paise / 100.0, 2) AS wallet_rupees, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -11449,7 +11483,7 @@ async function handleAdminUnlinkBookFromCourse(request: Request, env: Env, cours
 async function handleListCourseBooks(request: Request, env: Env, courseId: string): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      "SELECT b.*, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
+      "SELECT b.*, ROUND(b.price_paise / 100.0, 2) AS price_rupees, ROUND(b.wallet_paise / 100.0, 2) AS wallet_rupees, cb.order_index FROM Books b JOIN CourseBooks cb ON b.id = cb.book_id WHERE cb.course_id = ? ORDER BY cb.order_index ASC"
     ).bind(courseId).all();
     return new Response(JSON.stringify({ books: results }), { headers: await getCORSHeaders(request, env) });
   } catch (error) {
@@ -11502,7 +11536,7 @@ async function handleListLessons(
                 trialExpired = false;
                 isPaid = true;
               }
-              const courseRes: any = await env.DB.prepare("SELECT trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
+              const courseRes: any = await env.DB.prepare("SELECT ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees FROM Courses WHERE id = ?").bind(courseId).first();
               if (courseRes && courseRes.trial_upgrade_price_rupees !== null) {
                 trialUpgradePrice = courseRes.trial_upgrade_price_rupees;
               }
@@ -11673,7 +11707,7 @@ async function handleGetLesson(
     }
 
     const course: any = resolvedCourseId
-      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
+      ? await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?")
         .bind(resolvedCourseId)
         .first()
       : null;
@@ -12228,13 +12262,7 @@ async function handleAdminCreateLesson(
     }
 
     if (ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-        type: "data",
-        channel: `course:${courseId}`,
-        action: "lesson_added",
-        entity: "lesson",
-        data: { courseId, lessonId, title: body.title },
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: body.title }));
     }
 
     return new Response(JSON.stringify({ success: true, id: lessonId, analysisQueued }), {
@@ -12735,13 +12763,7 @@ async function handleAdminUpdateLesson(
     }
 
     if (ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-        type: "data",
-        channel: `course:${courseId}`,
-        action: "lesson_updated",
-        entity: "lesson",
-        data: { courseId, lessonId, title: lessonTitle },
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "lesson", { courseId, lessonId, title: lessonTitle }));
     }
 
     return new Response(JSON.stringify({ success: true, analysisQueued }), {
@@ -13468,7 +13490,7 @@ async function handleFormResponseSubmit(
     let courseInfo: any = null;
     if (template.linked_course_id) {
       courseInfo = await env.DB.prepare(
-        "SELECT title, price_rupees FROM Courses WHERE id = ?",
+        "SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?",
       )
         .bind(template.linked_course_id)
         .first();
@@ -13741,8 +13763,8 @@ async function handleEndLiveSession(
       await env.DB.prepare(
         `
         UPDATE Subscriptions
-        SET live_class_amount_rupees = MAX(0, live_class_amount_rupees - COALESCE(
-          (SELECT cost_per_class_rupees FROM LiveSessions ls
+        SET live_class_amount_paise = MAX(0, COALESCE(live_class_amount_paise, 0) - COALESCE(
+          (SELECT b.cost_per_class_paise FROM LiveSessions ls
            LEFT JOIN Batches b ON ls.batch_id = b.id
            WHERE ls.id = ?),
           0
@@ -13751,7 +13773,7 @@ async function handleEndLiveSession(
           SELECT id
           FROM Subscriptions s1
           WHERE s1.status = 'active'
-          AND s1.live_class_amount_rupees > 0
+          AND s1.live_class_amount_paise > 0
           AND s1.user_id IN (SELECT user_id FROM Attendance WHERE session_id = ?)
           AND (SELECT COALESCE(p.live_session_access, 0) FROM SubscriptionPlans p WHERE p.id = s1.plan_id) = 0
           AND s1.created_at = (
@@ -13815,13 +13837,7 @@ async function handleEndLiveSession(
     }
 
     if (session && session.course_id && ctx) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, session.course_id, {
-        type: "data",
-        channel: `course:${session.course_id}`,
-        action: "live_session_ended",
-        entity: "live_session",
-        data: { sessionId: session.id, courseId: session.course_id, status: "ended" }
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, session.course_id, "live_session", { sessionId: session.id, courseId: session.course_id, status: "ended" }));
     }
 
     return new Response(
@@ -14430,8 +14446,8 @@ async function handleListLiveSessions(
       `SELECT ls.*, c.self_study_enabled,
               (SELECT COUNT(*) FROM Attendance WHERE session_id = ls.id AND left_at IS NULL) as active_student_count,
               COALESCE(
-                NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
-                (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0),
+                (SELECT MIN(NULLIF(ROUND(COALESCE(fallback_b.cost_per_class_paise, 0) / 100.0, 2), 0))
                  FROM Batches fallback_b
                  WHERE fallback_b.course_id = ls.course_id
                    AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -14442,8 +14458,8 @@ async function handleListLiveSessions(
                 WHEN c.self_study_enabled = 1
                  AND COALESCE(b.self_study_group_enabled, 1) = 1
                  AND COALESCE(
-                   NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0),
-                   (SELECT MIN(NULLIF(COALESCE(fallback_b.cost_per_class_rupees, 0), 0))
+                   NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0),
+                   (SELECT MIN(NULLIF(ROUND(COALESCE(fallback_b.cost_per_class_paise, 0) / 100.0, 2), 0))
                     FROM Batches fallback_b
                     WHERE fallback_b.course_id = ls.course_id
                       AND COALESCE(fallback_b.self_study_group_enabled, 1) = 1
@@ -14482,8 +14498,8 @@ async function handleGetDashboardData(
       // 1. Enrolled Courses
       env.DB.prepare(
         `
-        SELECT c.*, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name, e.progress, e.status as enrollment_status, e.payment_status, e.payment_source, e.amount_paid,
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Enrollments e
         JOIN Courses c ON e.course_id = c.id
         LEFT JOIN Categories cat ON c.category_id = cat.id
@@ -14497,8 +14513,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -14515,8 +14531,8 @@ async function handleGetDashboardData(
         `
         SELECT ls.*, c.title as course_title, c.title_hi as course_title_hi, c.id as course_id,
                c.self_study_enabled,
-               COALESCE(b.cost_per_class_rupees, 0) as required_self_study_credits,
-               CASE WHEN c.self_study_enabled = 1 AND COALESCE(b.cost_per_class_rupees, 0) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
+               ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as required_self_study_credits,
+               CASE WHEN c.self_study_enabled = 1 AND ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) > 0 THEN 1 ELSE 0 END as live_join_requires_credits
         FROM LiveSessions ls
         JOIN Courses c ON ls.course_id = c.id
         LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -14531,8 +14547,8 @@ async function handleGetDashboardData(
       // 4. Available Courses (Not enrolled)
       env.DB.prepare(
         `
-        SELECT c.*, cat.name as category_name,
-               COALESCE((SELECT MIN(NULLIF(COALESCE(b.cost_per_class_rupees, 0), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
+        SELECT c.*, ROUND(c.price_paise / 100.0, 2) AS price_rupees, ROUND(c.wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(c.individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, ROUND(c.trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, cat.name as category_name,
+               COALESCE((SELECT MIN(NULLIF(ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2), 0)) FROM Batches b WHERE b.course_id = c.id AND COALESCE(b.self_study_group_enabled, 1) = 1 AND b.status != 'completed'), 0) as min_live_class_credit_cost
         FROM Courses c
         LEFT JOIN Categories cat ON c.category_id = cat.id
         WHERE c.id NOT IN (SELECT course_id FROM Enrollments WHERE user_id = ? AND course_id IS NOT NULL)
@@ -14544,8 +14560,8 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
-               bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
-               bo.wallet_rupees, bo.is_standalone, bo.created_at,
+               ROUND(bo.price_paise / 100.0, 2) AS price_rupees, bo.thumbnail_url, bo.self_study_enabled,
+               ROUND(bo.wallet_paise / 100.0, 2) AS wallet_rupees, bo.is_standalone, bo.created_at,
                MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
@@ -14588,15 +14604,34 @@ function normalizeNonNegativeInt(value: any, fallback = 0): number {
 }
 
 // Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
+// Round a rupee amount to exactly 2 decimal places (prevents floating-point drift)
 function roundToTwo(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
+
+// Normalize a rupee amount, preserving up to 2 decimals (rejects negatives).
+// Use this for rupee price/cost/amount inputs. Do NOT use normalizeNonNegativeInt for
+// rupee values - it parseInt-floors decimals (e.g. 499.99 -> 499, 0.50 -> 0). #675
+function normalizeAmountRupees(value: any): number {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+export function rupeesToPaise(rupees: any): number {
+  return Math.round((Number(rupees) || 0) * 100);
+}
+
+export function paiseToRupees(paise: any): number {
+  return Math.round(Number(paise) || 0) / 100;
+}
+
 
 const FIFTEEN_MIN_SECONDS = 900; // 15 * 60
 
 function normalizeGroupClassCreditUnit(value: any): string {
   const unit = String(value || "fifteen_minute");
-  const valid = ["fifteen_minute", "per_class", "monthly"];
+  const valid = ["fifteen_minute", "per_class", "monthly", "per_minute"];
   return valid.includes(unit) ? unit : "fifteen_minute";
 }
 
@@ -14609,6 +14644,16 @@ function calculateGroupClassCredits(rate: any, attendedMinutes?: any): number {
   return roundToTwo(costPaise / 100);
 }
 
+// Integer-paise variant: returns the charge in paise (single rounding, no float drift). #675
+export function calculateGroupClassCreditsPaise(rateRupees: any, attendedMinutes?: any): number {
+  const safeRate = normalizeNonNegativeInt(rateRupees);
+  if (safeRate <= 0) return 0;
+  const minutes = Math.max(0, normalizeNonNegativeInt(attendedMinutes, 0));
+  if (minutes === 0) return 0;
+  return Math.round((safeRate * minutes * 100) / 15);
+}
+
+
 function calculateMaxAttendMinutes(balance: number, rate: any): number {
   const safeRate = normalizeNonNegativeInt(rate);
   if (safeRate <= 0) return -1;
@@ -14620,18 +14665,73 @@ function getUnitSeconds(): number {
   return FIFTEEN_MIN_SECONDS;
 }
 
-async function getWalletBalance(env: Env, userId: string): Promise<{ balance_rupees: number; lifetime_deposits_rupees: number; lifetime_withdrawals_rupees: number }> {
+async function getWalletBalance(env: Env, userId: string): Promise<{ balance_paise: number; balance_rupees: number; lifetime_deposits_paise: number; lifetime_deposits_rupees: number; lifetime_withdrawals_paise: number; lifetime_withdrawals_rupees: number }> {
+  // Integer paise is the source of truth; rupees are derived from paise (#675).
   const wallet = (await env.DB.prepare(
-    `SELECT balance_rupees, lifetime_deposits_rupees, lifetime_withdrawals_rupees FROM CreditWallets WHERE user_id = ?`,
+    `SELECT balance_paise, lifetime_deposits_paise, lifetime_withdrawals_paise FROM CreditWallets WHERE user_id = ?`,
   )
     .bind(userId)
     .first()) as any;
 
+  const balancePaise = Number(wallet?.balance_paise ?? 0) || 0;
+  const depositsPaise = Number(wallet?.lifetime_deposits_paise ?? 0) || 0;
+  const withdrawalsPaise = Number(wallet?.lifetime_withdrawals_paise ?? 0) || 0;
+
   return {
-    balance_rupees: Number(wallet?.balance_rupees || 0),
-    lifetime_deposits_rupees: Number(wallet?.lifetime_deposits_rupees || 0),
-    lifetime_withdrawals_rupees: Number(wallet?.lifetime_withdrawals_rupees || 0),
+    balance_paise: balancePaise,
+    balance_rupees: paiseToRupees(balancePaise),
+    lifetime_deposits_paise: depositsPaise,
+    lifetime_deposits_rupees: paiseToRupees(depositsPaise),
+    lifetime_withdrawals_paise: withdrawalsPaise,
+    lifetime_withdrawals_rupees: paiseToRupees(withdrawalsPaise),
   };
+}
+
+async function addToWalletPaise(
+  env: Env,
+  userId: string,
+  amountPaise: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ balance_paise: number; balance_rupees: number }> {
+  const safePaise = Math.max(0, Math.round(Number(amountPaise) || 0));
+  if (safePaise <= 0) return await getWalletBalance(env, userId);
+
+  const walletId = generateCustomId("YA-CRW");
+  const ledgerId = generateCustomId("YA-CRL");
+  const amountRupees = paiseToRupees(safePaise);
+
+  // Integer paise is the source of truth; the legacy REAL *_rupees columns are derived
+  // from paise so existing readers keep working during the migration (#675).
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id) DO UPDATE SET
+         balance_paise = balance_paise + ?,
+         lifetime_deposits_paise = lifetime_deposits_paise + ?,
+                           updated_at = CURRENT_TIMESTAMP`,
+    ).bind(walletId, userId, safePaise, safePaise, safePaise, safePaise),
+    env.DB.prepare(
+      `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+       LIMIT 1`,
+    ).bind(ledgerId, userId, safePaise, userId, reason, referenceType || null, referenceId || null),
+  ]);
+
+  await deductPendingChargesOnTopup(env, userId);
+
+  const current = await getWalletBalance(env, userId);
+
+  // Broadcast so all open client sessions stay in sync.
+  try {
+    await broadcastToUser(env, userId, "wallet", { balance_rupees: current.balance_rupees, balance_paise: current.balance_paise });
+  } catch (e) {
+    console.error("[addToWallet] broadcast failed:", e);
+  }
+
+  return { balance_paise: current.balance_paise, balance_rupees: current.balance_rupees };
 }
 
 async function addToWallet(
@@ -14641,44 +14741,49 @@ async function addToWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ balance_rupees: number }> {
-  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
-  if (safeAmount <= 0) return await getWalletBalance(env, userId);
+): Promise<{ balance_paise: number; balance_rupees: number }> {
+  return addToWalletPaise(env, userId, rupeesToPaise(amountInr), reason, referenceType, referenceId);
+}
 
-  const walletId = generateCustomId("YA-CRW");
+async function deductFromWalletPaise(
+  env: Env,
+  userId: string,
+  amountPaise: number,
+  reason: string,
+  referenceType?: string,
+  referenceId?: string,
+): Promise<{ ok: boolean; balance_paise: number; balance_rupees: number }> {
+  const safePaise = Math.max(0, Math.round(Number(amountPaise) || 0));
+  const before = await getWalletBalance(env, userId);
+  if (safePaise <= 0) return { ok: true, balance_paise: before.balance_paise, balance_rupees: before.balance_rupees };
+
+  // Atomic batch so wallet debit and ledger insert succeed or fail together - no inconsistent state.
   const ledgerId = generateCustomId("YA-CRL");
-
-  // Execute wallet update and ledger insert atomically via batch (D1 runs batch within a transaction).
-  // The balance_after is read from the same CreditWallets row updated by the first statement.
-  await env.DB.batch([
+  const amountRupees = paiseToRupees(safePaise);
+  const batchResult = await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(user_id) DO UPDATE SET
-         balance_rupees = ROUND(balance_rupees + ?, 2),
-         lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
-         updated_at = CURRENT_TIMESTAMP`,
-    ).bind(walletId, userId, safeAmount, safeAmount, safeAmount, safeAmount),
+      `UPDATE CreditWallets
+       SET balance_paise = balance_paise - ?,
+           lifetime_withdrawals_paise = lifetime_withdrawals_paise + ?,
+                                 updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND balance_paise >= ?`,
+    ).bind(safePaise, safePaise, userId, safePaise),
     env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ?
+      `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+       SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ?
        LIMIT 1`,
-    ).bind(
-      ledgerId,
-      userId,
-      safeAmount,
-      userId,
-      reason,
-      referenceType || null,
-      referenceId || null,
-    ),
+    ).bind(ledgerId, userId, -safePaise, userId, reason, referenceType || null, referenceId || null),
   ]);
 
-  const currentBalance = roundToTwo(Number((await getWalletBalance(env, userId)).balance_rupees));
+  // Check if the UPDATE actually changed a row (sufficient balance)
+  const walletResult = batchResult[0] as any;
+  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
+    return { ok: false, balance_paise: before.balance_paise, balance_rupees: before.balance_rupees };
+  }
 
-  await deductPendingChargesOnTopup(env, userId);
-
-  return { balance_rupees: currentBalance };
+  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
+  const after = await getWalletBalance(env, userId);
+  return { ok: true, balance_paise: after.balance_paise, balance_rupees: after.balance_rupees };
 }
 
 async function deductFromWallet(
@@ -14688,44 +14793,8 @@ async function deductFromWallet(
   reason: string,
   referenceType?: string,
   referenceId?: string,
-): Promise<{ ok: boolean; balance_rupees: number }> {
-  const safeAmount = roundToTwo(Math.max(0, Number(amountInr) || 0));
-  const before = await getWalletBalance(env, userId);
-  if (safeAmount <= 0) return { ok: true, balance_rupees: before.balance_rupees };
-
-  // 🔴 FIX: Use atomic batch (like addToWallet) so wallet debit and ledger
-  // insert succeed or fail together — no inconsistent state.
-  const ledgerId = generateCustomId("YA-CRL");
-  const batchResult = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE CreditWallets
-       SET balance_rupees = ROUND(balance_rupees - ?, 2), lifetime_withdrawals_rupees = ROUND(lifetime_withdrawals_rupees + ?, 2), updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ? AND balance_rupees >= ?`,
-    ).bind(safeAmount, safeAmount, userId, safeAmount),
-    env.DB.prepare(
-      `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-       SELECT ?, ?, ?, ROUND((SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), 2), ?, ?, ?
-       LIMIT 1`,
-    ).bind(
-      ledgerId,
-      userId,
-      -safeAmount,
-      userId,
-      reason,
-      referenceType || null,
-      referenceId || null,
-    ),
-  ]);
-
-  // Check if the UPDATE actually changed a row (sufficient balance)
-  const walletResult = batchResult[0] as any;
-  if (!walletResult || (walletResult.meta?.changes ?? 0) === 0) {
-    return { ok: false, balance_rupees: before.balance_rupees };
-  }
-
-  // Fetch the authoritative balance after the atomic UPDATE (not computed from stale `before`)
-  const after = await getWalletBalance(env, userId);
-  return { ok: true, balance_rupees: after.balance_rupees };
+): Promise<{ ok: boolean; balance_paise: number; balance_rupees: number }> {
+  return deductFromWalletPaise(env, userId, rupeesToPaise(amountInr), reason, referenceType, referenceId);
 }
 
 // ==========================================================
@@ -14762,6 +14831,58 @@ async function clearPrepaidSeconds(env: Env, userId: string, sessionId: string):
     .run();
 }
 
+
+async function acquireLiveChargeLock(env: Env, sessionId: string, userId: string, staleMinutes = 5): Promise<boolean> {
+  const nowIso = new Date().toISOString();
+
+  try {
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO CreditChargeLocks (session_id, user_id, locked_at) VALUES (?, ?, ?)`
+    ).bind(sessionId, userId, nowIso).run();
+
+    if (inserted.meta?.changes === 1) {
+      return true;
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT locked_at FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).first() as any;
+
+    if (!existing || !existing.locked_at) {
+      return false;
+    }
+
+    const rawTs = existing.locked_at;
+    const normalizedTs = rawTs.endsWith('Z') ? rawTs : `${rawTs}Z`;
+    const lockAgeMinutes = (Date.now() - new Date(normalizedTs).getTime()) / 60000;
+
+    if (lockAgeMinutes <= staleMinutes) {
+      return false;
+    }
+
+    const takeover = await env.DB.prepare(
+      `UPDATE CreditChargeLocks
+       SET locked_at = ?
+       WHERE session_id = ? AND user_id = ? AND locked_at = ?`
+    ).bind(nowIso, sessionId, userId, rawTs).run();
+
+    return takeover.meta?.changes === 1;
+  } catch (err: any) {
+    console.error('[Live.Charge] acquireLiveChargeLock failed', err);
+    throw err;
+  }
+}
+
+async function releaseLiveChargeLock(env: Env, sessionId: string, userId: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `DELETE FROM CreditChargeLocks WHERE session_id = ? AND user_id = ?`
+    ).bind(sessionId, userId).run();
+  } catch (err) {
+    console.error('[Live.Charge] releaseLiveChargeLock failed', err);
+  }
+}
+
 async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: string): Promise<number> {
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(
@@ -14776,12 +14897,13 @@ async function getTotalAttendedSeconds(env: Env, userId: string, sessionId: stri
 }
 
 async function getCreditsChargedForSession(env: Env, userId: string, sessionId: string): Promise<number> {
+  // Sums change_paise - returns the total charged for this live session in integer paise (#675).
   const row = (await env.DB.prepare(
     `SELECT COALESCE(SUM(
       CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking')
-           THEN ABS(change_rupees)
+           THEN ABS(change_paise)
            WHEN reason = 'live_class_refund'
-           THEN -ABS(change_rupees)
+           THEN -ABS(change_paise)
            ELSE 0
       END
     ), 0) as total_charged
@@ -14881,15 +15003,15 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
     const analyticsUserId = targetUserId && isAdmin ? targetUserId : payload.sub;
 
     const totalUsed = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0`,
+      `SELECT COALESCE(ROUND(SUM(ABS(change_paise)) / 100.0, 2), 0) as total_used FROM CreditLedger WHERE user_id = ? AND change_paise < 0`,
     ).bind(analyticsUserId).first()) as any;
 
     const monthlyUsage = (await env.DB.prepare(
-      `SELECT COALESCE(SUM(ABS(change_rupees)), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_rupees < 0 AND created_at >= date('now', 'start of month')`,
+      `SELECT COALESCE(ROUND(SUM(ABS(change_paise)) / 100.0, 2), 0) as monthly_used FROM CreditLedger WHERE user_id = ? AND change_paise < 0 AND created_at >= date('now', 'start of month')`,
     ).bind(analyticsUserId).first()) as any;
 
     const history = (await env.DB.prepare(
-      `SELECT change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `SELECT ROUND(change_paise / 100.0, 2) AS change_rupees, reason, created_at FROM CreditLedger WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     ).bind(analyticsUserId).all()) as any;
 
     const walletBalance = await getWalletBalance(env, analyticsUserId);
@@ -14913,14 +15035,14 @@ async function handleCreditsAnalytics(request: Request, env: Env): Promise<Respo
 async function handleCreditPacks(request: Request, env: Env, adminMode = false): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const id = url.pathname.split("/").pop();
+    const id = url.pathname.match(/\/api\/admin\/credit-packs\/([^/]+)\/?$/)?.[1] ?? "";
 
     if (adminMode) await requireAdmin(request, env);
 
     if (request.method === "GET") {
       const query = adminMode
-        ? `SELECT * FROM CreditPacks ORDER BY created_at DESC`
-        : `SELECT * FROM CreditPacks WHERE is_active = 1 ORDER BY amount_rupees ASC`;
+        ? `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks ORDER BY created_at DESC`
+        : `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks WHERE is_active = 1 ORDER BY amount_paise ASC`;
       const { results } = await env.DB.prepare(query).all();
       return new Response(JSON.stringify({ packs: results || [] }), {
         status: 200,
@@ -14933,19 +15055,19 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     if (request.method === "POST") {
       const body = (await request.json()) as any;
       const packId = generateCustomId("YA-CRP");
-      const amountInr = normalizeNonNegativeInt(body.amount_rupees);
+      const amountInr = normalizeAmountRupees(body.amount_rupees);
       if (!body.name || amountInr <= 0) {
         return new Response(JSON.stringify({ error: "Name and amount_rupees are required" }), { status: 400 });
       }
       await env.DB.prepare(
-        `INSERT INTO CreditPacks (id, name, description, amount_rupees, is_active)
+        `INSERT INTO CreditPacks (id, name, description, amount_paise, is_active)
          VALUES (?, ?, ?, ?, ?)`,
       )
         .bind(
           packId,
           body.name,
           body.description || null,
-          amountInr,
+          inrToPaise(amountInr),
           body.is_active === 0 ? 0 : 1,
         )
         .run();
@@ -14953,8 +15075,7 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
     }
 
     if (request.method === "PUT") {
-      const updateId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
-      if (!updateId) {
+      if (!id) {
         return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
       }
       const body = (await request.json()) as any;
@@ -14962,27 +15083,26 @@ async function handleCreditPacks(request: Request, env: Env, adminMode = false):
         `UPDATE CreditPacks SET
           name = COALESCE(?, name),
           description = COALESCE(?, description),
-          amount_rupees = COALESCE(?, amount_rupees),
+          amount_paise = COALESCE(?, amount_paise),
           is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
         .bind(
           body.name || null,
           body.description ?? null,
-          body.amount_rupees == null ? null : normalizeNonNegativeInt(body.amount_rupees),
+          body.amount_rupees == null ? null : inrToPaise(normalizeAmountRupees(body.amount_rupees)),
           body.is_active == null ? null : body.is_active === 1 || body.is_active === true ? 1 : 0,
-          updateId,
+          id,
         )
         .run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
     if (request.method === "DELETE") {
-      const deleteId = url.pathname.match(/\/api\/credits\/packs\/([^/]+)$/)?.[1];
-      if (!deleteId) {
+      if (!id) {
         return new Response(JSON.stringify({ error: "Credit pack ID is required in URL path" }), { status: 400 });
       }
-      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(deleteId).run();
+      await env.DB.prepare(`DELETE FROM CreditPacks WHERE id = ?`).bind(id).run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
@@ -14999,7 +15119,9 @@ async function getGroupClassCreditPolicy(env: Env, sessionId: string): Promise<a
   return (await env.DB.prepare(
     `SELECT ls.id, ls.batch_id, COALESCE(c.self_study_enabled, 0) as self_study_enabled, c.self_study_only,
             COALESCE(b.self_study_group_enabled, 1) as self_study_group_enabled,
-            COALESCE(b.cost_per_class_rupees, 0) as cost_per_class_rupees
+            ROUND(COALESCE(b.cost_per_class_paise, 0) / 100.0, 2) as cost_per_class_rupees,
+            ROUND(COALESCE(b.live_class_cost_per_minute_paise, 0) / 100.0, 2) as live_class_cost_per_minute_rupees,
+            b.live_class_credit_unit
      FROM LiveSessions ls
      JOIN Courses c ON c.id = ls.course_id
      LEFT JOIN Batches b ON b.id = ls.batch_id
@@ -15015,32 +15137,79 @@ async function chargeSelfStudyGroupClassIfNeeded(
   sessionId: string,
 ): Promise<{ allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string }> {
   const session = await getGroupClassCreditPolicy(env, sessionId);
+  const wallet = await getWalletBalance(env, userId);
 
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) {
-    const wallet = await getWalletBalance(env, userId);
     return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
   }
 
   const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
-  const wallet = await getWalletBalance(env, userId);
-  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
-  
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
+
   if (rate <= 0) return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
 
   const prepaid = await getPrepaidSeconds(env, userId, sessionId);
-  const prepaidMinutes = Math.floor(prepaid / 60);
-
-  if (prepaid > 0) {
-    const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
-    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: totalMaxMinutes };
-  }
-
   const openAttendance = await env.DB.prepare(
     `SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
   )
     .bind(sessionId, userId)
     .first();
-  if (openAttendance) {
+  const alreadyChargedForSession = prepaid > 0 || openAttendance;
+
+  // Flat per-class pricing: charge once on join, do not reconcile by duration.
+  if (creditUnit === "per_class") {
+    if (alreadyChargedForSession) {
+      return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: -1 };
+    }
+
+    const deduction = await deductFromWallet(
+      env,
+      userId,
+      rate,
+      "live_class_join",
+      "live_session",
+      sessionId,
+    );
+
+    if (!deduction.ok) {
+      return {
+        allowed: false,
+        requiredAmount: rate,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `इस flat-rate live class में जुड़ने के लिए ₹${rate} अनिवार्य हैं। कृपया balance recharge करें।`,
+      };
+    }
+
+    // Mark session as paid so rejoins do not double-charge.
+    await setPrepaidSeconds(env, userId, sessionId, 24 * 3600);
+    return { allowed: true, requiredAmount: rate, availableBalance: deduction.balance_rupees, maxMinutes: -1 };
+  }
+
+  // Exact time-based ("per_minute") pricing: charge only for actual attended time on leave/end.
+  if (creditUnit === "per_minute") {
+    const paidValue = (prepaid / FIFTEEN_MIN_SECONDS) * rate;
+    const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+    const maxMinutes = Math.round(prepaid / 60) + Math.max(0, affordableMinutes);
+
+    if (wallet.balance_rupees + paidValue <= 0) {
+      return {
+        allowed: false,
+        requiredAmount: 0,
+        availableBalance: wallet.balance_rupees,
+        maxMinutes: 0,
+        message: `Wallet mein balance khatam ho gaya hai. Kripya recharge karein.`,
+      };
+    }
+
+    return { allowed: true, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes, message: "" };
+  }
+
+  // fifteen_minute / monthly pricing (default 15-minute block behaviour)
+  const affordableMinutes = calculateMaxAttendMinutes(wallet.balance_rupees, rate);
+  const prepaidMinutes = Math.floor(prepaid / 60);
+
+  if (alreadyChargedForSession) {
     const totalMaxMinutes = prepaidMinutes + Math.max(0, affordableMinutes);
     if (totalMaxMinutes <= 0) {
       return { allowed: false, requiredAmount: 0, availableBalance: wallet.balance_rupees, maxMinutes: 0, message: 'Balance khatam ho gaya hai. Kripya wallet recharge karein.' };
@@ -15091,52 +15260,74 @@ async function chargeAttendanceGroupClassCredits(
   const session = preloadedSession || await getGroupClassCreditPolicy(env, sessionId);
   if (!session || Number(session.self_study_enabled) !== 1 || Number(session.self_study_group_enabled) === 0) return;
 
-  const rate = normalizeNonNegativeInt(session.cost_per_class_rupees);
-  if (rate <= 0) return;
+  const ratePaise = Math.max(0, rupeesToPaise(session.cost_per_class_rupees));
+  if (ratePaise <= 0) return;
+
+  const creditUnit = normalizeGroupClassCreditUnit(session.live_class_credit_unit);
 
   const totalSeconds = await getTotalAttendedSeconds(env, userId, sessionId);
   if (totalSeconds <= 0) return;
 
-  const totalMinutes = Math.ceil(totalSeconds / 60);
-  const requiredAmount = calculateGroupClassCredits(rate, totalMinutes);
-  if (requiredAmount <= 0) return;
+  if (creditUnit === "per_class") return;
 
-  const alreadyCharged = await getCreditsChargedForSession(env, userId, sessionId);
-  const extraAmountNeeded = requiredAmount - alreadyCharged;
+  // Compute the required charge in integer paise - a single rounding, no float drift (#675).
+  let requiredPaise = 0;
 
-  let finalChargedAmount = alreadyCharged;
-
-  if (extraAmountNeeded > 0) {
-    const deduction = await deductFromWallet(
-      env,
-      userId,
-      extraAmountNeeded,
-      "live_class_duration",
-      "live_session",
-      sessionId,
-    );
-    if (!deduction.ok) {
-      console.error(`Failed to deduct ₹${extraAmountNeeded} from user ${userId} for session ${sessionId}: insufficient balance`);
-      await env.DB.prepare(
-        "INSERT INTO PendingCharges (id, user_id, amount_rupees, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
-      ).bind(generateCustomId("YA-PCH"), userId, extraAmountNeeded, sessionId).run();
-    } else {
-      finalChargedAmount += extraAmountNeeded;
-    }
-  } else if (extraAmountNeeded < 0) {
-    // Student left early — refund excess charged amount
-    const refundAmount = Math.abs(extraAmountNeeded);
-    const roundedRefund = Math.round(refundAmount * 100) / 100;
-    if (roundedRefund > 0) {
-      await addToWallet(env, userId, roundedRefund, "live_class_refund", "live_session", sessionId);
-      finalChargedAmount -= roundedRefund;
-    }
+  if (creditUnit === "per_minute") {
+    const perMinuteRateRupees = normalizeAmountRupees(session.live_class_cost_per_minute_rupees) || (ratePaise / 100);
+    requiredPaise = Math.round(rupeesToPaise(perMinuteRateRupees) * totalSeconds / 60);
+  } else {
+    // fifteen_minute / monthly legacy behaviour: round up to next full minute
+    const totalMinutes = Math.ceil(totalSeconds / 60);
+    requiredPaise = calculateGroupClassCreditsPaise(ratePaise / 100, totalMinutes);
   }
 
-  const unitSeconds = getUnitSeconds();
-  const totalPaidSeconds = (finalChargedAmount / rate) * unitSeconds;
-  const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
-  await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  if (requiredPaise <= 0) return;
+
+  const lockAcquired = await acquireLiveChargeLock(env, sessionId, userId);
+  if (!lockAcquired) {
+    console.log(`[Live.Charge] Charge already in progress for user ${userId} session ${sessionId}; skipping.`);
+    return;
+  }
+
+  try {
+    const alreadyChargedPaise = await getCreditsChargedForSession(env, userId, sessionId);
+    const extraPaise = requiredPaise - alreadyChargedPaise;
+
+    let finalChargedPaise = alreadyChargedPaise;
+
+    if (extraPaise > 0) {
+      const deduction = await deductFromWalletPaise(
+        env,
+        userId,
+        extraPaise,
+        "live_class_duration",
+        "live_session",
+        sessionId,
+      );
+      if (!deduction.ok) {
+        console.error(`Failed to deduct ${extraPaise / 100} from user ${userId} for session ${sessionId}: insufficient balance`);
+        await env.DB.prepare(
+          "INSERT INTO PendingCharges (id, user_id, amount_paise, reason, reference_type, reference_id) VALUES (?, ?, ?, 'live_class_duration', 'live_session', ?)"
+        ).bind(generateCustomId("YA-PCH"), userId, extraPaise, sessionId).run();
+      } else {
+        finalChargedPaise += extraPaise;
+      }
+    } else if (extraPaise < 0) {
+      const refundPaise = Math.abs(extraPaise);
+      if (refundPaise > 0) {
+        await addToWalletPaise(env, userId, refundPaise, "live_class_refund", "live_session", sessionId);
+        finalChargedPaise -= refundPaise;
+      }
+    }
+
+    const unitSeconds = getUnitSeconds();
+    const totalPaidSeconds = (finalChargedPaise / ratePaise) * unitSeconds;
+    const remainingSeconds = Math.max(0, totalPaidSeconds - totalSeconds);
+    await setPrepaidSeconds(env, userId, sessionId, remainingSeconds);
+  } finally {
+    await releaseLiveChargeLock(env, sessionId, userId);
+  }
 }
 
 async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string): Promise<void> {
@@ -15165,25 +15356,25 @@ async function chargeEndedSessionGroupClassCredits(env: Env, sessionId: string):
   for (const chunk of chunkArray(userIds, 50)) {
     const phUsers = chunk.map(() => "?").join(",");
     const chargedRows = await env.DB.prepare(
-      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_rupees) WHEN reason = 'live_class_refund' THEN -ABS(change_rupees) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
+      `SELECT user_id, COALESCE(SUM(CASE WHEN reason IN ('live_class_duration', 'live_class_join', 'individual_class_booking') THEN ABS(change_paise) WHEN reason = 'live_class_refund' THEN -ABS(change_paise) ELSE 0 END), 0) as total_charged FROM CreditLedger WHERE reference_type = 'live_session' AND reference_id = ? AND user_id IN (${phUsers}) GROUP BY user_id`
     ).bind(sessionId, ...chunk).all();
     for (const r of (chargedRows as any).results || []) chargedMap.set(r.user_id, Number(r.total_charged || 0));
   }
 
   for (const row of rows || []) {
+    const creditUnit = normalizeGroupClassCreditUnit(session?.live_class_credit_unit);
     await chargeAttendanceGroupClassCredits(env, row.user_id, sessionId, session);
 
     // Read fresh remaining prepaid from DB — chargeAttendanceGroupClassCredits just updated it
-    if (rate > 0) {
+    if (rate > 0 && creditUnit !== "per_class" && creditUnit !== "per_minute") {
       const finalPrepaid = await getPrepaidSeconds(env, row.user_id, sessionId);
       if (finalPrepaid > 0) {
-        const refundAmount = (finalPrepaid / 60) * (rate / 15);
-        const roundedRefund = Math.round(refundAmount * 100) / 100;
-        const totalCharged = chargedMap.get(row.user_id) || 0;
-        const safeRefund = Math.min(roundedRefund, totalCharged);
-        if (safeRefund > 0) {
-          await addToWallet(env, row.user_id, safeRefund, "live_class_refund", "live_session", sessionId);
-          console.log(`[Live.EndSession] Refunded ₹${safeRefund} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
+        const refundPaise = Math.round((finalPrepaid * rate * 100) / FIFTEEN_MIN_SECONDS);
+        const totalChargedPaise = chargedMap.get(row.user_id) || 0;
+        const safeRefundPaise = Math.min(refundPaise, totalChargedPaise);
+        if (safeRefundPaise > 0) {
+          await addToWalletPaise(env, row.user_id, safeRefundPaise, "live_class_refund", "live_session", sessionId);
+          console.log(`[Live.EndSession] Refunded ${safeRefundPaise / 100} to user ${row.user_id} for session ${sessionId} (${finalPrepaid} unused seconds)`);
         }
       }
     }
@@ -15205,7 +15396,7 @@ async function handleBookIndividualClass(
     const userId = payload.sub;
 
     const course = (await env.DB.prepare(
-      `SELECT id, teacher_id, individual_class_booking_enabled, wallet_rupees, individual_class_duration_minutes
+      `SELECT id, teacher_id, individual_class_booking_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, individual_class_duration_minutes
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -15225,7 +15416,8 @@ async function handleBookIndividualClass(
       return new Response(JSON.stringify({ error: "You must be enrolled in this course to book individual classes" }), { status: 403 });
     }
 
-    const creditCost = Number(course.wallet_rupees) || 0;
+    // Prefer dedicated individual class cost; fall back to legacy wallet_rupees field.
+    const creditCost = Number(course.individual_class_cost_rupees) || Number(course.wallet_rupees) || 0;
     const durationMin = normalizeNonNegativeInt(course.individual_class_duration_minutes, 30);
     if (creditCost <= 0) {
       return new Response(JSON.stringify({ error: "Individual class cost not configured" }), { status: 400 });
@@ -15253,10 +15445,10 @@ async function handleBookIndividualClass(
     }
 
     await env.DB.prepare(
-      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_rupees)
+      `INSERT INTO IndividualBookings (id, course_id, student_id, teacher_id, status, scheduled_at, duration_minutes, amount_charged_paise)
        VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
     )
-      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, creditCost)
+      .bind(bookingId, courseId, userId, course.teacher_id, scheduledAt, durationMin, rupeesToPaise(creditCost))
       .run();
 
     // Create LiveSession
@@ -15351,7 +15543,7 @@ async function handleAdminCancelIndividualBooking(
   try {
     await requireAdmin(request, env);
     const booking = (await env.DB.prepare(
-      `SELECT * FROM IndividualBookings WHERE id = ?`,
+      `SELECT *, ROUND(amount_charged_paise / 100.0, 2) AS amount_charged_rupees, ROUND(amount_refunded_paise / 100.0, 2) AS amount_refunded_rupees FROM IndividualBookings WHERE id = ?`,
     )
       .bind(bookingId)
       .first()) as any;
@@ -15362,9 +15554,10 @@ async function handleAdminCancelIndividualBooking(
       return new Response(JSON.stringify({ error: "Only scheduled bookings can be cancelled" }), { status: 400 });
     }
 
-    if (booking.amount_charged_rupees > 0 && !booking.amount_refunded_rupees) {
-      await addToWallet(
-        env, booking.student_id, booking.amount_charged_rupees,
+    const chargedPaise = Number(booking.amount_charged_paise) || rupeesToPaise(Number(booking.amount_charged_rupees) || 0);
+    if (chargedPaise > 0 && !booking.amount_refunded_rupees) {
+      await addToWalletPaise(
+        env, booking.student_id, chargedPaise,
         "individual_class_refund", "individual_booking", bookingId,
       );
     }
@@ -15377,9 +15570,9 @@ async function handleAdminCancelIndividualBooking(
     }
 
     await env.DB.prepare(
-      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_rupees = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE IndividualBookings SET status = 'cancelled', amount_refunded_paise = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     )
-      .bind(booking.amount_charged_rupees > 0 ? booking.amount_charged_rupees : 0, bookingId)
+      .bind(chargedPaise > 0 ? chargedPaise : 0, bookingId)
       .run();
 
     removeEventFromGoogle(env, "IndividualBookings", bookingId).catch((e) => console.error("[GC] Booking remove failed", e));
@@ -15411,15 +15604,15 @@ async function handleRazorpayCreateTopupOrder(
 
     if (pack_id) {
       const pack = (await env.DB.prepare(
-        `SELECT * FROM CreditPacks WHERE id = ? AND is_active = 1`,
+        `SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM CreditPacks WHERE id = ? AND is_active = 1`,
       )
         .bind(pack_id)
         .first()) as any;
       if (!pack) {
         return new Response(JSON.stringify({ error: "Credit pack not found" }), { status: 404 });
       }
-      amount_rupees = normalizeNonNegativeInt(pack.amount_rupees);
-      amount_paise = inrToPaise(amount_rupees);
+      amount_paise = Number(pack.amount_paise) || inrToPaise(normalizeAmountRupees(pack.amount_rupees));
+      amount_rupees = paiseToInr(amount_paise);
       relatedId = pack.id;
     }
 
@@ -15445,8 +15638,8 @@ async function handleRazorpayCreateTopupOrder(
       const txId = generateCustomId("YA-TXN");
       // Record actual amount paid (₹0 for full coupon), not the original price
       const discountedAmountRupees = paiseToInr(amount_paise);
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(txId, payload.sub, discountedAmountRupees, "INR", "credit_purchase", "successful", "coupon", relatedId)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(txId, payload.sub, rupeesToPaise(discountedAmountRupees), "INR", "credit_purchase", "successful", "coupon", relatedId)
         .run();
       if (quote.coupon) {
         await env.DB.prepare(`INSERT INTO CouponRedemptions (id, coupon_id, user_id, item_type, item_id, transaction_id, discount_paise, status, redeemed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
@@ -15503,14 +15696,14 @@ async function handleRazorpayCreateTopupOrder(
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
       `
-      INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id)
+      INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, razorpay_order_id, payment_source, related_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
       .bind(
         txId,
         payload.sub,
-        amount_rupees,
+        amount_paise,
         "INR",
         "credit_purchase",
         "created",
@@ -15616,23 +15809,17 @@ async function handleRazorpayVerifyTopupPayment(
       .bind(razorpay_order_id)
       .run();
 
-    const amountInr = Number((tx as any).amount_rupees || 0);
-    const wallet = await addToWallet(
+    const amountPaise = Number((tx as any).amount_paise) || rupeesToPaise(Number((tx as any).amount_rupees || 0));
+    const wallet = await addToWalletPaise(
       env,
       payload.sub,
-      amountInr,
+      amountPaise,
       "purchase",
       (tx as any).related_id ? "credit_pack" : "razorpay_order",
       (tx as any).related_id || razorpay_order_id,
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "wallet_updated",
-      entity: "wallet",
-      data: { balance_rupees: wallet.balance_rupees },
-    });
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: wallet.balance_rupees });
 
     return new Response(
       JSON.stringify({ success: true, balance_rupees: wallet.balance_rupees }),
@@ -15758,13 +15945,7 @@ async function handleAdminCreateLiveSession(
     })());
 
     // Notify Enrolled Students about new Live Class
-    ctx.waitUntil(notifyCourseEnrolled(env, env.DB, courseId, {
-      type: "data",
-      channel: `course:${courseId}`,
-      action: "live_session_scheduled",
-      entity: "live_session",
-      data: { sessionId: id, courseId, title, start_time }
-    }));
+    ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, courseId, "live_session", { sessionId: id, courseId, title, start_time }));
 
     return new Response(JSON.stringify({ success: true, id }), {
       status: 200,
@@ -15837,13 +16018,7 @@ async function handleAdminUpdateLiveSession(
 
     // Notify Enrolled Students about Live Class status update (e.g. started/completed)
     if (existingSession && existingSession.course_id) {
-      ctx.waitUntil(notifyCourseEnrolled(env, env.DB, existingSession.course_id, {
-        type: "data",
-        channel: `course:${existingSession.course_id}`,
-        action: "live_session_updated",
-        entity: "live_session",
-        data: { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }
-      }));
+      ctx.waitUntil(broadcastToCourseEnrollees(env, env.DB, existingSession.course_id, "live_session", { sessionId, courseId: existingSession.course_id, status: status || existingSession.status, title: title || existingSession.title }));
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -16088,7 +16263,7 @@ async function handleGetCourseBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.class_days, b.self_study_group_enabled, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id,
               bo.title as book_title
@@ -16117,7 +16292,7 @@ async function handleGetBookBatches(
     const { results } = await env.DB.prepare(
       `SELECT b.id, b.name, b.name_hi, b.description_en, b.description_hi,
               b.start_date, b.end_date, b.class_start_time, b.class_end_time,
-              b.class_days, b.self_study_group_enabled, b.cost_per_class_rupees,
+              b.class_days, b.self_study_group_enabled, ROUND(b.cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees,
               b.live_class_credit_unit, b.credit_deduction_timing, b.status,
               b.course_id, b.book_id
        FROM Batches b
@@ -16161,7 +16336,7 @@ async function handleEnrollBookBatch(
     }
 
     const batch = await env.DB.prepare(
-      "SELECT id, book_id, name, cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
+      "SELECT id, book_id, name, ROUND(cost_per_class_paise / 100.0, 2) AS cost_per_class_rupees, self_study_group_enabled FROM Batches WHERE id = ?",
     )
       .bind(batchId)
       .first() as any;
@@ -16303,7 +16478,7 @@ async function handleEnrollWithCredits(
     }
 
     const course = (await env.DB.prepare(
-      `SELECT id, title, wallet_rupees
+      `SELECT id, title, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees
        FROM Courses WHERE id = ?`,
     )
       .bind(courseId)
@@ -16400,13 +16575,9 @@ async function handleEnrollWithCredits(
       "success",
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "enrollment_success",
-      entity: "enrollment",
-      data: { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees },
-    });
+    await broadcastToUser(env, payload.sub, "enrollment", { courseId, paymentStatus: "paid", requiredCost, balance_rupees: deduction.balance_rupees });
+    // Also broadcast wallet update so any open sessions refresh immediately.
+    await broadcastToUser(env, payload.sub, "wallet", { balance_rupees: deduction.balance_rupees });
 
     return new Response(
       JSON.stringify({
@@ -16450,7 +16621,7 @@ async function handleEnroll(
 
     const userId = payload.sub;
     const course: any = await env.DB.prepare(
-      "SELECT id, title, price_rupees FROM Courses WHERE id = ?",
+      "SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?",
     )
       .bind(courseId)
       .first();
@@ -16530,13 +16701,7 @@ async function handleEnroll(
       adminText,
     );
 
-    await notifyUser(env, userId, {
-      type: "data",
-      channel: "user:me",
-      action: "enrollment_success",
-      entity: "enrollment",
-      data: { courseId, enrollmentId, status: "active" },
-    });
+    await broadcastToUser(env, userId, "enrollment", { courseId, enrollmentId, status: "active" });
 
     return new Response(
       JSON.stringify({ message: "Enrolled successfully", enrollmentId }),
@@ -16897,13 +17062,7 @@ async function handleCompleteLesson(
       }
     }
 
-    await notifyUser(env, userId, {
-      type: "data",
-      channel: "user:me",
-      action: "progress_updated",
-      entity: "progress",
-      data: { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 },
-    });
+    await broadcastToUser(env, userId, "progress", { courseId, lessonId, progress, certificate_eligible: progress >= 100 && isPaid ? 1 : 0 });
 
     return new Response(
       JSON.stringify({
@@ -17144,8 +17303,10 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
       const code = normalizeCouponCode(body.code);
       if (!code) return new Response(JSON.stringify({ error: "Coupon code required" }), { status: 400 });
       const couponId = generateCustomId("YA-CPN");
+      const couponType = body.discount_type === "fixed" ? "fixed" : "percent";
+      const discountValueStored = couponType === "fixed" ? inrToPaise(Number(body.discount_value) || 0) : normalizeNonNegativeInt(body.discount_value);
       await env.DB.prepare(`INSERT INTO Coupons (id, code, name, discount_type, discount_value, max_discount_paise, min_order_paise, applies_to_json, target_ids_json, allowed_emails_json, excluded_emails_json, usage_limit, per_user_limit, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(couponId, code, body.name || code, body.discount_type === "fixed" ? "fixed" : "percent", normalizeNonNegativeInt(body.discount_value), normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, adminId)
+        .bind(couponId, code, body.name || code, couponType, discountValueStored, normalizeNonNegativeInt(body.max_discount_paise), normalizeNonNegativeInt(body.min_order_paise), JSON.stringify(parseJsonList(body.applies_to_json || body.applies_to || ["all"])), JSON.stringify(parseJsonList(body.target_ids_json || body.target_ids)), JSON.stringify(parseJsonList(body.allowed_emails_json || body.allowed_emails).map((v) => v.toLowerCase())), JSON.stringify(parseJsonList(body.excluded_emails_json || body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit ? normalizeNonNegativeInt(body.per_user_limit) : 1, body.starts_at || null, body.ends_at || null, body.is_active === 0 ? 0 : 1, adminId)
         .run();
       return new Response(JSON.stringify({ message: "Coupon created", id: couponId }), { status: 201 });
     }
@@ -17156,8 +17317,17 @@ async function handleAdminCoupons(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ error: "Coupon ID is required in URL path" }), { status: 400 });
       }
       const body = (await request.json()) as any;
+      let couponTypeUpd: string | null = body.discount_type || null;
+      let discountValueStored: number | null = null;
+      if (body.discount_value != null) {
+        if (!couponTypeUpd) {
+          const existingCoupon: any = await env.DB.prepare("SELECT discount_type FROM Coupons WHERE id = ?").bind(id).first();
+          couponTypeUpd = existingCoupon?.discount_type === "fixed" ? "fixed" : "percent";
+        }
+        discountValueStored = couponTypeUpd === "fixed" ? inrToPaise(Number(body.discount_value) || 0) : normalizeNonNegativeInt(body.discount_value);
+      }
       await env.DB.prepare(`UPDATE Coupons SET code = COALESCE(?, code), name = COALESCE(?, name), discount_type = COALESCE(?, discount_type), discount_value = COALESCE(?, discount_value), max_discount_paise = COALESCE(?, max_discount_paise), min_order_paise = COALESCE(?, min_order_paise), applies_to_json = COALESCE(?, applies_to_json), target_ids_json = COALESCE(?, target_ids_json), allowed_emails_json = COALESCE(?, allowed_emails_json), excluded_emails_json = COALESCE(?, excluded_emails_json), usage_limit = COALESCE(?, usage_limit), per_user_limit = COALESCE(?, per_user_limit), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-        .bind(body.code ? normalizeCouponCode(body.code) : null, body.name || null, body.discount_type || null, body.discount_value == null ? null : normalizeNonNegativeInt(body.discount_value), body.max_discount_paise == null ? null : normalizeNonNegativeInt(body.max_discount_paise), body.min_order_paise == null ? null : normalizeNonNegativeInt(body.min_order_paise), body.applies_to == null ? null : JSON.stringify(parseJsonList(body.applies_to)), body.target_ids == null ? null : JSON.stringify(parseJsonList(body.target_ids)), body.allowed_emails == null ? null : JSON.stringify(parseJsonList(body.allowed_emails).map((v) => v.toLowerCase())), body.excluded_emails == null ? null : JSON.stringify(parseJsonList(body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit == null ? null : normalizeNonNegativeInt(body.per_user_limit), body.starts_at || null, body.ends_at || null, body.is_active == null ? null : body.is_active ? 1 : 0, id)
+        .bind(body.code ? normalizeCouponCode(body.code) : null, body.name || null, couponTypeUpd, discountValueStored, body.max_discount_paise == null ? null : normalizeNonNegativeInt(body.max_discount_paise), body.min_order_paise == null ? null : normalizeNonNegativeInt(body.min_order_paise), body.applies_to == null ? null : JSON.stringify(parseJsonList(body.applies_to)), body.target_ids == null ? null : JSON.stringify(parseJsonList(body.target_ids)), body.allowed_emails == null ? null : JSON.stringify(parseJsonList(body.allowed_emails).map((v) => v.toLowerCase())), body.excluded_emails == null ? null : JSON.stringify(parseJsonList(body.excluded_emails).map((v) => v.toLowerCase())), body.usage_limit ? normalizeNonNegativeInt(body.usage_limit) : null, body.per_user_limit == null ? null : normalizeNonNegativeInt(body.per_user_limit), body.starts_at || null, body.ends_at || null, body.is_active == null ? null : body.is_active ? 1 : 0, id)
         .run();
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
@@ -17223,12 +17393,12 @@ async function handleCreatePaymentOrder(
     let price_rupees = 0;
 
     if (itemType === "course") {
-      const course: any = await env.DB.prepare("SELECT price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
+      const course: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees, title FROM Courses WHERE id = ?").bind(itemId).first();
       if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
       title = course.title;
       price_rupees = course.price_rupees || 0;
     } else if (itemType === "book") {
-      const book: any = await env.DB.prepare("SELECT price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
+      const book: any = await env.DB.prepare("SELECT ROUND(price_paise / 100.0, 2) AS price_rupees, title FROM Books WHERE id = ?").bind(itemId).first();
       if (!book) return new Response(JSON.stringify({ error: "Book not found" }), { status: 404 });
       title = book.title;
       price_rupees = book.price_rupees || 0;
@@ -17262,7 +17432,7 @@ async function handleCreatePaymentOrder(
 
     let quote;
     try {
-      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: price_rupees * 100, couponCode }, payload.sub);
+      quote = await calculateCheckoutQuote(env, { itemType, itemId, amount_paise: inrToPaise(price_rupees), couponCode }, payload.sub);
     } catch (error: any) {
       return new Response(JSON.stringify({ error: error.message || "Invalid coupon" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -17277,7 +17447,7 @@ async function handleCreatePaymentOrder(
 
       await ensureEnrollment(env, enrollPayload);
 
-      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      await env.DB.prepare(`INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(txId, payload.sub, 0, "INR", `${itemType}_purchase`, "successful", "coupon", itemId)
         .run();
 
@@ -17315,9 +17485,9 @@ async function handleCreatePaymentOrder(
     // Step 1: Create Transaction FIRST — prevents orphaned enrollment if Transaction INSERT fails
     const txId = generateCustomId("YA-TXN");
     await env.DB.prepare(
-      `INSERT INTO Transactions (id, user_id, amount_rupees, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO Transactions (id, user_id, amount_paise, currency, type, status, razorpay_order_id, payment_source, related_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(txId, payload.sub, Math.floor(amount / 100), "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
+      .bind(txId, payload.sub, amount, "INR", `${itemType}_purchase`, "created", order.id, "razorpay", itemId)
       .run();
 
     // Step 2: Create Enrollment — uses ON CONFLICT DO NOTHING to prevent duplicates
@@ -17376,14 +17546,14 @@ async function handleVerifyPayment(
     let price_rupees = 0;
 
     if (orderOwner.course_id) {
-      const c: any = await env.DB.prepare("SELECT title, price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
+      const c: any = await env.DB.prepare("SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses WHERE id = ?").bind(orderOwner.course_id).first();
       if (c) { title = c.title; price_rupees = c.price_rupees; }
     } else if (orderOwner.book_id) {
-      const b: any = await env.DB.prepare("SELECT title, price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
+      const b: any = await env.DB.prepare("SELECT title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Books WHERE id = ?").bind(orderOwner.book_id).first();
       if (b) { title = b.title; price_rupees = b.price_rupees; }
     }
 
-    const txForAmount: any = await env.DB.prepare("SELECT amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
+    const txForAmount: any = await env.DB.prepare("SELECT ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM Transactions WHERE razorpay_order_id = ?").bind(razorpay_order_id).first();
     const amountPaid = txForAmount?.amount_rupees ?? price_rupees ?? 0;
 
     const enrollmentUpdate = await env.DB.prepare('UPDATE Enrollments SET payment_status = "paid", status = "active", amount_paid = ? WHERE payment_id = ? AND payment_status != "paid"').bind(amountPaid, razorpay_order_id).run() as any;
@@ -17443,11 +17613,6 @@ interface UserAccessProfile {
   allowedCourseIds: string[];
   batchAccessType: "none" | "static" | "user_choice";
   allowedBatchIds: string[];
-  aiCreditsTotal: number;
-  aiCreditsUsed: number;
-  aiCreditsRemaining: number;
-  aiPeriod: string;
-  aiRateLimitPerHour: number;
   liveSessionAccess: boolean;
 }
 
@@ -17463,17 +17628,12 @@ async function getUserAccessProfile(
     allowedCourseIds: [],
     batchAccessType: "none",
     allowedBatchIds: [],
-    aiCreditsTotal: 0,
-    aiCreditsUsed: 0,
-    aiCreditsRemaining: 0,
-    aiPeriod: "none",
-    aiRateLimitPerHour: 0,
     liveSessionAccess: false,
   };
 
   const sub: any = await env.DB.prepare(
-    `SELECT s.*, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
-            p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_session_access
+    `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.course_access_type, p.max_course_selection, p.batch_access_type, p.max_batch_selection,
+            ROUND(p.wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, p.live_session_access
      FROM Subscriptions s
      JOIN SubscriptionPlans p ON s.plan_id = p.id
      WHERE s.user_id = ? AND s.status = 'active'
@@ -17493,11 +17653,6 @@ async function getUserAccessProfile(
     allowedCourseIds: [],
     batchAccessType: sub.batch_access_type || "none",
     allowedBatchIds: [],
-    aiCreditsTotal: sub.ai_credits || 0,
-    aiCreditsUsed: 0,
-    aiCreditsRemaining: sub.ai_credits === -1 ? -1 : 0,
-    aiPeriod: sub.ai_credits_period || "none",
-    aiRateLimitPerHour: sub.ai_rate_limit_per_hour || 0,
     liveSessionAccess: sub.live_session_access === 1,
   };
 
@@ -17535,103 +17690,7 @@ async function getUserAccessProfile(
     profile.allowedBatchIds = results.map((r: any) => r.item_id);
   }
 
-  // Resolve AI credits — unified wallet approach
-  if (profile.aiCreditsTotal !== 0) {
-    const wallet = await getWalletBalance(env, userId);
-
-    if (profile.aiPeriod !== "none" && profile.aiPeriod !== "plan") {
-      const needsAlloc = await checkNeedsCreditAllocation(userId, env);
-      if (needsAlloc) {
-        const bonusTotal = await calcBonusCredits(sub.id, sub.plan_id, env);
-        await allocateAICredits(userId, sub.id, sub.plan_id, sub, env, bonusTotal);
-      }
-    }
-
-    const updatedWallet = await getWalletBalance(env, userId);
-    profile.aiCreditsUsed = 0;
-    profile.aiCreditsTotal = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
-    profile.aiCreditsRemaining = profile.aiCreditsTotal === -1 ? -1 : updatedWallet.balance_rupees;
-  }
-
   return profile;
-}
-
-function calcCreditPeriod(period: string): { start: string; end: string } {
-  const now = new Date();
-  const start = now.toISOString();
-  let end = new Date(now);
-  switch (period) {
-    case "hourly":
-      end.setHours(end.getHours() + 1);
-      break;
-    case "daily":
-      end.setDate(end.getDate() + 1);
-      break;
-    case "weekly":
-      end.setDate(end.getDate() + 7);
-      break;
-    case "monthly":
-      end.setMonth(end.getMonth() + 1);
-      break;
-    case "yearly":
-      end.setFullYear(end.getFullYear() + 1);
-      break;
-    default:
-      return { start, end: "2099-01-01T00:00:00.000Z" }; // plan = no reset
-  }
-  return { start, end: end.toISOString() };
-}
-
-async function calcBonusCredits(
-  subscriptionId: string,
-  planId: string,
-  env: Env,
-): Promise<number> {
-  const result = (await env.DB.prepare(
-    `SELECT COALESCE(SUM(p.bonus_ai_credits), 0) as total
-     FROM UserSubscriptionSelections s
-     JOIN PlanContentPool p ON p.plan_id = ? AND p.item_type = s.item_type AND p.item_id = s.item_id
-     WHERE s.subscription_id = ?`,
-  )
-    .bind(planId, subscriptionId)
-    .first()) as any;
-  return result?.total || 0;
-}
-
-async function checkNeedsCreditAllocation(
-  userId: string,
-  env: Env,
-): Promise<boolean> {
-  const wallet = (await env.DB.prepare(
-    "SELECT period_end FROM CreditWallets WHERE user_id = ?",
-  )
-    .bind(userId)
-    .first()) as any;
-  if (!wallet || !wallet.period_end) return true;
-  return new Date(wallet.period_end) < new Date();
-}
-
-async function allocateAICredits(
-  userId: string,
-  subscriptionId: string,
-  planId: string,
-  plan: any,
-  env: Env,
-  bonusTotal = 0,
-): Promise<void> {
-  if (bonusTotal === 0) {
-    bonusTotal = await calcBonusCredits(subscriptionId, planId, env);
-  }
-  const totalCredits = Number(plan.ai_credits ?? 0) + bonusTotal;
-  if (totalCredits <= 0) return;
-  const { start, end } = calcCreditPeriod(plan.ai_credits_period || "none");
-
-  await addToWallet(env, userId, totalCredits, "subscription_credits", "subscription", subscriptionId);
-  await env.DB.prepare(
-    `UPDATE CreditWallets SET credits_period = ?, period_start = ?, period_end = ? WHERE user_id = ?`,
-  )
-    .bind(plan.ai_credits_period || "none", start, end, userId)
-    .run();
 }
 
 // Returns { allowed: true } or { allowed: false, reason, retryAfter? }
@@ -17817,14 +17876,14 @@ async function handleListSubscriptionPlans(
 ): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+      `SELECT id, name, interval, interval_count, ROUND(amount_paise / 100.0, 2) AS amount_rupees, razorpay_plan_id,
               course_access_type, max_course_selection,
               batch_access_type, max_batch_selection,
               book_access_type, max_book_selection,
-              ai_credits, ai_credits_period, ai_rate_limit_per_hour,
-              live_session_access, live_class_amount_rupees,
-              is_lifetime, lifetime_price_rupees
-       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_rupees ASC`,
+              ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees,
+              live_session_access, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees,
+              is_lifetime, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees
+       FROM SubscriptionPlans WHERE is_active = 1 ORDER BY amount_paise ASC`,
     ).all();
     return new Response(JSON.stringify({ plans: results }), {
       status: 200,
@@ -17844,7 +17903,7 @@ async function handleGetUserSubscription(
     const payload = await requireAuth(request, env);
     // Priority: active/authenticated first, then created/halted
     let sub: any = await env.DB.prepare(
-      `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+      `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
        FROM Subscriptions s
        JOIN SubscriptionPlans p ON s.plan_id = p.id
        WHERE s.user_id = ? AND s.status IN ('active', 'authenticated')
@@ -17855,7 +17914,7 @@ async function handleGetUserSubscription(
 
     if (!sub) {
       sub = await env.DB.prepare(
-        `SELECT s.*, p.name as plan_name, p.interval, p.amount_rupees
+        `SELECT s.*, ROUND(s.live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, p.name as plan_name, p.interval, ROUND(p.amount_paise / 100.0, 2) AS amount_rupees
          FROM Subscriptions s
          JOIN SubscriptionPlans p ON s.plan_id = p.id
          WHERE s.user_id = ? AND s.status IN ('created', 'halted')
@@ -17863,6 +17922,9 @@ async function handleGetUserSubscription(
       )
         .bind(payload.sub)
         .first();
+    }
+    if (sub && sub.status !== "cancelled" && Number(sub.cancellation_requested || 0) === 1) {
+      sub.status = "cancel_pending";
     }
     return new Response(JSON.stringify({ subscription: sub || null }), {
       status: 200,
@@ -17889,7 +17951,7 @@ async function handleCreateSubscription(
     const { planId } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18061,16 +18123,10 @@ async function handleCreateSubscription(
       await safeSendEmail(env, user.email, subject, title, htmlBody, textBody);
     }
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "subscription_created",
-      entity: "subscription",
-      data: {
-        plan_name: plan.name,
-        plan_amount: plan.amount_rupees,
-        razorpay_subscription_id: rzpData.id,
-      },
+    await broadcastToUser(env, payload.sub, "subscription", {
+      plan_name: plan.name,
+      plan_amount: plan.amount_rupees,
+      razorpay_subscription_id: rzpData.id,
     });
 
     return new Response(
@@ -18087,7 +18143,7 @@ async function handleCreateSubscription(
   }
 }
 
-// POST /api/subscription/cancel — Cancel active subscription
+// POST /api/subscription/cancel — Request cancellation of active subscription
 async function handleCancelSubscription(
   request: Request,
   env: Env,
@@ -18095,7 +18151,7 @@ async function handleCancelSubscription(
   try {
     const payload = await requireAuth(request, env);
     const sub: any = await env.DB.prepare(
-      `SELECT * FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
+      `SELECT *, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees FROM Subscriptions WHERE user_id = ? AND status IN ('active','authenticated','created') ORDER BY created_at DESC LIMIT 1`,
     )
       .bind(payload.sub)
       .first();
@@ -18107,6 +18163,21 @@ async function handleCancelSubscription(
       );
 
     const isCreatedStatus = sub.status === "created";
+
+    // For already-active subscriptions, mark a cancellation request instead of
+    // cancelling status immediately. Razorpay sends subscription.cancelled at
+    // the end of the current period, and only then do we flip status to 'cancelled'.
+    // This preserves access until the period end.
+    if (!isCreatedStatus && Number(sub.cancellation_requested || 0) === 1) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Cancellation already requested. Access will remain until the end of the current period.",
+          status: "cancel_pending",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     // For 'created' subscriptions, skip Razorpay API call (subscription never activated)
     if (!isCreatedStatus) {
@@ -18140,32 +18211,56 @@ async function handleCancelSubscription(
       }
     }
 
-    await env.DB.prepare("UPDATE Subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .bind("cancelled", sub.id)
+    if (isCreatedStatus) {
+      // Never-activated subscriptions can be marked cancelled immediately
+      await env.DB.prepare(
+        "UPDATE Subscriptions SET status = 'cancelled', cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      )
+        .bind(sub.id)
+        .run();
+      await createNotification(
+        env,
+        payload.sub,
+        "Subscription Cancelled",
+        "Aapka subscription cancel ho gaya hai.",
+        "info",
+      );
+      await broadcastToUser(env, payload.sub, "subscription", { status: "cancelled" });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Subscription cancelled.",
+          status: "cancelled",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Active / authenticated subscriptions: keep status active, set cancellation flag
+    await env.DB.prepare(
+      "UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    )
+      .bind(sub.id)
       .run();
     await createNotification(
       env,
       payload.sub,
-      "Subscription Cancelled",
-      "Aapka subscription cancel ho gaya hai. Access period end tak active rahega.",
+      "Cancellation Requested",
+      "Aapne subscription cancel karne ki request bhej di hai. Current period end tak access active rahega.",
       "info",
     );
 
-    await notifyUser(env, payload.sub, {
-      type: "data",
-      channel: "user:me",
-      action: "subscription_cancelled",
-      entity: "subscription",
-      data: { status: "cancelled" },
-    });
+    await broadcastToUser(env, payload.sub, "subscription", { cancellation_requested: true, status: "active" });
 
     return new Response(
       JSON.stringify({
         success: true,
         message:
-          "Subscription cancelled. Access will remain until end of current period.",
+          "Cancellation requested. Access will remain until end of current period.",
+        status: "cancel_pending",
       }),
-      { status: 200 },
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
     return handleGlobalError(error, "Subscription.Cancel", env, request);
@@ -18207,7 +18302,6 @@ async function handleAdminPlanPool(
         item_type: string;
         item_id: string;
         access_mode: string;
-        bonus_ai_credits?: number;
       }> = (await request.json()) as any;
       if (!Array.isArray(items) || items.length === 0) {
         return new Response(JSON.stringify({ error: "items array required" }), {
@@ -18216,15 +18310,14 @@ async function handleAdminPlanPool(
       }
       const stmts = items.map((item) =>
         env.DB.prepare(
-          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode, bonus_ai_credits)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO PlanContentPool (id, plan_id, item_type, item_id, access_mode)
+           VALUES (?, ?, ?, ?, ?)`,
         ).bind(
           generateCustomId("YA-PCP"),
           planId,
           item.item_type,
           item.item_id,
           item.access_mode,
-          item.bonus_ai_credits || 0,
         ),
       );
       await env.DB.batch(stmts);
@@ -18265,7 +18358,7 @@ async function handleStudentPlanPool(
 ): Promise<Response> {
   try {
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18275,7 +18368,7 @@ async function handleStudentPlanPool(
       });
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, c.title, c.description, c.price_rupees
+      `SELECT pcp.item_id, pcp.access_mode, c.title, c.description, ROUND(c.price_paise / 100.0, 2) AS price_rupees
        FROM PlanContentPool pcp JOIN Courses c ON pcp.item_id = c.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'course'`,
     )
@@ -18283,7 +18376,7 @@ async function handleStudentPlanPool(
       .all();
 
     const { results: batches } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, b.name, b.start_date, b.end_date, b.status
+      `SELECT pcp.item_id, pcp.access_mode, b.name, b.start_date, b.end_date, b.status
        FROM PlanContentPool pcp JOIN Batches b ON pcp.item_id = b.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'batch'`,
     )
@@ -18291,7 +18384,7 @@ async function handleStudentPlanPool(
       .all();
 
     const { results: books } = await env.DB.prepare(
-      `SELECT pcp.item_id, pcp.access_mode, pcp.bonus_ai_credits, bo.title, bo.description
+      `SELECT pcp.item_id, pcp.access_mode, bo.title, bo.description
        FROM PlanContentPool pcp JOIN Books bo ON pcp.item_id = bo.id
        WHERE pcp.plan_id = ? AND pcp.item_type = 'book'`,
     )
@@ -18310,9 +18403,7 @@ async function handleStudentPlanPool(
           max_batch_selection: plan.max_batch_selection,
           book_access_type: plan.book_access_type,
           max_book_selection: plan.max_book_selection,
-          ai_credits: plan.ai_credits,
-          ai_credits_period: plan.ai_credits_period,
-          ai_rate_limit_per_hour: plan.ai_rate_limit_per_hour,
+          wallet_amount_rupees: plan.wallet_amount_rupees,
           live_session_access: plan.live_session_access,
           live_class_amount_rupees: plan.live_class_amount_rupees,
         },
@@ -18342,7 +18433,7 @@ async function handleStudentPreSelect(
     } = (await request.json()) as any;
 
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ? AND is_active = 1",
     )
       .bind(planId)
       .first();
@@ -18512,9 +18603,6 @@ async function handleStudentPreSelect(
     ];
     if (stmts.length > 0) await env.DB.batch(stmts);
 
-    // Calculate total bonus AI credits for this selection
-    const bonusCredits = await calcBonusCredits(sub.id, planId, env);
-
     return new Response(
       JSON.stringify({
         success: true,
@@ -18522,11 +18610,6 @@ async function handleStudentPreSelect(
         selected_courses: selectedCourseIds.length,
         selected_batches: selectedBatchIds.length,
         selected_books: selectedBookIds.length,
-        bonus_ai_credits: bonusCredits,
-        total_ai_credits:
-          Number(plan.ai_credits ?? 0) === -1
-            ? -1
-            : Number(plan.ai_credits ?? 0) + bonusCredits,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -18555,7 +18638,7 @@ async function handleGetMySelections(
       );
 
     const { results: courses } = await env.DB.prepare(
-      `SELECT uss.item_id, c.title, c.description, c.price_rupees
+      `SELECT uss.item_id, c.title, c.description, ROUND(c.price_paise / 100.0, 2) AS price_rupees
        FROM UserSubscriptionSelections uss JOIN Courses c ON uss.item_id = c.id
        WHERE uss.subscription_id = ? AND uss.item_type = 'course'`,
     )
@@ -18624,7 +18707,7 @@ async function handleAdminSubscriptionPlans(
     // GET — List all plans
     if (request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM SubscriptionPlans ORDER BY amount_rupees ASC",
+        "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans ORDER BY amount_paise ASC",
       ).all();
       return new Response(JSON.stringify({ plans: results }), {
         status: 200,
@@ -18646,9 +18729,7 @@ async function handleAdminSubscriptionPlans(
         max_batch_selection = 0,
         book_access_type = "none",
         max_book_selection = 0,
-        ai_credits = 0,
-        ai_credits_period = "none",
-        ai_rate_limit_per_hour = 0,
+        wallet_amount_rupees = 0,
         live_session_access = 0,
         live_class_credits,  // backward compat
         live_class_amount_rupees: raw_live_class_amount_rupees,
@@ -18726,18 +18807,22 @@ async function handleAdminSubscriptionPlans(
 
       // Save to D1 with all benefit fields
       const id = generateCustomId("YA-PLN");
+      const planAmountPaise = inrToPaise(normalizeAmountRupees(amount_rupees));
+      const planWalletPaise = inrToPaise(normalizeAmountRupees(wallet_amount_rupees));
+      const planLiveClassPaise = inrToPaise(normalizeAmountRupees(live_class_amount_rupees));
+      const planLifetimePaise = inrToPaise(normalizeAmountRupees(lifetime_price_rupees));
       await env.DB.prepare(
-        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_rupees, razorpay_plan_id,
+        `INSERT INTO SubscriptionPlans (id, name, interval, interval_count, amount_paise, razorpay_plan_id,
          course_access_type, max_course_selection, batch_access_type, max_batch_selection, book_access_type, max_book_selection,
-         ai_credits, ai_credits_period, ai_rate_limit_per_hour, live_session_access, live_class_amount_rupees, is_lifetime, lifetime_price_rupees)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wallet_amount_paise, live_session_access, live_class_amount_paise, is_lifetime, lifetime_price_paise)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
           name,
           interval,
           interval_count || 1,
-          amount_rupees,
+          planAmountPaise,
           razorpayPlanId,
           course_access_type,
           max_course_selection,
@@ -18745,13 +18830,11 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection,
           book_access_type,
           max_book_selection,
-          ai_credits,
-          ai_credits_period,
-          ai_rate_limit_per_hour,
+          planWalletPaise,
           live_session_access ? 1 : 0,
-          live_class_amount_rupees,
+          planLiveClassPaise,
           is_lifetime ? 1 : 0,
-          lifetime_price_rupees,
+          planLifetimePaise,
         )
         .run();
 
@@ -18775,7 +18858,7 @@ async function handleAdminSubscriptionPlans(
         course_access_type, max_course_selection,
         batch_access_type, max_batch_selection,
         book_access_type, max_book_selection,
-        ai_credits, ai_credits_period, ai_rate_limit_per_hour,
+        wallet_amount_rupees,
         live_session_access, live_class_credits,  // backward compat
         live_class_amount_rupees: raw_live_class_amount_rupees,
         is_lifetime, lifetime_price_rupees, is_active,
@@ -18783,12 +18866,47 @@ async function handleAdminSubscriptionPlans(
       const live_class_amount_rupees = raw_live_class_amount_rupees != null
         ? Number(raw_live_class_amount_rupees)
         : (live_class_credits != null ? normalizeNonNegativeInt(live_class_credits) / 10 : null);
+
+      const existingPlan: any = await env.DB.prepare(
+        "SELECT ROUND(amount_paise / 100.0, 2) AS amount_rupees, interval, interval_count, razorpay_plan_id FROM SubscriptionPlans WHERE id = ?"
+      ).bind(planId).first();
+      if (!existingPlan) {
+        return new Response(JSON.stringify({ error: "Plan not found" }), { status: 404 });
+      }
+
+      // Pricing changes while active subscriptions exist would create a mismatch between
+      // what subscribers pay and the plan they signed up for. Razorpay plans are immutable,
+      // so block direct edits. Admin can create a new plan instead.
+      const isPricingChange =
+        (amount_rupees !== undefined && Number(amount_rupees) !== Number(existingPlan.amount_rupees)) ||
+        (interval !== undefined && interval !== existingPlan.interval) ||
+        (interval_count !== undefined && Number(interval_count) !== Number(existingPlan.interval_count));
+
+      if (isPricingChange) {
+        const activeSubCount: any = await env.DB.prepare(
+          `SELECT COUNT(*) as cnt FROM Subscriptions WHERE plan_id = ? AND status IN ('active','authenticated')`
+        ).bind(planId).first();
+        if (activeSubCount && activeSubCount.cnt > 0) {
+          return new Response(
+            JSON.stringify({
+              error: "Is plan ke active subscriptions hain. Amount/interval change nahi kar sakte. Naya plan banayein.",
+              code: "ACTIVE_SUBSCRIPTIONS_BLOCK_PRICE_CHANGE",
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      const updAmountPaise = amount_rupees != null ? inrToPaise(normalizeAmountRupees(amount_rupees)) : null;
+      const updWalletPaise = wallet_amount_rupees != null ? inrToPaise(normalizeAmountRupees(wallet_amount_rupees)) : null;
+      const updLiveClassPaise = live_class_amount_rupees != null ? inrToPaise(normalizeAmountRupees(live_class_amount_rupees)) : null;
+      const updLifetimePaise = lifetime_price_rupees != null ? inrToPaise(normalizeAmountRupees(lifetime_price_rupees)) : null;
       await env.DB.prepare(
         `UPDATE SubscriptionPlans SET
          name = COALESCE(?, name),
          interval = COALESCE(?, interval),
          interval_count = COALESCE(?, interval_count),
-         amount_rupees = COALESCE(?, amount_rupees),
+         amount_paise = COALESCE(?, amount_paise),
          razorpay_plan_id = COALESCE(?, razorpay_plan_id),
          course_access_type = COALESCE(?, course_access_type),
          max_course_selection = COALESCE(?, max_course_selection),
@@ -18796,13 +18914,11 @@ async function handleAdminSubscriptionPlans(
          max_batch_selection = COALESCE(?, max_batch_selection),
          book_access_type = COALESCE(?, book_access_type),
          max_book_selection = COALESCE(?, max_book_selection),
-         ai_credits = COALESCE(?, ai_credits),
-         ai_credits_period = COALESCE(?, ai_credits_period),
-         ai_rate_limit_per_hour = COALESCE(?, ai_rate_limit_per_hour),
+         wallet_amount_paise = COALESCE(?, wallet_amount_paise),
          live_session_access = COALESCE(?, live_session_access),
-         live_class_amount_rupees = COALESCE(?, live_class_amount_rupees),
+         live_class_amount_paise = COALESCE(?, live_class_amount_paise),
          is_lifetime = COALESCE(?, is_lifetime),
-         lifetime_price_rupees = COALESCE(?, lifetime_price_rupees),
+         lifetime_price_paise = COALESCE(?, lifetime_price_paise),
          is_active = COALESCE(?, is_active)
          WHERE id = ?`,
       )
@@ -18810,7 +18926,7 @@ async function handleAdminSubscriptionPlans(
           name || null,
           interval || null,
           interval_count != null ? interval_count : null,
-          amount_rupees != null ? amount_rupees : null,
+          updAmountPaise,
           razorpay_plan_id || null,
           course_access_type || null,
           max_course_selection != null ? max_course_selection : null,
@@ -18818,13 +18934,11 @@ async function handleAdminSubscriptionPlans(
           max_batch_selection != null ? max_batch_selection : null,
           book_access_type || null,
           max_book_selection != null ? max_book_selection : null,
-          ai_credits != null ? ai_credits : null,
-          ai_credits_period || null,
-          ai_rate_limit_per_hour != null ? ai_rate_limit_per_hour : null,
+          updWalletPaise,
           live_session_access != null ? live_session_access : null,
-          live_class_amount_rupees != null ? live_class_amount_rupees : null,
+          updLiveClassPaise,
           is_lifetime != null ? is_lifetime : null,
-          lifetime_price_rupees != null ? lifetime_price_rupees : null,
+          updLifetimePaise,
           is_active !== undefined ? is_active : null,
           planId,
         )
@@ -18856,7 +18970,11 @@ async function handleAdminSubscriptionPlans(
 
       const results = activeSubs.results as any[];
 
-      // 3. If Razorpay is configured, cancel all active subscriptions there
+      // 3. If Razorpay is configured, cancel all active subscriptions there.
+      // Only mark subscriptions as cancelled in our DB when Razorpay confirms the cancellation.
+      const cancelledSubIds: string[] = [];
+      const failedSubIds: string[] = [];
+
       if (razorpayKey && razorpaySecret && results.length > 0) {
         console.log(
           `[Admin.DeletePlan] Cancelling ${results.length} active subscriptions in Razorpay for plan ${planId}`,
@@ -18865,36 +18983,60 @@ async function handleAdminSubscriptionPlans(
 
         await Promise.all(
           results.map(async (sub) => {
-            if (sub.razorpay_subscription_id) {
-              try {
-                // Cancel immediately (cancel_at_cycle_end=0)
-                await fetch(
-                  `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: auth,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+            if (!sub.razorpay_subscription_id) {
+              cancelledSubIds.push(sub.id);
+              return;
+            }
+            try {
+              const rzpRes = await fetch(
+                `https://api.razorpay.com/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: auth,
+                    "Content-Type": "application/json",
                   },
-                );
-              } catch (e) {
+                  body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+                },
+              );
+              if (rzpRes.ok) {
+                cancelledSubIds.push(sub.id);
+              } else {
+                const rzpErr = await rzpRes.json().catch(() => ({}));
                 console.error(
                   `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
-                  e,
+                  rzpErr,
                 );
+                failedSubIds.push(sub.id);
               }
+            } catch (e) {
+              console.error(
+                `[Admin.DeletePlan] Failed to cancel sub ${sub.razorpay_subscription_id}:`,
+                e,
+              );
+              failedSubIds.push(sub.id);
             }
           }),
         );
 
-        // Update DB status for these subs
-        await env.DB.prepare(
-          `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ? AND status IN ('active','authenticated')`,
-        )
-          .bind(planId)
-          .run();
+        // Update DB status only for successfully cancelled subscriptions.
+        // Failures get cancellation_requested=1 so they can be retried or reconciled later.
+        if (cancelledSubIds.length > 0) {
+          const cancelledPlaceholders = cancelledSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id IN (${cancelledPlaceholders})`,
+          )
+            .bind(...cancelledSubIds)
+            .run();
+        }
+        if (failedSubIds.length > 0) {
+          const failedPlaceholders = failedSubIds.map(() => "?").join(",");
+          await env.DB.prepare(
+            `UPDATE Subscriptions SET cancellation_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${failedPlaceholders})`,
+          )
+            .bind(...failedSubIds)
+            .run();
+        }
       }
 
       // 4. Try final cleanup (if all subs were cancelled successfully, it will delete the plan now)
@@ -18903,9 +19045,11 @@ async function handleAdminSubscriptionPlans(
       return new Response(
         JSON.stringify({
           success: true,
+          cancelled_count: cancelledSubIds.length,
+          failed_count: failedSubIds.length,
           message:
             results.length > 0
-              ? `Plan deactivated. ${results.length} active subscription(s) were cancelled in Razorpay. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
+              ? `Plan deactivated. ${cancelledSubIds.length} subscription(s) cancelled successfully${failedSubIds.length > 0 ? `, ${failedSubIds.length} failed/marked for retry` : ""}. Plan will be deleted permanently once all subscriptions are confirmed inactive.`
               : "Plan deleted permanently.",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -18983,7 +19127,7 @@ async function handleAdminAssignSubscription(
 
     // 1. Fetch Plan & User
     const plan: any = await env.DB.prepare(
-      "SELECT * FROM SubscriptionPlans WHERE id = ?",
+      "SELECT *, ROUND(amount_paise / 100.0, 2) AS amount_rupees, ROUND(wallet_amount_paise / 100.0, 2) AS wallet_amount_rupees, ROUND(live_class_amount_paise / 100.0, 2) AS live_class_amount_rupees, ROUND(lifetime_price_paise / 100.0, 2) AS lifetime_price_rupees FROM SubscriptionPlans WHERE id = ?",
     )
       .bind(planId)
       .first();
@@ -19066,7 +19210,7 @@ async function handleAdminAssignSubscription(
     // 3. Save to DB
     const subId = generateCustomId("YA-SUB");
     await env.DB.prepare(
-      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_rupees, is_lifetime)
+      `INSERT INTO Subscriptions (id, user_id, plan_id, razorpay_subscription_id, razorpay_payment_link, status, live_class_amount_paise, is_lifetime)
        VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`,
     )
       .bind(
@@ -19075,7 +19219,7 @@ async function handleAdminAssignSubscription(
         planId,
         rzpSubscriptionId,
         rzpPaymentLink,
-        plan.live_class_amount_rupees || 0,
+        Number(plan.live_class_amount_paise) || 0,
         plan.is_lifetime || 0,
       )
       .run();
@@ -19199,7 +19343,7 @@ async function handleRazorpayWebhook(
 
         // Fallback: fetch from Transactions table if Razorpay amount unavailable
         const txForAmount: any = await env.DB.prepare(
-          "SELECT id, amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
+          "SELECT id, ROUND(amount_paise / 100.0, 2) AS amount_rupees FROM Transactions WHERE razorpay_order_id = ? AND type IN ('course_purchase', 'book_purchase')",
         )
           .bind(orderId)
           .first();
@@ -19242,7 +19386,7 @@ async function handleRazorpayWebhook(
         // Idempotency: only credit wallet if transaction was just upgraded from 'created' to 'successful'
         // D1 (SQLite-based) RETURNING clause support nahi karta — do step mein karte hain
         const creditTxFind: any = await env.DB.prepare(
-          "SELECT id, user_id, amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
+          "SELECT id, user_id, ROUND(amount_paise / 100.0, 2) AS amount_rupees, related_id FROM Transactions WHERE razorpay_order_id = ? AND type = 'credit_purchase' AND status = 'created'",
         )
           .bind(orderId)
           .first();
@@ -19298,7 +19442,7 @@ async function handleRazorpayWebhook(
             console.log(`[Webhook] subscription.activated race detected for ${sub.id}, another delivery already processed it`);
           } else {
             const dbSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_paise, p.live_class_amount_paise
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id
              WHERE s.razorpay_subscription_id = ?`,
           )
@@ -19306,19 +19450,20 @@ async function handleRazorpayWebhook(
             .first();
 
           if (dbSub) {
-            // Allocate AI credits based on plan + user selections
-            if ((dbSub.ai_credits || 0) !== 0) {
-              await allocateAICredits(
-                dbSub.user_id,
-                dbSub.id,
-                dbSub.plan_id,
-                dbSub,
+            // Add wallet topup based on plan
+            if ((dbSub.wallet_amount_paise || 0) > 0) {
+              await addToWalletPaise(
                 env,
+                dbSub.user_id,
+                Number(dbSub.wallet_amount_paise),
+                "wallet_topup",
+                "subscription",
+                dbSub.id,
               );
             }
-            if (dbSub.live_class_amount_rupees > 0) {
-              const renewalAmount = dbSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
+            if ((dbSub.live_class_amount_paise || 0) > 0) {
+              const renewalPaise = Number(dbSub.live_class_amount_paise) || 0;
+              if (renewalPaise > 0) {
                 // 🔴 FIX: Use D1 batch for atomic status update + wallet credit + tracking field.
                 // Previously: status update, then addToWallet, then tracking field update
                 // were 3 separate calls. If the worker crashed after status update
@@ -19327,29 +19472,30 @@ async function handleRazorpayWebhook(
                 // Now they execute in one DB transaction — all succeed or none.
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
+                const renewalRupees = paiseToRupees(renewalPaise);
                 const batchStmts = [
-                  // Status update (no-op if already active — safe for retry)
+                  // Status update (no-op if already active - safe for retry)
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'active'`,
                   ).bind(periodStart, periodEnd, dbSub.id),
-                  // Credit wallet
+                  // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
                      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
-                       balance_rupees = ROUND(balance_rupees + ?, 2),
-                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
-                       updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, dbSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                       balance_paise = balance_paise + ?,
+                       lifetime_deposits_paise = lifetime_deposits_paise + ?,
+                                                                     updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, dbSub.user_id, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, dbSub.user_id, renewalAmount, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
-                  // Accumulate tracking field — add plan value to existing balance (rollover)
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, dbSub.user_id, renewalPaise, dbSub.user_id, "subscription_credits", "subscription", dbSub.id),
+                  // Accumulate tracking field - add plan value to existing balance (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-                  ).bind(renewalAmount, dbSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ? WHERE id = ?`,
+                  ).bind(renewalPaise, dbSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
@@ -19411,7 +19557,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal — update period dates and refill live_class_amount_rupees
+      // Renewal — update period dates and refill live_class_amount_paise
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
@@ -19441,60 +19587,62 @@ async function handleRazorpayWebhook(
           console.log(`[Webhook] subscription.charged side-effects skipped for ${sub.id} (already processed)`);
         } else {
           const chargedSub: any = await env.DB.prepare(
-            `SELECT s.id, s.user_id, s.plan_id, p.ai_credits, p.ai_credits_period, p.ai_rate_limit_per_hour, p.live_class_amount_rupees
+            `SELECT s.id, s.user_id, s.plan_id, p.wallet_amount_paise, p.live_class_amount_paise
              FROM Subscriptions s JOIN SubscriptionPlans p ON s.plan_id = p.id WHERE s.razorpay_subscription_id = ?`,
           )
             .bind(sub.id)
             .first();
           if (chargedSub) {
-            if (chargedSub.live_class_amount_rupees > 0) {
+            if ((chargedSub.live_class_amount_paise || 0) > 0) {
               // 🔴 FIX: Atomic batch for status update, wallet credit, tracking field.
               // Prevents permanent credit loss if worker crashes mid-way.
-              const renewalAmount = chargedSub.live_class_amount_rupees || 0;
-              if (renewalAmount > 0) {
+              const renewalPaise = Number(chargedSub.live_class_amount_paise) || 0;
+              if (renewalPaise > 0) {
                 const walletId = generateCustomId("YA-CRW");
                 const ledgerId = generateCustomId("YA-CRL");
+                const renewalRupees = paiseToRupees(renewalPaise);
                 const batchStmts = [
                   // Update period dates
                   env.DB.prepare(
                     `UPDATE Subscriptions SET status = 'active', current_period_start = ?, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
                   ).bind(periodStart, periodEnd, chargedSub.id),
-                  // Credit wallet
+                  // Credit wallet - paise source of truth, rupees derived (#675)
                   env.DB.prepare(
-                    `INSERT INTO CreditWallets (id, user_id, balance_rupees, lifetime_deposits_rupees, updated_at)
+                    `INSERT INTO CreditWallets (id, user_id, balance_paise, lifetime_deposits_paise, updated_at)
                      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                      ON CONFLICT(user_id) DO UPDATE SET
-                       balance_rupees = ROUND(balance_rupees + ?, 2),
-                       lifetime_deposits_rupees = ROUND(lifetime_deposits_rupees + ?, 2),
-                       updated_at = CURRENT_TIMESTAMP`,
-                  ).bind(walletId, chargedSub.user_id, renewalAmount, renewalAmount, renewalAmount, renewalAmount),
+                       balance_paise = balance_paise + ?,
+                       lifetime_deposits_paise = lifetime_deposits_paise + ?,
+                                                                     updated_at = CURRENT_TIMESTAMP`,
+                  ).bind(walletId, chargedSub.user_id, renewalPaise, renewalPaise, renewalPaise, renewalPaise),
                   // Ledger entry
                   env.DB.prepare(
-                    `INSERT INTO CreditLedger (id, user_id, change_rupees, balance_after_rupees, reason, reference_type, reference_id)
-                     SELECT ?, ?, ?, (SELECT balance_rupees FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
-                  ).bind(ledgerId, chargedSub.user_id, renewalAmount, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
+                    `INSERT INTO CreditLedger (id, user_id, change_paise, balance_after_paise, reason, reference_type, reference_id)
+                     SELECT ?, ?, ?, (SELECT balance_paise FROM CreditWallets WHERE user_id = ?), ?, ?, ? LIMIT 1`,
+                  ).bind(ledgerId, chargedSub.user_id, renewalPaise, chargedSub.user_id, "subscription_renewal", "subscription", chargedSub.id),
                   // Accumulate tracking field (rollover)
                   env.DB.prepare(
-                    `UPDATE Subscriptions SET live_class_amount_rupees = COALESCE(live_class_amount_rupees, 0) + ? WHERE id = ?`,
-                  ).bind(renewalAmount, chargedSub.id),
+                    `UPDATE Subscriptions SET live_class_amount_paise = COALESCE(live_class_amount_paise, 0) + ? WHERE id = ?`,
+                  ).bind(renewalPaise, chargedSub.id),
                 ];
                 await env.DB.batch(batchStmts);
               }
             }
-            if ((chargedSub.ai_credits || 0) !== 0) {
-              await allocateAICredits(
-                chargedSub.user_id,
-                chargedSub.id,
-                chargedSub.plan_id,
-                chargedSub,
+            if ((chargedSub.wallet_amount_paise || 0) > 0) {
+              await addToWalletPaise(
                 env,
+                chargedSub.user_id,
+                Number(chargedSub.wallet_amount_paise),
+                "wallet_topup",
+                "subscription",
+                chargedSub.id,
               );
             }
             await createNotification(
               env,
               chargedSub.user_id,
               "Subscription Renewed! ♻️",
-              "Aapka subscription renew ho gaya hai aur new credits add ho gaye hain.",
+              "Aapka subscription renew ho gaya hai aur wallet me paise add ho gaye hain.",
               "success",
             );
           }
@@ -19679,14 +19827,14 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
 
     const courseId = generateCustomId("YA-CRS");
     await env.DB.prepare(
-      "INSERT INTO Courses (id, title, description, teacher_id, price_rupees) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Courses (id, title, description, teacher_id, price_paise) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(
         courseId,
         "Advanced Cloudflare Workers",
         "Learn how to build edge applications.",
         teacherId,
-        4900,
+        490000,
       )
       .run();
 
@@ -19736,6 +19884,10 @@ export function sanitizeJson(text: string): string {
   const lastBrace = sanitized.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1) {
     sanitized = sanitized.substring(firstBrace, lastBrace + 1);
+  } else {
+    // If AI hallucinates plain text instead of JSON, wrap it safely
+    // so JSON.parse doesn't crash downstream.
+    return JSON.stringify({ reply: text.trim() });
   }
 
   // Safest for AI output that is just simple JSON is to remove newlines completely.
@@ -19952,6 +20104,87 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   }
 }
 
+// Converts Workers AI's native streaming chunks ({"response":"..."}) into
+// OpenAI-compatible SSE (data: {"choices":[{"delta":{"content":"..."}}]})
+// so the frontend can use a single parser for both the Gateway stream
+// (admin/teacher) and the direct Workers AI stream (students).
+function transformWorkersAIStreamToOpenAI(
+  input: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const reader = input.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === "data: [DONE]") continue;
+
+            // Accept both bare JSON lines and `data: {...}` SSE frames.
+            const jsonLine = trimmed.startsWith("data:")
+              ? trimmed.slice(5).trim()
+              : trimmed;
+            if (!jsonLine) continue;
+
+            let parsed: any;
+            try {
+              parsed = JSON.parse(jsonLine);
+            } catch {
+              continue; // partial frame, wait for more data
+            }
+
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          }
+        }
+
+        // Flush any trailing partial JSON line
+        const tail = buffer.trim();
+        if (tail && tail !== "data: [DONE]") {
+          try {
+            const jsonLine = tail.startsWith("data:")
+              ? tail.slice(5).trim()
+              : tail;
+            const parsed = JSON.parse(jsonLine);
+            const content = parsed?.response;
+            if (typeof content === "string" && content) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+                ),
+              );
+            }
+          } catch { /* ignore malformed tail */ }
+        }
+
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (e) {
+        console.error("[AI Chat] Student stream transform error:", e);
+      } finally {
+        try {
+          controller.close();
+        } catch { /* already closed */ }
+      }
+    },
+  });
+}
+
 // --- AI Assistant Helpers ---
 
 async function getAIGlobalContext(
@@ -20025,7 +20258,7 @@ Actions:
           WHERE e.user_id = ?
         `,
         ).bind(userId),
-        env.DB.prepare("SELECT id, title, price_rupees FROM Courses"),
+        env.DB.prepare("SELECT id, title, ROUND(price_paise / 100.0, 2) AS price_rupees FROM Courses"),
         env.DB.prepare(
           "SELECT title, message, created_at FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
         ).bind(userId),
@@ -20685,13 +20918,7 @@ async function handleAdminBroadcast(
     if (sendPush) parts.push(`Push: ${pushSent} sent, ${pushFailed} failed${pushSkipped > 0 ? `, ${pushSkipped} skipped` : ``}`);
 
     const broadcastUserIds = users.filter((u) => u.id).map((u) => u.id as string);
-    ctx?.waitUntil(notifyUsers(env, broadcastUserIds, {
-      type: "data",
-      channel: "user:me",
-      action: "new_broadcast",
-      entity: "broadcast",
-      data: { title: subject || "New Update", message },
-    }));
+    ctx?.waitUntil(broadcastToUsers(env, broadcastUserIds, "broadcast", { title: subject || "New Update", message }));
 
     return new Response(JSON.stringify({
       success: true,
@@ -20887,7 +21114,7 @@ async function replaceDynamicVariables(
 
   const enrollment = (await env.DB.prepare(
     `
-    SELECT e.*, c.title as course_title, c.price_rupees as course_price
+    SELECT e.*, c.title as course_title, ROUND(c.price_paise / 100.0, 2) AS course_price
     FROM Enrollments e
     JOIN Courses c ON e.course_id = c.id
     WHERE e.user_id = ?
@@ -21044,15 +21271,16 @@ async function executeAIAction(
             message: "Missing required parameter: title",
           };
         const id = generateCustomId("YA-CRS");
+        const seedPricePaise = inrToPaise(normalizeAmountRupees(params.price_rupees));
         await env.DB.prepare(
-          "INSERT INTO Courses (id, title, description, teacher_id, price_rupees, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO Courses (id, title, description, teacher_id, price_paise, price_usd, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             id,
             params.title,
             params.description ?? "",
             adminId,
-            params.price_rupees ?? 0,
+            seedPricePaise,
             params.price_usd ?? 0,
             params.category_id ?? null,
           )
@@ -21065,13 +21293,14 @@ async function executeAIAction(
       case "edit_course": {
         if (!params.id)
           return { success: false, message: "Missing required parameter: id" };
+        const editPricePaise = params.price_rupees != null ? inrToPaise(normalizeAmountRupees(params.price_rupees)) : null;
         await env.DB.prepare(
-          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_rupees = COALESCE(?, price_rupees), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
+          "UPDATE Courses SET title = COALESCE(?, title), description = COALESCE(?, description), price_paise = COALESCE(?, price_paise), price_usd = COALESCE(?, price_usd), category_id = COALESCE(?, category_id) WHERE id = ?",
         )
           .bind(
             params.title ?? null,
             params.description ?? null,
-            params.price_rupees ?? null,
+            editPricePaise,
             params.price_usd ?? null,
             params.category_id ?? null,
             params.id,
@@ -21762,7 +21991,7 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
     const lessonId = body.lessonId;
     const chatMode = isTutor
       ? "lesson-tutor"
-      : role === "admin"
+      : (role === "admin" || role === "teacher")
         ? "admin-assistant"
         : "student-assistant";
     const rawSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
@@ -21851,7 +22080,7 @@ CONVERSATIONAL PROTOCOL:
 7. If the context is empty or missing, provide a general educational answer and mention that the exact lesson material is not available.
 8. Output your response as a valid JSON object formatted exactly as: {"reply": "Your message here"}
 9. DO NOT output any extra text, only valid JSON.`;
-    } else if (role === "admin") {
+    } else if (role === "admin" || role === "teacher") {
       systemContext = `You are "Admin Intelligence OS", the elite system assistant for Adityanveshan.
 ROLE: You are helping the System Administrator manage the platform, generate reports, send emails, and manage content.
 
@@ -21977,8 +22206,19 @@ Example JSON structure:
       }));
     }
 
+    const systemMessages = [{ role: "system", content: systemContext }];
+    if (role === "student") {
+      // Students bypass the Gateway (which enforced JSON via response_format),
+      // so add a hard reminder for direct Workers AI calls.
+      systemMessages.push({
+        role: "system",
+        content:
+          'CRITICAL: Output ONLY a single valid JSON object shaped like {"reply": "Your message here"}. Do not include any text, markdown, or explanation outside the JSON.',
+      });
+    }
+
     const messages = [
-      { role: "system", content: systemContext },
+      ...systemMessages,
       ...history,
       { role: "user", content: userPrompt },
     ];
@@ -21986,14 +22226,52 @@ Example JSON structure:
 
     const isStreamRequested = request.headers.get("X-Stream") === "true";
     if (isStreamRequested) {
-      return await fetchAIStream(messages, env, modelId);
+      if (role === "admin" || role === "teacher") {
+        return await fetchAIStream(messages, env, modelId);
+      } else {
+        // Workers AI has its own chunk format; convert to OpenAI-compatible SSE
+        // so the frontend stream parser works identically for both paths.
+        const aiStream = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+          messages,
+          stream: true,
+        });
+        const sseStream = transformWorkersAIStreamToOpenAI(aiStream as any);
+        return new Response(sseStream, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
     }
 
     // Try AI generation
     let aiContent = "";
     try {
-      // We must force JSON here for students as well, because we try to parse it at line 5431
-      aiContent = await generateAIContent(messages, env, true, modelId);
+      if (role === "admin" || role === "teacher") {
+        // We must force JSON here because we try to parse it later
+        aiContent = await generateAIContent(messages, env, true, modelId);
+      } else {
+        // Direct Workers AI call for students (Bypass Gateway)
+        const aiResult = await env.AI.run(modelId || "@cf/meta/llama-3.1-8b-instruct", {
+          messages: messages,
+          max_tokens: 4000
+        });
+        // Guard against unexpected shapes so aiContent never stays undefined:
+        // string -> use directly, object -> stringify, anything else -> warn + fallback.
+        const rawResult = (aiResult as any)?.response;
+        if (typeof rawResult === "string" && rawResult.trim()) {
+          aiContent = rawResult;
+        } else if (rawResult !== undefined && rawResult !== null && typeof rawResult === "object") {
+          aiContent = JSON.stringify(rawResult);
+        } else {
+          console.warn(
+            "[AI Chat] Workers AI returned unexpected result shape:",
+            JSON.stringify(aiResult).substring(0, 500),
+          );
+          aiContent =
+            aiResult !== undefined && aiResult !== null
+              ? JSON.stringify(aiResult)
+              : "";
+        }
+      }
     } catch (aiError: any) {
       console.error("AI Gen Error:", aiError);
 
@@ -22009,7 +22287,7 @@ Example JSON structure:
       return new Response(
         JSON.stringify({
           reply:
-            role === "admin"
+            (role === "admin" || role === "teacher")
               ? `❌ AI Error: ${aiError.message}`
               : "माफ़ करें, अभी मेरा सिस्टम अद्यतन हो रहा है। (AI Setup Incomplete or Error)",
         }),
@@ -22022,7 +22300,17 @@ Example JSON structure:
       const cleanedContent = sanitizeJson(aiContent);
       parsed = JSON.parse(cleanedContent);
     } catch (e) {
+      console.warn("[AI Chat] Fallback JSON parse triggered. Original content:", aiContent);
       parsed = { reply: aiContent };
+    }
+
+    // Never let reply be undefined/empty: it is written to ChatHistory and
+    // sent back to the frontend, so a missing reply would silently break both.
+    if (typeof parsed.reply !== "string" || !parsed.reply.trim()) {
+      parsed.reply =
+        typeof aiContent === "string" && aiContent.trim()
+          ? aiContent
+          : "No response received. Please try again.";
     }
 
     // Process Actions if any and user is Admin
@@ -22031,7 +22319,7 @@ Example JSON structure:
       JSON.stringify(parsed).substring(0, 500),
     );
 
-    if (parsed.action && role === "admin" && userId) {
+    if (parsed.action && (role === "admin" || role === "teacher") && userId) {
       console.log(`[AI Chat] Executing Action: ${parsed.action.type}`);
       const actionResult = await executeAIAction(
         parsed.action,
@@ -22408,33 +22696,72 @@ const worker = {
            });
         }
 
-        // --- WebSocket upgrade for real-time push ---
-        // Handle BEFORE general auth resolution to avoid a wasted requireAuth call.
-        if (url.pathname === "/api/ws") {
-          try {
+        // ================================================================
+        // 🛡️ WORKER-SHIELD PATTERN: /api/data
+        // ================================================================
+        // Rules:
+        //   GET  → Worker directly queries D1 (NO DO invocation)
+        //   POST → Worker forwards to DO (DO does D1 write + WS broadcast)
+        //   WS   → Worker forwards to DO (DO manages WebSocket lifecycle)
+        // ================================================================
+        if (url.pathname === "/api/data") {
+          const isWebSocket = request.headers.get("Upgrade") === "websocket";
+
+          // 🟢 FLUTTER: WebSocket upgrade → forward to DO
+          //
+          // Auth: Flutter sends session cookie via WebSocket upgrade headers
+          //   (see real_time_service.dart lines 86-97 — 'Cookie' header is set
+          //    using stored session cookie from ApiService.getSessionCookie()).
+          //   requireAuth() reads "Cookie: session=<jwt>" — this works natively
+          //   in Cloudflare Workers because Upgrade requests carry full HTTP
+          //   headers, including cookies.
+          //
+          //   X-App-JWT header (Play Integrity) is NOT used for user identity
+          //   — its payload has sub:'play_integrity_verified', not userId.
+          //
+          //   Query param auth (e.g. ?token=xxx) is REJECTED by policy:
+          //   it leaks credentials in server access logs and URL history.
+          //
+          if (isWebSocket) {
             let userId = "anonymous";
             try {
                const payload = await requireAuth(request, env);
                userId = payload.sub;
-            } catch (e) {
-               // Fallback to anonymous — requireAuth uses cookie and is sufficient.
-               // Do NOT fall back to token query param (leaks credentials in logs).
-            }
-
-            // Append userId to URL so DO can extract it
+            } catch {}
             const doUrl = new URL(request.url);
             doUrl.searchParams.set("userId", userId);
-
-            const doId = env.USER_CONNECTION_DO.idFromName(userId);
-            const stub = env.USER_CONNECTION_DO.get(doId);
+            const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+            const stub = env.DATA_SYNC_DO.get(doId);
             return stub.fetch(new Request(doUrl.toString(), request));
-          } catch (error) {
-             console.error("[WS] Connection Error:", error);
-             // Instead of failing completely, connect as anonymous to still receive global broadcasts
-             const doId = env.USER_CONNECTION_DO.idFromName("anonymous");
-             const stub = env.USER_CONNECTION_DO.get(doId);
-             return stub.fetch(request);
           }
+
+          // 🟢 NEXT.JS GET: Worker reads D1 directly — NO DO COST
+          if (request.method === "GET") {
+            const dataType = url.searchParams.get("type");
+            const userId = url.searchParams.get("userId");
+
+            if (dataType === "wallet" && userId) {
+              const wallet: any = await env.DB.prepare(
+                "SELECT ROUND(balance_paise / 100.0, 2) AS balance_rupees, ROUND(lifetime_deposits_paise / 100.0, 2) AS lifetime_deposits_rupees FROM CreditWallets WHERE user_id = ?"
+              ).bind(userId).first();
+              return new Response(JSON.stringify(wallet || { balance_rupees: 0 }), {
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+
+            // Add more GET handlers here as needed (courses, lessons, etc.)
+            // Always query D1 directly — DO ko mat jagao
+
+            return new Response(JSON.stringify({ error: "Invalid GET type" }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // 🟢 NEXT.JS POST/PUT/DELETE: Forward to DO
+          // DO D1 write karega + WebSocket broadcast karega
+          const doId = env.DATA_SYNC_DO.idFromName("data-sync");
+          const stub = env.DATA_SYNC_DO.get(doId);
+          return stub.fetch(request);
         }
 
         // Try to resolve user auth (don't throw — admin-only handlers will check)
@@ -23662,10 +23989,46 @@ else if (url.pathname === "/api/auth/verify-otp")
                let creditGateMaxMinutes = -1;
               if (!isAI && user?.role === "student" && sessionResult) {
                 const hasFreeAccess = sessionResult.is_free === 1;
-                
+
+                // Check whether this live session is already included via subscription or paid enrollment
+                let hasIncludedAccess = false;
+                let includedAccessReason = "";
+                if (!hasFreeAccess) {
+                  const accessProfile = await getUserAccessProfile(payload.sub, env);
+                  if (accessProfile.hasActiveSub) {
+                    if (accessProfile.liveSessionAccess) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription live_session_access";
+                    } else if (sessionResult.batch_id && accessProfile.allowedBatchIds.includes(sessionResult.batch_id)) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription batch access";
+                    } else if (sessionResult.course_id && (
+                      accessProfile.courseAccessType === "all" ||
+                      accessProfile.allowedCourseIds.includes(sessionResult.course_id)
+                    )) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "subscription course access";
+                    }
+                  }
+
+                  if (!hasIncludedAccess && sessionResult.course_id) {
+                    const paidEnrollment = await env.DB.prepare(
+                      "SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active' AND payment_status = 'paid'"
+                    ).bind(payload.sub, sessionResult.course_id).first();
+                    if (paidEnrollment) {
+                      hasIncludedAccess = true;
+                      includedAccessReason = "paid enrollment";
+                    }
+                  }
+
+                  if (hasIncludedAccess) {
+                    console.log(`[Live.Token] User ${payload.sub} granted free join for session ${sessionResult.id} via ${includedAccessReason}`);
+                  }
+                }
+
                 let creditGate: { allowed: boolean; requiredAmount: number; availableBalance: number; maxMinutes: number; message?: string } = { allowed: true, requiredAmount: 0, availableBalance: 0, maxMinutes: -1, message: "" };
 
-                if (!hasFreeAccess) {
+                if (!hasFreeAccess && !hasIncludedAccess) {
                   // Check if credit-based access is available (pay-per-class model)
                   const creditPolicy = await getGroupClassCreditPolicy(env, sessionResult.id);
                   const creditAccessAvailable = creditPolicy &&
@@ -23682,7 +24045,7 @@ else if (url.pathname === "/api/auth/verify-otp")
                       headers: { "Content-Type": "application/json" },
                     });
                   }
-                  
+
                   // Charge credits since they don't have free access but credit access is enabled
                   creditGate = await chargeSelfStudyGroupClassIfNeeded(
                     env,
@@ -24333,7 +24696,7 @@ async function handleEnrollTrial(request: Request, env: Env, courseId: string): 
     const payload = await verifyJWT(token, jwtSecret, env.ENVIRONMENT);
     const userId = payload.sub;
 
-    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, trial_duration_days, trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
+    const course: any = await env.DB.prepare("SELECT id, title, title_hi, description, description_hi, category_id, teacher_id, ROUND(price_paise / 100.0, 2) AS price_rupees, price_usd, thumbnail_url, merchant_default_image_url, self_study_enabled, ROUND(wallet_paise / 100.0, 2) AS wallet_rupees, self_study_only, individual_class_booking_enabled, individual_class_duration_minutes, ROUND(individual_class_cost_paise / 100.0, 2) AS individual_class_cost_rupees, trial_duration_days, ROUND(trial_upgrade_price_paise / 100.0, 2) AS trial_upgrade_price_rupees, sequential_unlock, created_at FROM Courses WHERE id = ?").bind(courseId).first();
     if (!course) return new Response(JSON.stringify({ error: "Course not found" }), { status: 404 });
 
     const trialDurationDays = (course.trial_duration_days as number) || 0;
@@ -24363,7 +24726,7 @@ async function handleAdminAnalytics(request: Request, env: Env): Promise<Respons
   try {
     await requireAdmin(request, env);
 
-    const revenue = await env.DB.prepare("SELECT SUM(amount_rupees) as total FROM Transactions WHERE status = 'successful'").first();
+    const revenue = await env.DB.prepare("SELECT ROUND(SUM(amount_paise) / 100.0, 2) as total FROM Transactions WHERE status = 'successful'").first();
     const users = await env.DB.prepare("SELECT COUNT(id) as total FROM Users").first();
     const courses = await env.DB.prepare("SELECT COUNT(id) as total FROM Courses").first();
     const books = await env.DB.prepare("SELECT COUNT(id) as total FROM Books").first();
@@ -24679,10 +25042,12 @@ async function handleUserGamification(request: Request, env: Env): Promise<Respo
       WHERE ub.user_id = ?
     `).bind(userId).all();
 
-    let earnedXp = (lessonCount * 50) + (courseCount * 500); // Base XP rules (badge XP already earned, don't re-add)
+    // Base XP from lessons/courses, plus XP from every badge the user has already earned.
+    let earnedXp = (lessonCount * 50) + (courseCount * 500);
     const earnedBadgeIds = new Set();
     userBadges.results.forEach((b: any) => {
       earnedBadgeIds.add(b.id);
+      earnedXp += (b.xp_reward || 0);
     });
 
     // Check all badges to see if the user qualifies for any new ones
@@ -24874,8 +25239,7 @@ async function handlePlayIntegrity(request: Request, env: Env): Promise<Response
 export default worker;
 
 export { LessonTranscriptionWorkflow, EnvSyncWorkflow } from "./workflows";
-export { UserConnectionDO } from './user-connection-do';
-export { BroadcastCoordinatorDO } from './broadcast-coordinator-do';
+export { DataSyncDO } from './data-sync-do';
 export { NotificationManager, AdminCommandProcessor } from './durable-objects';
 
 // Register admin command handlers for AdminCommandProcessor DO.

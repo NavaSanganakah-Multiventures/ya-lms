@@ -136,6 +136,11 @@ export default function AdminSecretsPage() {
     return secrets[key] === compareVal;
   };
 
+  const secretEntries = useMemo(
+    () => Object.entries(secrets).filter(([key]) => key !== 'ALLOWED_CORS_ORIGINS'),
+    [secrets]
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -143,11 +148,6 @@ export default function AdminSecretsPage() {
       </div>
     );
   }
-
-  const secretEntries = useMemo(
-    () => Object.entries(secrets).filter(([key]) => key !== 'ALLOWED_CORS_ORIGINS'),
-    [secrets]
-  );
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">

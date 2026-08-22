@@ -41,9 +41,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/wallet/balance?t=${Date.now()}`);
       if (!res.ok) {
         console.warn(`[Wallet] refreshBalance returned ${res.status}: ${res.statusText}`);
-        // Reset to 0 on failure instead of keeping stale balance
-        setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
-        setBalanceState(0);
+        // Preserve existing balance on transient failures to avoid a confusing "0" flash.
         return;
       }
       const data: any = await res.json();
@@ -52,20 +50,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setBalanceState(data.balance_rupees ?? 0);
       } else {
         console.warn('[Wallet] Unexpected API response format:', data);
-        setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
-        setBalanceState(0);
       }
     } catch (err) {
       console.error('[Wallet] Failed to refresh wallet:', err);
-      // Reset to 0 on network error instead of keeping stale balance
-      setWalletData({ balance_rupees: 0, lifetime_deposits_rupees: 0, lifetime_withdrawals_rupees: 0 });
-      setBalanceState(0);
+      // Keep stale balance on network error; do not reset to zero.
     }
   }, []);
 
-  // Listen for real-time wallet updates
+  // Listen for real-time wallet updates broadcast from DataSyncDO.
+  // Normalized event shape: { channel: 'user:me', entity: 'wallet', action, data }
   useRealtimeChannel('user:me', (event) => {
-    if (event.entity === 'wallet') {
+    if (event.channel === 'user:me' && (event.entity === 'wallet' || event.type === 'wallet')) {
       refreshBalance();
     }
   });

@@ -34,12 +34,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
  _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
  _fetchData();
- _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-   if (!mounted) return;
-   if (event['entity'] == 'subscription') {
-     _fetchData();
-   }
- });
+  _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+    if (!mounted) return;
+    if (event['entity'] == 'subscription') {
+      await _fetchDataQuietly();
+    }
+  });
  }
 
  @override
@@ -50,12 +50,36 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
  super.dispose();
  }
 
- Future<void> _fetchData() async {
- if (!mounted) return;
- setState(() {
- _isLoading = true;
- _error = null;
- });
+  Future<void> _fetchDataQuietly() async {
+    try {
+      final results = await Future.wait([
+        ApiService.getSubscriptionPlans(),
+        ApiService.getUserSubscription(),
+      ]);
+      if (!mounted) return;
+      if (results[0].statusCode == 200) {
+        final plansData = results[0].data;
+        setState(() {
+          _plans = plansData['plans'] ?? [];
+        });
+      }
+      if (results[1].statusCode == 200) {
+        final subData = results[1].data;
+        setState(() {
+          _mySub = subData['subscription'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Subscription quiet refresh failed: $e');
+    }
+  }
+
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
  try {
  final results = await Future.wait([
@@ -409,9 +433,9 @@ class _PlanCard extends StatelessWidget {
  final interval = plan['interval'] ?? 'monthly';
  final courseAccess = plan['course_access_type'] ?? 'none';
  final batchAccess = plan['batch_access_type'] ?? 'none';
- final aiCredits = plan['ai_credits'] ?? 0;
- final liveSessionAccess = plan['live_session_access'] == 1;
- final isLifetime = plan['is_lifetime'] == 1;
+  final walletTopup = num.tryParse(plan['wallet_amount_rupees']?.toString() ?? '') ?? 0;
+  final liveSessionAccess = plan['live_session_access'] == 1 || plan['live_session_access'] == true;
+ final isLifetime = plan['is_lifetime'] == 1 || plan['is_lifetime'] == true;
 
  final features = <String>[];
  if (courseAccess == 'all') features.add('All courses access');
@@ -421,11 +445,11 @@ class _PlanCard extends StatelessWidget {
  if (batchAccess == 'user_choice') {
  features.add('Choose ${plan['max_batch_selection'] ?? '?'} batches');
  }
- if (aiCredits > 0) features.add('$aiCredits AI credits');
+  if (walletTopup > 0) features.add('₹${walletTopup.toStringAsFixed(2)} wallet topup');
  if (liveSessionAccess) features.add('Live session access');
- if (plan['live_class_amount_rupees'] != null &&
- (plan['live_class_amount_rupees'] as num) > 0) {
- features.add('₹${((plan['live_class_amount_rupees'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} Live Class Wallet');
+ final liveClassAmount = num.tryParse(plan['live_class_amount_rupees']?.toString() ?? '') ?? 0;
+ if (liveClassAmount > 0) {
+ features.add('₹${liveClassAmount.toStringAsFixed(2)} Live Class Wallet');
  }
 
  return Container(

@@ -25,7 +25,6 @@ const APPLY_OPTIONS = [
   { value: 'all', label: 'All purchases' },
   { value: 'course', label: 'Courses' },
   { value: 'batch', label: 'Batches' },
-  { value: 'ai_credits', label: 'AI Credits' },
   { value: 'subscription', label: 'Subscribers / Plans' },
   { value: 'form', label: 'Forms' },
 ];

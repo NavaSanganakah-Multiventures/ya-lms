@@ -60,7 +60,7 @@ class NotificationService {
  await _refreshToken();
  _retrieveAPNSToken();
  _listenForTokenRefresh();
- _setupTapHandlers();
+    // Tap handlers are wired in setOnTap() once the router is ready.
  } catch (e) {
  debugPrint('[Notification] init error: $e');
  }
@@ -101,8 +101,11 @@ class NotificationService {
  }
 
  void setOnTap(NotificationTapHandler handler) {
- _onTap = handler;
- }
+    _onTap = handler;
+    // Start listeners only when both messaging and a tap handler are ready
+    // so the terminated-state notification is never lost.
+    _setupTapHandlers();
+  }
 
  /// Call after a successful login. The auth cookie is already stored
  /// in SharedPreferences by `api_service._updateCookie` — we just need

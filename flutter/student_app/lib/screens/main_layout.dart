@@ -14,10 +14,11 @@ import 'wallet_screen.dart';
 import 'profile_screen.dart';
 import 'yagya_mitra_screen.dart';
 import 'live_class_realtimekit_screen.dart';
-import '../utils/responsive.dart';
+import '../widgets/mini_player_widget.dart';
+import '../widgets/custom_bottom_nav.dart';
 
 class MainLayoutScreen extends StatefulWidget {
- MainLayoutScreen({super.key});
+ const MainLayoutScreen({super.key});
 
  @override
  State<MainLayoutScreen> createState() => _MainLayoutScreenState();
@@ -26,6 +27,7 @@ class MainLayoutScreen extends StatefulWidget {
 class _MainLayoutScreenState extends State<MainLayoutScreen>
  with WidgetsBindingObserver {
  int _currentIndex = 0;
+ final Set<int> _visitedTabs = {0};
  int _refreshCounter = 0;
  int _unreadCount = 0;
  Timer? _notificationTimer;
@@ -34,13 +36,17 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  final LiveClassPipManager _pip = LiveClassPipManager.instance;
  bool _pipSupported = false;
 
- List<Widget> get _screens => [
- DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
- BooksScreen(key: ValueKey('books_$_refreshCounter')),
- YagyaMitraScreen(),
- WalletScreen(),
- ProfileScreen(),
- ];
+ late List<Widget> _screens;
+
+  void _updateScreens() {
+    _screens = [
+      DashboardScreen(key: ValueKey('dashboard_$_refreshCounter')),
+      BooksScreen(key: ValueKey('books_$_refreshCounter')),
+      YagyaMitraScreen(),
+      WalletScreen(),
+      ProfileScreen(),
+    ];
+  }
 
  late final StreamSubscription? _realtimeSub;
  late final StreamSubscription? _connectionSub;
@@ -56,8 +62,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  Timer.periodic( Duration(seconds: 120), (_) => _fetchUnreadCount());
  _checkPipSupport();
 
- // Connect to WebSocket and listen for events
- RealTimeService.instance.connect();
+ // Build the tab screen list once; refresh only by _refresh().
+    _updateScreens();
+
+    // Connect to WebSocket and listen for events
+    RealTimeService.instance.connect();
  _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
  if (mounted) setState(() => _isRealtimeConnected = connected);
  });
@@ -66,10 +75,17 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
   final action = event['action'];
   final entity = event['entity'];
   if (action == 'course_published') {
+    final publishedTitle = (event['data'] is Map)
+        ? (event['data']['title'] ?? 'New Course').toString()
+        : 'New Course';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('🚀 New Course Published: ${event['data']['title']}')),
+      SnackBar(content: Text('🚀 New Course Published: $publishedTitle')),
     );
   } else if (entity == 'wallet' && action == 'wallet_updated') {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('💰 Wallet Balance Updated!')),
+    );
+  } else if (event['type'] == 'wallet') {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('💰 Wallet Balance Updated!')),
     );
@@ -147,10 +163,31 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  }
 
  void _refresh() {
- setState(() {
- _refreshCounter++;
- });
- }
+    setState(() {
+      _refreshCounter++;
+      _updateScreens();
+    });
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _currentIndex = index;
+      _visitedTabs.add(index);
+    });
+  }
+
+  Widget _tabOrPlaceholder(int index) {
+    if (!_visitedTabs.contains(index)) {
+      return Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+        ),
+      );
+    }
+    return _screens[index];
+  }
 
  // ── Tap mini player → back to full screen ───────────────────
  void _openFullScreen() {
@@ -213,7 +250,12 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  children: [
  IconButton(
  icon: Icon(Icons.notifications_outlined),
- onPressed: () {},
+ onPressed: () {
+ _fetchUnreadCount();
+ ScaffoldMessenger.of(context).showSnackBar(
+ SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ हैं')),
+ );
+ },
  color: AppTheme.textPrimaryOf(context),
  ),
  if (_unreadCount > 0)
@@ -255,290 +297,41 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
  // Layer 1: Normal tab content
  IndexedStack(
  index: _currentIndex,
- children: _screens,
+ children: [
+ _tabOrPlaceholder(0),
+ _tabOrPlaceholder(1),
+ _tabOrPlaceholder(2),
+ _tabOrPlaceholder(3),
+ _tabOrPlaceholder(4),
+ ],
  ),
 
  // Layer 2: Mini player overlay (when live class is in mini mode)
- if (_pip.isMiniPlayerVisible) _buildMiniPlayer(),
+          if (_pip.isMiniPlayerVisible)
+            MiniPlayerWidget(
+              onOpenFullScreen: _openFullScreen,
+              onClose: () {
+                _pip.stopLiveClass();
+                try {
+                  RealtimeKitUIBuilder.dispose();
+                } catch (e, st) {
+                  debugPrint('[MainLayout] RealtimeKit dispose error: $e\n$st');
+                }
+              },
+              onToggleMic: () {
+                _pip.toggleMic();
+                PictureInPictureService.updatePiPActions(
+                    micEnabled: _pip.micEnabled);
+              },
+              title: _pip.title,
+              micEnabled: _pip.micEnabled,
+            ),
  ],
  ),
- bottomNavigationBar: _buildBottomNav(),
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: _currentIndex,
+        onTap: _selectTab,
+      ),
  );
- }
-
- // ── Mini Player Widget ───────────────────────────────────────
- Widget _buildMiniPlayer() {
- return Positioned(
- left: 12,
- right: 12,
- bottom: isMobile(context) ? 72 : (isTablet(context) ? 80 : 88), // above bottom nav
- child: GestureDetector(
- onTap: _openFullScreen,
- child: Container(
- height: isMobile(context) ? 90 : (isTablet(context) ? 100 : 110),
- decoration: BoxDecoration(
- color: Color(0xFF1A1A2E),
- borderRadius: BorderRadius.circular(16),
- border: Border.all(color: AppTheme.primaryLight.withAlpha(80)),
- boxShadow: [
- BoxShadow(
- color: Colors.black.withAlpha(80),
- blurRadius: 16,
- offset: Offset(0, 4),
- ),
- ],
- ),
- child: Row(
- children: [
- // Video placeholder / live indicator
- Container(
- width: isMobile(context) ? 90 : (isTablet(context) ? 100 : 120),
- decoration: BoxDecoration(
- color: Colors.black45,
- borderRadius: BorderRadius.horizontal(
- left: Radius.circular(16)),
- ),
- child: Center(
- child: Icon(Icons.videocam_rounded,
- color: Colors.white54, size: 32),
- ),
- ),
- SizedBox(width: 12),
- // Title + status
- Expanded(
- child: Column(
- mainAxisAlignment: MainAxisAlignment.center,
- crossAxisAlignment: CrossAxisAlignment.start,
- children: [
- Text(
- _pip.title,
- maxLines: 1,
- overflow: TextOverflow.ellipsis,
- style: TextStyle(
- color: Colors.white,
- fontWeight: FontWeight.bold,
- fontSize: 14,
- ),
- ),
- SizedBox(height: 4),
- Row(
- children: [
- Container(
- width: 8,
- height: 8,
- decoration: BoxDecoration(
- color: Colors.greenAccent,
- shape: BoxShape.circle,
- ),
- ),
- SizedBox(width: 6),
- Text(
- 'Live',
- style: TextStyle(
- color: Colors.white70, fontSize: 12),
- ),
- ],
- ),
- ],
- ),
- ),
- // Mic toggle
- IconButton(
- icon: Icon(
- _pip.micEnabled
- ? Icons.mic_rounded
- : Icons.mic_off_rounded,
- color: _pip.micEnabled
- ? AppTheme.primaryLight
- : AppTheme.danger,
- ),
- onPressed: () {
- _pip.toggleMic();
- PictureInPictureService.updatePiPActions(
- micEnabled: _pip.micEnabled);
- },
- tooltip: _pip.micEnabled ? 'Mute Mic' : 'Unmute Mic',
- ),
- // Close / leave
- IconButton(
- icon: Icon(Icons.close, color: Colors.white54),
- onPressed: () {
- _pip.stopLiveClass();
- RealtimeKitUIBuilder.dispose();
- },
- tooltip: 'Leave Class',
- ),
- SizedBox(width: 4),
- ],
- ),
- ),
- ),
- );
- }
-
- // ── Bottom Navigation ────────────────────────────────────────
- Widget _buildBottomNav() {
- return Container(
- decoration: BoxDecoration(
- boxShadow: [
- BoxShadow(
- color: Colors.black.withAlpha(20),
- blurRadius: 20,
- offset: Offset(0, -5),
- ),
- ],
- ),
- child: ClipRRect(
- borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
- child: BottomAppBar(
- color: AppTheme.surfaceOf(context),
- elevation: 0,
- height: isMobile(context) ? 64 : (isTablet(context) ? 72 : 80),
- padding: EdgeInsets.zero,
- child: Row(
- mainAxisAlignment: MainAxisAlignment.spaceAround,
- children: [
- _navItem(
- index: 0, icon: Icons.dashboard_rounded, label: 'Home'),
- _navItem(
- index: 1,
- icon: Icons.library_books_rounded,
- label: 'Library'),
- _CenterNavItem(
- onTap: () => setState(() => _currentIndex = 2)),
- _navItem(
- index: 3,
- icon: Icons.account_balance_wallet_rounded,
- label: 'Wallet'),
- _navItem(
- index: 4,
- icon: Icons.account_circle_rounded,
- label: 'Profile'),
- ],
- ),
- ),
- ),
- );
- }
-
- Widget _navItem(
- {required int index, required IconData icon, required String label}) {
- final isSelected = _currentIndex == index;
- return Expanded(
- child: InkWell(
- onTap: () => setState(() => _currentIndex = index),
- borderRadius: BorderRadius.circular(16),
- child: Padding(
- padding: EdgeInsets.symmetric(vertical: 6),
- child: Column(
- mainAxisSize: MainAxisSize.min,
- children: [
- AnimatedContainer(
- duration: Duration(milliseconds: 200),
- padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
- decoration: BoxDecoration(
- color: isSelected
- ? AppTheme.primary.withAlphaOpacity(0.12)
- : Colors.transparent,
- borderRadius: BorderRadius.circular(16),
- ),
- child: Icon(
- icon,
- color: isSelected ? AppTheme.primary : AppTheme.mutedOf(context),
- size: 22,
- ),
- ),
- SizedBox(height: 2),
- Text(
- label,
- style: TextStyle(
- color: isSelected ? AppTheme.primary : AppTheme.mutedOf(context),
- fontSize: 10,
- fontWeight:
- isSelected ? FontWeight.w800 : FontWeight.w500,
- ),
- ),
- ],
- ),
- ),
- ),
- );
- }
-}
-
-// ── Re-usable from original file ───────────────────────────────
-class _CenterNavItem extends StatefulWidget {
- final VoidCallback onTap;
- _CenterNavItem({required this.onTap});
-
- @override
- State<_CenterNavItem> createState() => _CenterNavItemState();
-}
-
-class _CenterNavItemState extends State<_CenterNavItem>
- with SingleTickerProviderStateMixin {
- late AnimationController _pulseController;
- late Animation<double> _pulseAnimation;
-
- @override
- void initState() {
- super.initState();
- _pulseController = AnimationController(
- vsync: this,
- duration: Duration(milliseconds: 2000),
- )..repeat(reverse: true);
- _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
- CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
- );
- }
-
- @override
- void dispose() {
- _pulseController.dispose();
- super.dispose();
- }
-
- @override
- Widget build(BuildContext context) {
- return AnimatedBuilder(
- animation: _pulseAnimation,
- builder: (context, child) {
- final pulseValue = _pulseAnimation.value;
- final glowOpacity = 0.3 + (pulseValue * 0.4);
- final scale = 1.0 + (pulseValue * 0.04);
- return Transform.scale(
- scale: scale,
- child: Padding(
- padding: EdgeInsets.only(top: 0),
- child: InkWell(
- onTap: widget.onTap,
- borderRadius: BorderRadius.circular(28),
- child: Container(
- width: 60,
- height: 60,
- margin: EdgeInsets.only(bottom: 4),
- decoration: BoxDecoration(
- gradient: AppTheme.sacredGradient,
- shape: BoxShape.circle,
- boxShadow: [
- BoxShadow(
- color: AppTheme.primaryLight
- .withAlpha((80 * glowOpacity).round()),
- blurRadius: 12 + (pulseValue * 8),
- spreadRadius: 2 + (pulseValue * 4),
- ),
- ],
- ),
- child: Icon(
- Icons.smart_toy_rounded,
- color: Colors.white,
- size: 30,
- ),
- ),
- ),
- ),
- );
- },
- );
- }
+  }
 }

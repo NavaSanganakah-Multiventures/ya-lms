@@ -210,7 +210,7 @@ export default function AccountingPage() {
                   <td className="px-8 py-6">
                     <span className="text-sm font-bold text-neutral-400">
                       {t.type === "credit_purchase"
-                        ? "AI Credits"
+                        ? "Wallet Top-up"
                         : t.type === "subscription"
                           ? "Subscription"
                           : t.course_title || t.type || "Other"}
