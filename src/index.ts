@@ -14560,8 +14560,8 @@ async function handleGetDashboardData(
       env.DB.prepare(
         `
         SELECT bo.id, bo.title, bo.title_hi, bo.description, bo.description_hi,
-               bo.price_rupees, bo.thumbnail_url, bo.self_study_enabled,
-               bo.wallet_rupees, bo.is_standalone, bo.created_at,
+               ROUND(bo.price_paise / 100.0, 2) AS price_rupees, bo.thumbnail_url, bo.self_study_enabled,
+               ROUND(bo.wallet_paise / 100.0, 2) AS wallet_rupees, bo.is_standalone, bo.created_at,
                MAX(cb.course_id) as course_id
         FROM Books bo
         JOIN Enrollments e ON e.user_id = ? AND e.status IN ('active', 'completed')
