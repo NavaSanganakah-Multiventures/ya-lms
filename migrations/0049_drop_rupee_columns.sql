@@ -1,8 +1,8 @@
 -- Migration 0049: Drop legacy *_rupees money columns.
 -- Paise (*_paise) columns are now the SOLE source of truth for all money values.
--- Reads already use ROUND(*_paise / 100.0, 2) AS *_rupees aliases; writes are paise-only (PR #726).
+-- Reads already use ROUND(*_paise / 100.0, 2) AS *_rupees aliases; writes are paise-only (PRs #707, #720 and preceding #675 stages).
 -- No index / view / trigger references any *_rupee column (verified).
--- PREREQUISITE: PR #726 (paise-only writes + paise-derived reads) MUST be merged & deployed FIRST,
+-- PREREQUISITE: All paise-only writes and paise-derived reads (PRs #707, #720 and preceding #675 stages) MUST be merged & deployed FIRST,
 -- else INSERT/UPDATE statements still referencing these columns would fail at runtime.
 
 ALTER TABLE Courses DROP COLUMN price_rupees;

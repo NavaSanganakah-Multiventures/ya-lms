@@ -1347,7 +1347,7 @@ function parsePagination(
 const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
-// Single source of truth: all balances are stored in rupees (balance_rupees).
+// Single source of truth: all monetary amounts are stored in integer paise.
 // Razorpay API requires amounts in paise. Use these helpers everywhere.
 function inrToPaise(inr: number): number {
   return Math.round(Math.max(0, Number(inr) || 0) * 100);
@@ -19557,7 +19557,7 @@ async function handleRazorpayWebhook(
         }
       }
     } else if (eventType === "subscription.charged") {
-      // Renewal — update period dates and refill live_class_amount_rupees
+      // Renewal — update period dates and refill live_class_amount_paise
       const sub = event.payload?.subscription?.entity;
       if (sub?.id) {
         const periodEnd = sub.current_end
