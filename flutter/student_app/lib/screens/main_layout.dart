@@ -221,8 +221,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
                 try {
                   RealtimeKitUIBuilder.dispose();
                 } catch (e, st) {
-                  debugPrint('[MainLayout] RealtimeKit dispose error: $e
-$st');
+                  debugPrint('[MainLayout] RealtimeKit dispose error: $e / stack: $st');
                 }
               },
               onToggleMic: () {
