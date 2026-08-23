@@ -61,7 +61,6 @@ dependencies:
 
   # ── Yuva UI redesign dependencies ───────────────────────────
   google_fonts: ^6.2.1
-  phosphor_flutter: ^2.1.0
   flutter_svg: ^2.0.17
   flutter_animate: ^4.5.2
   flutter_staggered_animations: ^1.1.1
