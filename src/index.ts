@@ -17709,16 +17709,23 @@ async function checkAndConsumeAICredit(
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
   // 1) Free daily quota for students (configurable via site setting
   //    "student_ai_free_daily_limit", default 10). Lets students use AI even with
-  //    a zero wallet balance so AI works out of the box.
+  //    a zero wallet balance so AI works out of the box. True per-UTC-day counter.
   const freeLimit = await getStudentAIFreeDailyLimit(env);
   if (freeLimit > 0) {
-    const freeCheck = await checkRateLimit(env.DB, `ai_free:${userId}`, freeLimit, 1440);
-    if (freeCheck.allowed) {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const dailyKey = `ai_free_daily:${userId}:${today}`;
+    const result: any = await env.DB.prepare(
+      `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'rate_limit', ?, 1, ?)
+       ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1
+       RETURNING window_used`,
+    ).bind(dailyKey, today, freeLimit).first();
+    const used = Number(result?.window_used ?? 1);
+    if (used <= freeLimit) {
       return { allowed: true, remaining: undefined, deductionAmount: 0 };
     }
   }
 
-  // 2) Free quota exhausted (or disabled) — deduct credits.
+  // 2) Free quota exhausted (or disabled) -- deduct credits.
   const deduction = await getAICreditDeductionPerRequest(env);
   if (deduction > 0) {
     const deductionResult = await deductFromWallet(
@@ -17732,14 +17739,14 @@ async function checkAndConsumeAICredit(
     if (!deductionResult.ok) {
       return {
         allowed: false,
-        reason: `Balance kam hai. Is action ke liye ₹${deduction} chahiye. Kripya wallet recharge karein. (Insufficient balance. ₹${deduction} required. Please recharge your wallet.)`,
+        reason: `Balance kam hai. Is action ke liye Rs.${deduction} chahiye. Kripya wallet recharge karein. (Insufficient balance. Rs.${deduction} required. Please recharge your wallet.)`,
         remaining: deductionResult.balance_rupees,
       };
     }
     return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
   }
 
-  // 3) Credit deduction disabled (deduction == 0) — free for everyone.
+  // 3) Credit deduction disabled (deduction == 0) -- free for everyone.
   return { allowed: true, remaining: undefined, deductionAmount: 0 };
 }
 > {
@@ -20015,7 +20022,7 @@ export async function generateAIContent(
 ): Promise<string> {
   const models = await getAiModelConfig(env, modelId);
 
-  // Optional AI Gateway via the Workers AI binding (caching/analytics) — still a
+  // Optional AI Gateway via the Workers AI binding (caching/analytics). Still a
   // fast in-process binding call, NOT an external HTTP round-trip. If no gateway
   // is configured we run the binding directly (simplest & fastest path).
   const gatewayId = await getSecret(env, "AI_GATEWAY_ID", false);
