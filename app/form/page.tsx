@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense, useMemo, useCallback } from 'react';
 import { CheckCircle2, Globe, Send, Loader2, Users, MapPin, ChevronRight, Lock } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion } from 'motion/react';
@@ -9,6 +9,28 @@ import { useToast } from '@/contexts/ToastContext';
 
 const inputClass = "w-full bg-white/5 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all placeholder:text-neutral-600 rounded-2xl";
 const selectClass = "w-full bg-neutral-900/80 border border-white/10 px-5 py-4 text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all rounded-2xl appearance-none cursor-pointer";
+
+const CountrySelect = React.memo(function CountrySelect({ value, countries, onChange, className }: any) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)} className={className}>
+        {countries.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
+      </select>
+      <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
+    </div>
+  );
+});
+
+const StateSelect = React.memo(function StateSelect({ value, states, onChange, className }: any) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)} className={className}>
+        {states.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
+      </select>
+      <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
+    </div>
+  );
+});
 
 function FormContent() {
   const { error: showError } = useToast();
@@ -76,6 +98,17 @@ function FormContent() {
       });
     }
   }, [selectedCountry]);
+
+  // Memoized field change handler + parsed fields to avoid re-rendering every field on each keystroke
+  const onFieldChange = useCallback((name: string, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  }, []);
+  const onCountryChange = useCallback((code: string) => {
+    setSelectedCountry(countriesList.find(x => x.code === code) || countriesList[0]);
+  }, [countriesList]);
+  const onStateChange = useCallback((code: string) => {
+    setSelectedState(statesList.find(x => x.code === code) || statesList[0]);
+  }, [statesList]);
 
   // Batch state (if linked course has batches)
   const [batches, setBatches] = useState<any[]>([]);
@@ -198,24 +231,21 @@ function FormContent() {
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   if (!template) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">Form not found.</div>;
 
-  let fields: any[] = [];
-  try { fields = typeof template.fields_json === 'string' ? JSON.parse(template.fields_json || '[]') : (template.fields_json || []); }
-  catch (e) { }
+  const fields = useMemo<any[]>(() => {
+    try { return typeof template.fields_json === 'string' ? JSON.parse(template.fields_json || '[]') : (template.fields_json || []); }
+    catch (e) { return []; }
+  }, [template]);
 
   return (
     <div className="min-h-screen selection:bg-orange-500/30 transition-colors duration-700" style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.font }}>
       {/* Decorative Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
-        <motion.div
-          animate={theme.animations ? { scale: [1, 1.2, 1], rotate: [0, 90, 0], opacity: [0.1, 0.3, 0.1] } : {}}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full blur-[120px]"
+        <div
+          className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full blur-[60px]"
           style={{ backgroundColor: theme.primaryColor }}
         />
-        <motion.div
-          animate={theme.animations ? { scale: [1.2, 1, 1.2], rotate: [0, -90, 0], opacity: [0.1, 0.2, 0.1] } : {}}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px]"
+        <div
+          className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[60px]"
           style={{ backgroundColor: theme.secondaryColor || '#ec4899' }}
         />
       </div>
@@ -225,7 +255,7 @@ function FormContent() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, type: "spring" }}
-          className={theme.glassmorphism ? "bg-white/5 backdrop-blur-3xl border border-white/10 p-8 md:p-12 rounded-[2rem] shadow-2xl" : ""}
+          className={theme.glassmorphism ? "bg-neutral-900/80 border border-white/10 p-8 md:p-12 rounded-[2rem] shadow-2xl" : ""}
         >
           {!submitted ? (
             <>
@@ -269,23 +299,20 @@ function FormContent() {
                 )}
                 
                 {/* Dynamic Fields */}
-                {fields.map((field: any, idx: number) => (
-                  <motion.div
+                {fields.map((field: any) => (
+                  <div
                     key={field.name}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 + idx * 0.05 }}
                     className="space-y-2"
                   >
                     <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
                       {lang === 'hi' ? (field.label_hi || field.label) : field.label} {field.required && <span className="text-orange-500">*</span>}
                     </label>
                     {field.type === 'textarea' ? (
-                      <textarea required={field.required} value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })}
+                      <textarea required={field.required} value={formData[field.name] || ''} onChange={e => onFieldChange(field.name, e.target.value)}
                         placeholder={lang === 'hi' ? 'लिखें...' : 'Write...'} rows={4} className={inputClass + " resize-none"} />
                     ) : field.type === 'select' ? (
                       <div className="relative">
-                        <select required={field.required} value={formData[field.name] || ''} onChange={e => setFormData({ ...formData, [field.name]: e.target.value })}
+                        <select required={field.required} value={formData[field.name] || ''} onChange={e => onFieldChange(field.name, e.target.value)}
                           className={selectClass}>
                           <option value="" disabled className="bg-neutral-900">{lang === 'hi' ? 'चुनें...' : 'Select...'}</option>
                           {field.options?.map((opt: string) => <option key={opt} value={opt} className="bg-neutral-900">{opt}</option>)}
@@ -294,10 +321,10 @@ function FormContent() {
                       </div>
                     ) : (
                       <input type={field.type || 'text'} required={field.required} value={formData[field.name] || ''}
-                        onChange={e => setFormData({ ...formData, [field.name]: e.target.value })}
+                        onChange={e => onFieldChange(field.name, e.target.value)}
                         placeholder={lang === 'hi' ? (field.label_hi || field.label) : field.label} className={inputClass} />
                     )}
-                  </motion.div>
+                  </div>
                 ))}
 
                 {/* Country Selection */}
@@ -305,17 +332,7 @@ function FormContent() {
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
                     <Globe className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'देश (Country)' : 'Country'} <span className="text-orange-500">*</span>
                   </label>
-                  <div className="relative">
-                    <select value={selectedCountry.code}
-                      onChange={e => {
-                        const c = countriesList.find(x => x.code === e.target.value) || countriesList[0];
-                        setSelectedCountry(c);
-                      }}
-                      className={selectClass}>
-                      {countriesList.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
-                    </select>
-                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
-                  </div>
+                  <CountrySelect value={selectedCountry.code} countries={countriesList} onChange={onCountryChange} className={selectClass} />
                   <p className="text-xs text-neutral-600">Country Code: <span className="text-orange-400 font-mono font-bold">{selectedCountry.code}</span> | Dial: {selectedCountry.dialCode}</p>
                 </motion.div>
 
@@ -324,17 +341,7 @@ function FormContent() {
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'राज्य (State)' : 'State'} <span className="text-orange-500">*</span>
                   </label>
-                  <div className="relative">
-                    <select value={selectedState.code}
-                      onChange={e => {
-                        const s = statesList.find(x => x.code === e.target.value) || statesList[0];
-                        setSelectedState(s);
-                      }}
-                      className={selectClass}>
-                      {statesList.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
-                    </select>
-                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
-                  </div>
+                  <StateSelect value={selectedState.code} states={statesList} onChange={onStateChange} className={selectClass} />
                   <p className="text-xs text-neutral-600">State Code: <span className="text-orange-400 font-mono font-bold">{selectedState.code}</span></p>
                 </motion.div>
 
