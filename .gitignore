@@ -52,3 +52,15 @@ flutter/student_app/android/local.properties
 flutter/admin_app/android/local.properties
 flutter/student_app/apk/*
 flutter/student_app/build/app/outputs/apk/debug/
+
+# Build artifacts / debug logs (never commit compiled output or device logs)
+adb_logcat.txt
+
+# Firebase Android/iOS config - add your own via Firebase Console / flutterfire.
+# Contains project-specific keys; do not commit.
+flutter/**/android/app/google-services.json
+flutter/**/ios/Runner/GoogleService-Info.plist
+
+# Android signing credentials (release keystore + passwords)
+**/key.properties
+**/release-keystore.jks
