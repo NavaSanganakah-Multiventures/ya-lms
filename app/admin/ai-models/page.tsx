@@ -131,9 +131,9 @@ export default function AdminAiModelsPage() {
       <div className="flex justify-between items-end mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <Bot className="w-8 h-8 text-orange-500" /> AI à¤®à¥à¤¡à¤²à¥à¤¸ (AI Models)
+            <Bot className="w-8 h-8 text-orange-500" /> AI Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â²Ã Â¥ÂÃ Â¤Â¸ (AI Models)
           </h1>
-          <p className="text-neutral-400 mt-2 text-sm">Universal Cloudflare AI Gateway à¤à¥ à¤²à¤¿à¤ à¤®à¥à¤¡à¤²à¥à¤¸ à¤à¤° à¤ªà¥à¤°à¥à¤®à¥à¤ªà¥à¤à¥à¤¸ à¤à¥ à¤®à¥à¤¨à¥à¤ à¤à¤°à¥à¤à¥¤</p>
+          <p className="text-neutral-400 mt-2 text-sm">à¤®à¥à¤¡à¤²à¥à¤¸ Workers AI binding (env.AI) à¤¸à¥ à¤¸à¥à¤§à¥ à¤à¤²à¤¤à¥ à¤¹à¥à¤ â à¤¤à¥à¤µà¤¸à¥à¤¦ à¤à¤°à¤¤à¥à¤°à¥ à¤¹à¥ à¤¨à¤¹à¥à¤à¥¤ Model ID à¤à¤ªà¤¨à¥¾ <strong>@cf/...</strong> à¤µà¤¾à¤²à¤¾ à¤¹à¥à¤¨à¤¾ à¤à¤¾à¤¹à¤¿à¤ (à¤à¤ªà¤²à¤¬à¥à¤§: 5 à¤°à¥à¤ªà¤¯à¤¾/à¤°à¥à¤µà¥à¤¸à¥à¥à¤ à¤«à¥à¤°)à¥¤</p>
         </div>
         <button
           onClick={() => {
@@ -146,7 +146,7 @@ export default function AdminAiModelsPage() {
           }}
           className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all shadow-lg shadow-orange-500/25 flex items-center"
         >
-          <Plus className="w-4 h-4 mr-2" /> à¤¨à¤¯à¤¾ à¤®à¥à¤¡à¤² à¤à¥à¤¡à¤¼à¥à¤
+          <Plus className="w-4 h-4 mr-2" /> Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â² Ã Â¤ÂÃ Â¥ÂÃ Â¤Â¡Ã Â¤Â¼Ã Â¥ÂÃ Â¤Â
         </button>
       </div>
 
@@ -164,9 +164,9 @@ export default function AdminAiModelsPage() {
                 <div className="flex items-center text-xs text-neutral-500 mt-1 space-x-2">
                   <span className="bg-neutral-800 px-2 py-0.5 rounded text-neutral-300">{model.provider}</span>
                   {model.is_active === 1 ? (
-                    <span className="text-green-500">â Active</span>
+                    <span className="text-green-500">Ã¢ÂÂ Active</span>
                   ) : (
-                    <span className="text-red-500">â Inactive</span>
+                    <span className="text-red-500">Ã¢ÂÂ Inactive</span>
                   )}
                 </div>
               </div>
@@ -203,7 +203,7 @@ export default function AdminAiModelsPage() {
         {models.length === 0 && (
           <div className="col-span-full py-12 text-center text-neutral-500">
             <Database className="w-12 h-12 mx-auto mb-4 opacity-20" />
-            <p>à¤à¥à¤ AI à¤®à¥à¤¡à¤² à¤¨à¤¹à¥à¤ à¤®à¤¿à¤²à¤¾à¥¤ à¤à¥à¤ªà¤¯à¤¾ à¤à¤ à¤¨à¤¯à¤¾ à¤®à¥à¤¡à¤² à¤à¥à¤¡à¤¼à¥à¤à¥¤</p>
+            <p>Ã Â¤ÂÃ Â¥ÂÃ Â¤Â AI Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â² Ã Â¤Â¨Ã Â¤Â¹Ã Â¥ÂÃ Â¤Â Ã Â¤Â®Ã Â¤Â¿Ã Â¤Â²Ã Â¤Â¾Ã Â¥Â¤ Ã Â¤ÂÃ Â¥ÂÃ Â¤ÂªÃ Â¤Â¯Ã Â¤Â¾ Ã Â¤ÂÃ Â¤Â Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â² Ã Â¤ÂÃ Â¥ÂÃ Â¤Â¡Ã Â¤Â¼Ã Â¥ÂÃ Â¤ÂÃ Â¥Â¤</p>
           </div>
         )}
       </div>
@@ -212,7 +212,7 @@ export default function AdminAiModelsPage() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-2xl relative">
             <h2 className="text-2xl font-bold text-white mb-6">
-              {editingModel ? 'AI à¤®à¥à¤¡à¤² à¤à¤ªà¤¡à¥à¤ à¤à¤°à¥à¤' : 'à¤¨à¤¯à¤¾ AI à¤®à¥à¤¡à¤²'}
+              {editingModel ? 'AI Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â² Ã Â¤ÂÃ Â¤ÂªÃ Â¤Â¡Ã Â¥ÂÃ Â¤Â Ã Â¤ÂÃ Â¤Â°Ã Â¥ÂÃ Â¤Â' : 'Ã Â¤Â¨Ã Â¤Â¯Ã Â¤Â¾ AI Ã Â¤Â®Ã Â¥ÂÃ Â¤Â¡Ã Â¤Â²'}
             </h2>
             
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -242,15 +242,13 @@ export default function AdminAiModelsPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-1">Provider</label>
+                  <label className="block text-sm font-medium text-neutral-300 mb-1">Provider <span className="text-neutral-500 font-normal">(Workers AI binding)</span></label>
                   <select
                     value={newModel.provider}
                     onChange={e => setNewModel({ ...newModel, provider: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500"
                   >
-                    <option value="workers-ai">Cloudflare Workers AI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google-ai-studio">Google AI Studio</option>
+                    <option value="workers-ai">Cloudflare Workers AI (Binding)</option>
                   </select>
                 </div>
                 <div>
