@@ -17,6 +17,25 @@ interface EmailDraft {
   isHtml?: boolean;
 }
 
+const AI_ACTION_LABELS: Record<string, string> = {
+  draft_email: "✉️ ईमेल ड्राफ्ट",
+  bulk_draft_email: "✉️ बल्क ईमेल ड्राफ्ट",
+  create_form_and_draft_email: "📋 फॉर्म बनाएं",
+  save_broadcast_draft: "📢 ब्रॉडकास्ट ड्राफ्ट",
+  create_course: "📚 कोर्स बनाएं",
+  create_batch: "📦 बैच बनाएं",
+  add_lesson: "📖 पाठ जोड़ें",
+  edit_course: "✏️ कोर्स एडिट",
+  edit_batch: "✏️ बैच एडिट",
+  add_student: "👤 छात्र जोड़ें",
+  edit_student: "✏️ छात्र एडिट",
+  assign_course: "🔗 कोर्स असाइन",
+  send_email: "📤 ईमेल भेजें",
+};
+function actionLabel(type: string): string {
+  return AI_ACTION_LABELS[type] || type;
+}
+
 const TypewriterMessage = ({ content }: { content: string }) => {
   const [displayedText, setDisplayedText] = useState('');
   
@@ -40,7 +59,7 @@ const TypewriterMessage = ({ content }: { content: string }) => {
 };
 
 export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
-  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; draft?: EmailDraft }[]>([]);
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; draft?: EmailDraft; pendingAction?: { type: string; params: any; label?: string }; actionStatus?: 'pending' | 'executing' | 'done' | 'error'; actionResult?: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -120,6 +139,31 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
     }
   };
 
+  const handleApproveAction = async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    if (!msg?.pendingAction) return;
+    setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, actionStatus: 'executing' } : m));
+    try {
+      const res = await fetch('/api/admin/ai/execute-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: msg.pendingAction.type, params: msg.pendingAction.params }),
+      });
+      const result = await res.json() as any;
+      if (res.ok && result.success) {
+        setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, actionStatus: 'done', actionResult: result.message || '✅ कार्य पूर्ण हुआ।' } : m));
+      } else {
+        setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, actionStatus: 'error', actionResult: result.message || result.error || 'कार्य विफल।' } : m));
+      }
+    } catch (e) {
+      setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, actionStatus: 'error', actionResult: 'नेटवर्क त्रुटि।' } : m));
+    }
+  };
+
+  const handleDenyAction = (msgIndex: number) => {
+    setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, actionStatus: 'done', actionResult: 'अस्वीकार किया गया — कोई कार्य नहीं किया गया।' } : m));
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || loading) return;
@@ -157,6 +201,11 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           draftToDisplay = data.action.params;
         }
 
+        let pendingActionToDisplay: any = undefined;
+        if (data.action?.needsApproval && data.action.type !== 'draft_email') {
+          pendingActionToDisplay = { ...data.action, label: actionLabel(data.action.type) };
+        }
+
         // Post-processing PDF
         if (contentToDisplay.includes('GENERATE_PDF:')) {
           try {
@@ -185,7 +234,7 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
           }
         }
 
-        setMessages((prev) => [...prev, { role: 'ai', content: contentToDisplay, draft: draftToDisplay }]);
+        setMessages((prev) => [...prev, { role: 'ai', content: contentToDisplay, draft: draftToDisplay, pendingAction: pendingActionToDisplay, actionStatus: pendingActionToDisplay ? 'pending' : undefined }]);
       } else {
         setMessages((prev) => [...prev, { role: 'ai', content: 'System latency detected. Please retry your request.' }]);
       }
@@ -369,6 +418,54 @@ export default function AdminAI({ isOpen, onClose }: AdminAIProps) {
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+                </div>
+              </motion.div>
+            )}
+            {msg.pendingAction && msg.actionStatus && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-neutral-900 border border-blue-500/30 rounded-2xl overflow-hidden shadow-xl mx-2"
+              >
+                <div className="p-3 bg-blue-500/10 border-b border-blue-500/20 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-bold text-white">AI कार्य प्रस्ताव — अनुमोदन आवश्यक</span>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="text-sm text-neutral-200">
+                    <span className="text-blue-300 font-bold">{msg.pendingAction.label || msg.pendingAction.type}</span>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      {msg.pendingAction.type === 'create_form_and_draft_email'
+                        ? 'फॉर्म: ' + (msg.pendingAction.params?.form_title || '—')
+                        : msg.pendingAction.type === 'create_course'
+                        ? 'कोर्स: ' + (msg.pendingAction.params?.title || '—')
+                        : msg.pendingAction.type === 'send_email'
+                        ? 'प्राप्तकर्ता: ' + (msg.pendingAction.params?.to || '—')
+                        : msg.pendingAction.type === 'save_broadcast_draft'
+                        ? 'ब्रॉडकास्ट: ' + (msg.pendingAction.params?.subject || '—')
+                        : JSON.stringify(msg.pendingAction.params || {}).slice(0, 120)}
+                    </p>
+                  </div>
+                  {msg.actionStatus === 'pending' && (
+                    <div className="flex gap-2">
+                      <button onClick={() => handleApproveAction(i)} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all">
+                        <Check className="w-4 h-4" /> अनुमोदन (Approve)
+                      </button>
+                      <button onClick={() => handleDenyAction(i)} className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-red-300 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all border border-neutral-700">
+                        <Trash2 className="w-4 h-4" /> अस्वीकार (Deny)
+                      </button>
+                    </div>
+                  )}
+                  {msg.actionStatus === 'executing' && (
+                    <div className="flex items-center justify-center gap-2 text-xs text-blue-300 py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> कार्य चल रहा है...
+                    </div>
+                  )}
+                  {(msg.actionStatus === 'done' || msg.actionStatus === 'error') && (
+                    <div className={'text-xs py-2 px-3 rounded-xl ' + (msg.actionStatus === 'done' ? 'bg-green-500/10 text-green-300' : 'bg-red-500/10 text-red-300')}>
+                      {msg.actionResult}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
