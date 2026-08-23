@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'yuva_button.dart';
@@ -8,7 +9,7 @@ class YuvaEmptyState extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String? actionLabel;
-  final VoidCallback? onAction;
+  final FutureOr<void> Function()? onAction;
 
   const YuvaEmptyState({
     super.key,
