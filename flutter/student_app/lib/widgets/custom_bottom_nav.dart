@@ -116,9 +116,9 @@ class CustomBottomNav extends StatelessWidget {
                           gradient: AppTheme.premiumGradient,
                           borderRadius: const BorderRadius.all(Radius.circular(999)),
                         ),
-                        child: const Text(
+                        child: Text(
                           badge,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: AppTheme.surface,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
