@@ -89,25 +89,25 @@ class AppTheme {
       isDark(context) ? darkElevated : moccasinLight;
 
   // ── Gradients ──────────────────────────────────────────────
-  static LinearGradient get auroraGradient => const LinearGradient(
+  static const LinearGradient auroraGradient = LinearGradient(
         colors: [Color(0xFF4F46E5), Color(0xFF7C3AED), Color(0xFF818CF8)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
 
-  static LinearGradient get sacredGradient => const LinearGradient(
+  static const LinearGradient sacredGradient = LinearGradient(
         colors: [Color(0xFF4F46E5), Color(0xFF0F766E)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
 
-  static LinearGradient get premiumGradient => const LinearGradient(
+  static const LinearGradient premiumGradient = LinearGradient(
         colors: [Color(0xFF7C3AED), Color(0xFFF97316)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );
 
-  static LinearGradient get goldGradient => const LinearGradient(
+  static const LinearGradient goldGradient = LinearGradient(
         colors: [Color(0xFFFBBF24), Color(0xFFF97316)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
