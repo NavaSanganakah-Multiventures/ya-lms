@@ -12883,6 +12883,7 @@ async function handleAdminFormTemplates(
         book_id,
         linked_batch_id,
         auto_enroll,
+        free_enroll,
       } = (await request.json()) as any;
       const id = generateCustomId("YA-FRM");
 
@@ -12901,7 +12902,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, free_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           id,
@@ -12918,6 +12919,7 @@ async function handleAdminFormTemplates(
           book_id || null,
           linked_batch_id || null,
           auto_enroll ? 1 : 0,
+          free_enroll ? 1 : 0,
           teacherId,
         )
         .run();
@@ -12946,6 +12948,7 @@ async function handleAdminFormTemplates(
         book_id,
         linked_batch_id,
         auto_enroll,
+        free_enroll,
       } = (await request.json()) as any;
 
       if (userAuth.role === "teacher") {
@@ -12987,7 +12990,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ? WHERE id = ?",
+        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ?, free_enroll = ? WHERE id = ?",
       )
         .bind(
           slug,
@@ -13003,6 +13006,7 @@ async function handleAdminFormTemplates(
           book_id || null,
           linked_batch_id || null,
           auto_enroll ? 1 : 0,
+          free_enroll ? 1 : 0,
           id,
         )
         .run();
@@ -13296,6 +13300,7 @@ async function handleFormResponseSubmit(
     let aiFeedback = null;
     let isFit = false;
     let autoEnrolled = false;
+    const freeEnroll = !!template.free_enroll;
 
     if (template.eligibility_criteria || template.auto_enroll) {
       try {
@@ -13369,17 +13374,17 @@ async function handleFormResponseSubmit(
 
           // Welcome email for new account
           const welcomeHtml = `
-            <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-            <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+            <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
+            <p>आपका Adityanveshan LMS पर account बन गया है।</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
-            <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
+            <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
           `;
-          const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${newUserId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
           await safeSendEmail(
             env,
             email,
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® - Account Created",
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
+            "यज्ञ आश्रम - Account Created",
+            "यज्ञ आश्रम में स्वागत!",
             welcomeHtml,
             welcomeText,
           );
@@ -13403,14 +13408,14 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ course enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `आपके course enrollment का batch अपडेट कर दिया गया है।`,
                 "success",
               );
             }
           } else {
             const enrollId = generateCustomId("YA-ENR");
             await env.DB.prepare(
-              "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+              "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
               .bind(
                 enrollId,
@@ -13418,14 +13423,16 @@ async function handleFormResponseSubmit(
                 template.linked_course_id,
                 selectedBatchId,
                 "active",
-                "unpaid",
+                freeEnroll ? "paid" : "unpaid",
+                0,
+                freeEnroll ? "form-free-grant" : null,
               )
               .run();
             await createNotification(
               env,
               user.id,
               "Course Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ course à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `आपको form के माध्यम से course में enroll किया गया है।${freeEnroll ? " यह course आपको free में मिल गया है — पूरा access उपलब्ध है!" : ""}`,
               "success",
             );
           }
@@ -13448,14 +13455,14 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ à¤ªà¥à¤¸à¥à¤¤à¤ enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `आपकी पुस्तक enrollment का batch अपडेट कर दिया गया है।`,
                 "success",
               );
             }
           } else {
             const enrollId = generateCustomId("YA-ENR");
             await env.DB.prepare(
-              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
               .bind(
                 enrollId,
@@ -13463,14 +13470,16 @@ async function handleFormResponseSubmit(
                 template.book_id,
                 selectedBatchId,
                 "active",
-                "unpaid",
+                freeEnroll ? "paid" : "unpaid",
+                0,
+                freeEnroll ? "form-free-grant" : null,
               )
               .run();
             await createNotification(
               env,
               user.id,
               "Book Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤ªà¥à¤¸à¥à¤¤à¤ à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `आपको form के माध्यम से पुस्तक में enroll किया गया है।${freeEnroll ? " यह पुस्तक आपको free में मिल गई है!" : ""}`,
               "success",
             );
           }
@@ -13511,17 +13520,17 @@ async function handleFormResponseSubmit(
       let userBody = template.confirmation_email_body;
       if (!userBody) {
         userBody = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-          <p>à¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "<strong>${template.title}</strong>" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
-          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">ð à¤à¤ªà¤à¥ <strong>${courseInfo.title}</strong> à¤®à¥à¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥!${courseInfo.price_rupees > 0 ? " Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}</p></div>` : ""}
+          <p>नमस्ते <strong>${fullName}</strong>,</p>
+          <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${freeEnroll ? " आपको यह course <strong>free</strong> में मिल गया है — पूरा access उपलब्ध है!" : (courseInfo.price_rupees > 0 ? " Premium access के लिए course page पर भुगतान करें।" : "")}</p></div>` : ""}
         `;
       }
-      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "${template.title}" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
+      const userText = `नमस्ते ${fullName},\n\nआपका फॉर्म "${template.title}" सफलतापूर्वक प्राप्त हो गया है।\n\nOm!`;
       await safeSendEmail(
         env,
         email,
         subject,
-        "â à¤«à¥à¤°à¥à¤® à¤à¤®à¤¾ à¤¹à¥à¤!",
+        "✅ फॉर्म जमा हुआ!",
         userBody,
         userText,
       );
@@ -13551,7 +13560,7 @@ async function handleFormResponseSubmit(
       env,
       adminEmail,
       `[LMS Form] New Submission: ${template.title}`,
-      "ð New Form Submission",
+      "📋 New Form Submission",
       adminHtml,
       adminText,
     );
@@ -13562,6 +13571,7 @@ async function handleFormResponseSubmit(
         id: submissionId,
         ai_analysis: aiFeedback,
         auto_enrolled: autoEnrolled,
+        free_access: freeEnroll,
       }),
       { status: 201, headers: { "Content-Type": "application/json" } },
     );
