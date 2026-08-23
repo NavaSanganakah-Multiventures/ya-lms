@@ -19,8 +19,28 @@ class YuvaInput extends StatelessWidget {
   final int? maxLines;
   final bool autofocus;
   final FocusNode? focusNode;
+  final bool enabled;
 
   const YuvaInput({
+    super.key,
+    this.controller,
+    this.label,
+    this.hint,
+    this.helper,
+    this.prefixIcon,
+    this.suffixIcon,
+    this.onSuffixTap,
+    this.obscureText = false,
+    this.keyboardType,
+    this.textInputAction,
+    this.validator,
+    this.onChanged,
+    this.onSubmitted,
+    this.maxLines = 1,
+    this.autofocus = false,
+    this.focusNode,
+    this.enabled = true,
+  });
     super.key,
     this.controller,
     this.label,
