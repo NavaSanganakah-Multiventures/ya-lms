@@ -108,6 +108,22 @@ To deploy to Production:
 npm run build
 ```
 
+## 📄 License
+
+Copyright (c) Yagya Ashram & Navasanganakah. All rights reserved.
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0** —
+see the [`LICENSE`](./LICENSE) file for the full text.
+
+In short:
+
+- ✅ You may use, study, modify, and share this software **for noncommercial purposes**
+  (personal study, research, education, religious observance, and charitable /
+  public-interest work).
+- ❌ **Commercial use is not permitted** without a separate written license from
+  the copyright holders.
+- You must include the license and the copyright notice in any copy or distribution.
+
 ---
 
 <div align="center">
