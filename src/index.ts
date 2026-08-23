@@ -21217,6 +21217,33 @@ async function handleSendDraftedEmail(
   }
 }
 
+// Executes a single AI-proposed action AFTER the admin approves it from the
+// AdminAI approve/deny card. Mutation actions only reach here on admin approval;
+// read-only actions are executed inline in handleAIChat instead.
+async function handleAdminAIExecuteAction(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await requireAdminOrTeacher(request, env);
+    if (auth.role !== "admin" && auth.role !== "teacher") {
+      return new Response(JSON.stringify({ success: false, message: "Only admins/teachers can execute actions" }), {
+        status: 403, headers: { "Content-Type": "application/json" },
+      });
+    }
+    const body = await parseRequestBody(request);
+    const action = { type: body.type, params: body.params };
+    if (!action.type) {
+      return new Response(JSON.stringify({ success: false, message: "Missing action type" }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      });
+    }
+    const result: any = await executeAIAction(action, env, auth.id, request.url);
+    return new Response(JSON.stringify(result), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return handleGlobalError(error, "Admin.AIExecuteAction", env, request);
+  }
+}
+
 async function executeAIAction(
   action: any,
   env: Env,
@@ -22069,7 +22096,7 @@ ROLE: You are helping the System Administrator manage the platform, generate rep
 CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
 1. Speak naturally and conversationally, like a highly intelligent human assistant.
 2. Be proactive. If a request is unclear or missing details (e.g., asked to draft an email but no recipient or topic given, or asked to create a form without specifics), ASK clarifying questions before proceeding. Do not assume.
-3. If you perform an action, briefly explain what you did conversationally and ask if the admin needs anything else.
+3. When you propose a mutation action (create/edit/draft/send/form), explain WHAT you will do and WHY, conversationally — but phrase it as a PROPOSAL ("मैं यह करूँगा — कृपया अनुमोदन (approve) करें"), NOT as if already done. The admin sees an Approve/Deny card; nothing is executed until they approve. Read-only questions (stats, lists, user details) you answer directly using the data.
 4. Keep your tone professional yet helpful and engaging.
 
 LANGUAGE & BRANDING (MANDATORY):
@@ -22320,28 +22347,33 @@ Example JSON structure:
     );
 
     if (parsed.action && (role === "admin" || role === "teacher") && userId) {
-      console.log(`[AI Chat] Executing Action: ${parsed.action.type}`);
-      const actionResult = await executeAIAction(
-        parsed.action,
-        env,
-        userId,
-        request.url,
-      );
-      console.log(`[AI Chat] Action Result:`, JSON.stringify(actionResult));
-      if (actionResult.success) {
-        // If it was a data fetch action, we might want to re-ask AI with data,
-        // but for now, we just append the success info to the reply or modify it.
-        if (actionResult.data) {
-          parsed.reply += `\n\n[à¤¸à¤¿à¤¸à¥à¤à¤® à¤¡à¥à¤à¤¾]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} à¤°à¤¿à¤à¥à¤°à¥à¤¡ à¤®à¤¿à¤²à¥à¥¤`;
+      // Read-only query actions run immediately so the AI can use the data to
+      // answer. Mutation actions (drafts, creates, edits, send, form creation)
+      // are NOT auto-executed — they are returned as a PROPOSAL so the admin can
+      // approve/deny them in the UI via the /api/admin/ai/execute-action endpoint.
+      const AI_READ_ONLY_ACTIONS = ["get_detailed_stats", "get_student_details", "query_users", "read_lesson"];
+      if (AI_READ_ONLY_ACTIONS.includes(parsed.action.type)) {
+        console.log(`[AI Chat] Executing read-only action: ${parsed.action.type}`);
+        const actionResult = await executeAIAction(parsed.action, env, userId, request.url);
+        console.log(`[AI Chat] Action Result:`, JSON.stringify(actionResult));
+        if (actionResult.success) {
+          if (actionResult.data) {
+            parsed.reply += `\n\n📊 [सिस्टम डेटा]: ${Array.isArray(actionResult.data) ? actionResult.data.length : 1} रिकॉर्ड मिले।`;
+          } else {
+            parsed.reply += `\n\n✅ [सिस्टम]: ${actionResult.message}`;
+          }
         } else {
-          parsed.reply += `\n\nâ [à¤¸à¤¿à¤¸à¥à¤à¤®]: ${actionResult.message}`;
+          parsed.reply += `\n\n❌ [System Error]: ${actionResult.message}`;
         }
+        parsed.action = null; // executed; no proposal to return
       } else {
-        parsed.reply += `\n\nâ [System Error]: ${actionResult.message}`;
+        // Mutation action: surface as a proposal for admin approval.
+        parsed.action.needsApproval = true;
+        console.log(`[AI Chat] Action proposed (pending admin approval): ${parsed.action.type}`);
       }
     }
 
-    // Save AI Reply to History
+        // Save AI Reply to History
     if (userId) {
       try {
         await env.DB.prepare(
@@ -23383,6 +23415,8 @@ const worker = {
           response = await handleAdminListLiveSessions(request, env);
         else if (url.pathname === "/api/admin/ai/reindex" && request.method === "POST")
           response = await handleAdminAIReindex(request, env, ctx);
+        else if (url.pathname === "/api/admin/ai/execute-action" && request.method === "POST")
+          response = await handleAdminAIExecuteAction(request, env);
         else if (url.pathname === "/api/admin/accounting")
           response = await handleAdminAccounting(request, env);
         else if (
