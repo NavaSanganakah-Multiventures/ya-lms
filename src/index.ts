@@ -1375,7 +1375,7 @@ async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
     DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST,
   );
 }
-const DEFAULT_STUDENT_AI_FREE_DAILY_LIMIT = 10;
+const DEFAULT_STUDENT_AI_FREE_DAILY_LIMIT = 30;
 async function getStudentAIFreeDailyLimit(env: Env): Promise<number> {
   const settings = await getSiteSettings(env);
   const raw = settings["student_ai_free_daily_limit"];
@@ -17707,46 +17707,28 @@ async function checkAndConsumeAICredit(
   userId: string,
   env: Env,
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
-  // 1) Free daily quota for students (configurable via site setting
-  //    "student_ai_free_daily_limit", default 10). Lets students use AI even with
-  //    a zero wallet balance so AI works out of the box. True per-UTC-day counter.
+  // Student AI is COMPLETELY FREE. There is NO wallet / credit / paise deduction
+  // for student AI at all. We only apply a simple daily request limit (anti-abuse),
+  // configurable via site setting "student_ai_free_daily_limit" (default 30).
+  // Set it to 0 to disable the limit entirely (unlimited free requests).
   const freeLimit = await getStudentAIFreeDailyLimit(env);
   if (freeLimit > 0) {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-    const dailyKey = `ai_free_daily:${userId}:${today}`;
+    const dailyKey = `ai_student_daily:${userId}:${today}`;
     const result: any = await env.DB.prepare(
       `INSERT INTO RateLimits (user_id, service, window_start, window_used, rate_limit) VALUES (?, 'rate_limit', ?, 1, ?)
        ON CONFLICT(user_id, service) DO UPDATE SET window_used = window_used + 1
        RETURNING window_used`,
     ).bind(dailyKey, today, freeLimit).first();
     const used = Number(result?.window_used ?? 1);
-    if (used <= freeLimit) {
-      return { allowed: true, remaining: undefined, deductionAmount: 0 };
-    }
-  }
-
-  // 2) Free quota exhausted (or disabled) -- deduct credits.
-  const deduction = await getAICreditDeductionPerRequest(env);
-  if (deduction > 0) {
-    const deductionResult = await deductFromWallet(
-      env,
-      userId,
-      deduction,
-      "ai_usage",
-      "ai_request",
-      generateCustomId("YA-REF"),
-    );
-    if (!deductionResult.ok) {
+    if (used > freeLimit) {
       return {
         allowed: false,
-        reason: `Balance kam hai. Is action ke liye Rs.${deduction} chahiye. Kripya wallet recharge karein. (Insufficient balance. Rs.${deduction} required. Please recharge your wallet.)`,
-        remaining: deductionResult.balance_rupees,
+        reason: `Aaj ka free AI request limit poora ho gaya. Kal phir try karein. (Daily free AI request limit reached. Please try again tomorrow.)`,
       };
     }
-    return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
   }
-
-  // 3) Credit deduction disabled (deduction == 0) -- free for everyone.
+  // No credit deduction -- student AI is completely free.
   return { allowed: true, remaining: undefined, deductionAmount: 0 };
 }
 > {
