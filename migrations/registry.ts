@@ -22,7 +22,8 @@ import SQL_0048_COUPON_FIXED_PAISE from './0048_coupon_fixed_discount_paise.sql'
 import SQL_0049_DROP_RUPEE_COLUMNS from './0049_drop_rupee_columns.sql';
 import SQL_0050_ADD_FREE_ENROLL from './0050_add_free_enroll_to_form_templates.sql';
 import SQL_0051_SET_DEFAULT_MODEL_LLAMA from './0051_set_default_model_llama.sql';
-// Migration Registry — SQL files imported as Text via wrangler rules
+import SQL_0052_SET_DEFAULT_MODEL_SCOUT from './0052_set_default_model_scout.sql';
+// Migration Registry â SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
 
@@ -88,10 +89,10 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0022', version: 22,  filename: '0022_add_performance_indexes.sql',                      sql: SQL_0022 },
   { id: 'sql_0023', version: 23,  filename: '0023_add_notifications_index.sql',                      sql: SQL_0023 },
   { id: 'sql_0024', version: 24,  filename: '0024_add_auth_and_txn_indexes.sql',                     sql: SQL_0024 },
-  // NOTE: sql_0025 applies 0018_individual_class_scheduling.sql — added out-of-order at registry position 25.
+  // NOTE: sql_0025 applies 0018_individual_class_scheduling.sql â added out-of-order at registry position 25.
   // The id 'sql_0025' is stored in the _migrations table; do NOT change it.
   { id: 'sql_0025', version: 25,  filename: '0018_individual_class_scheduling.sql',  sql: SQL_INDIVIDUAL_CLASS_SCHEDULING },
-  // NOTE: sql_0026 applies 0025_add_student_id_to_users.sql — added out-of-order at registry position 26.
+  // NOTE: sql_0026 applies 0025_add_student_id_to_users.sql â added out-of-order at registry position 26.
   // The id 'sql_0026' is stored in the _migrations table; do NOT change it.
   { id: 'sql_0026', version: 26,  filename: '0025_add_student_id_to_users.sql',       sql: SQL_0025 },
   { id: 'sql_0027', version: 27,  filename: '0026_performance_indexes.sql',       sql: SQL_0026_PERF },
@@ -118,4 +119,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0049', version: 48,  filename: '0049_drop_rupee_columns.sql',  sql: SQL_0049_DROP_RUPEE_COLUMNS },
   { id: 'sql_0050', version: 49,  filename: '0050_add_free_enroll_to_form_templates.sql',  sql: SQL_0050_ADD_FREE_ENROLL },
   { id: 'sql_0051', version: 50,  filename: '0051_set_default_model_llama.sql',  sql: SQL_0051_SET_DEFAULT_MODEL_LLAMA },
+  { id: 'sql_0052', version: 51,  filename: '0052_set_default_model_scout.sql',  sql: SQL_0052_SET_DEFAULT_MODEL_SCOUT },
 ].sort((a, b) => a.version - b.version);
