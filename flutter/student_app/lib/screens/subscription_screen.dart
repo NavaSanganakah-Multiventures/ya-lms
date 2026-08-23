@@ -2,53 +2,54 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../services/api_service.dart';
+import '../services/real_time_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
-import '../services/real_time_service.dart';
+import '../widgets/yuva/index.dart';
 
 class SubscriptionScreen extends StatefulWidget {
- SubscriptionScreen({super.key});
+  SubscriptionScreen({super.key});
 
- @override
- State<SubscriptionScreen> createState() => _SubscriptionScreenState();
+  @override
+  State<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
- List<dynamic> _plans = [];
- Map<String, dynamic>? _mySub;
- bool _isLoading = true;
- String? _error;
+  List<dynamic> _plans = [];
+  Map<String, dynamic>? _mySub;
+  bool _isLoading = true;
+  String? _error;
 
- late Razorpay _razorpay;
- bool _subscribing = false;
- bool _cancelling = false;
- bool _disposed = false;
+  late Razorpay _razorpay;
+  bool _subscribing = false;
+  bool _cancelling = false;
+  bool _disposed = false;
 
- StreamSubscription<Map<String, dynamic>>? _realtimeSub;
+  StreamSubscription<Map<String, dynamic>>? _realtimeSub;
 
- @override
- void initState() {
- super.initState();
- _razorpay = Razorpay();
- _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
- _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
- _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
- _fetchData();
-  _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
-    if (!mounted) return;
-    if (event['entity'] == 'subscription') {
-      await _fetchDataQuietly();
-    }
-  });
- }
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    _fetchData();
+    _realtimeSub = RealTimeService.instance.dataStream.listen((event) async {
+      if (!mounted) return;
+      if (event['entity'] == 'subscription') {
+        await _fetchDataQuietly();
+      }
+    });
+  }
 
- @override
- void dispose() {
- _disposed = true;
- _razorpay.clear();
- _realtimeSub?.cancel();
- super.dispose();
- }
+  @override
+  void dispose() {
+    _disposed = true;
+    _razorpay.clear();
+    _realtimeSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _fetchDataQuietly() async {
     try {
@@ -59,15 +60,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (!mounted) return;
       if (results[0].statusCode == 200) {
         final plansData = results[0].data;
-        setState(() {
-          _plans = plansData['plans'] ?? [];
-        });
+        setState(() => _plans = plansData['plans'] ?? []);
       }
       if (results[1].statusCode == 200) {
         final subData = results[1].data;
-        setState(() {
-          _mySub = subData['subscription'];
-        });
+        setState(() => _mySub = subData['subscription']);
       }
     } catch (e) {
       debugPrint('Subscription quiet refresh failed: $e');
@@ -80,499 +77,358 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       _isLoading = true;
       _error = null;
     });
+    try {
+      final results = await Future.wait([
+        ApiService.getSubscriptionPlans(),
+        ApiService.getUserSubscription(),
+      ]);
+      if (!mounted) return;
 
- try {
- final results = await Future.wait([
- ApiService.getSubscriptionPlans(),
- ApiService.getUserSubscription(),
- ]);
+      if (results[0].statusCode == 200) {
+        final plansData = results[0].data;
+        setState(() => _plans = plansData['plans'] ?? []);
+      }
+      if (results[1].statusCode == 200) {
+        final subData = results[1].data;
+        setState(() => _mySub = subData['subscription']);
+      }
+      setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
- if (!mounted) return;
+  Future<void> _subscribe(String planId) async {
+    setState(() => _subscribing = true);
+    try {
+      final res = await ApiService.createSubscription(planId);
+      if (!mounted) return;
 
- if (results[0].statusCode == 200) {
- final plansData = results[0].data;
- setState(() {
- _plans = plansData['plans'] ?? [];
- });
- }
+      if (res.statusCode == 200) {
+        final data = res.data;
+        final subscriptionId = data['subscription_id'] ?? '';
+        final key = data['key'] ?? '';
+        final plan = data['plan'] as Map<String, dynamic>?;
 
- if (results[1].statusCode == 200) {
- final subData = results[1].data;
- setState(() {
- _mySub = subData['subscription'];
- });
- }
+        if (subscriptionId.isEmpty || key.isEmpty) {
+          throw Exception('Invalid subscription response');
+        }
 
- setState(() => _isLoading = false);
- } catch (e) {
- if (mounted) {
- setState(() {
- _error = e.toString();
- _isLoading = false;
- });
- }
- }
- }
+        final options = {
+          'key': key,
+          'subscription_id': subscriptionId,
+          'name': 'Adityanveshan',
+          'description': plan?['name'] ?? 'Subscription',
+          'prefill': {
+            'contact': data['user']?['phone'] ?? '',
+            'email': data['user']?['email'] ?? '',
+          },
+          'theme': {
+            'color': '#${AppTheme.primaryHex}',
+          },
+        };
 
- Future<void> _subscribe(String planId) async {
- setState(() => _subscribing = true);
+        _razorpay.open(options);
+      } else {
+        final errData = res.data;
+        throw Exception(errData['error'] ?? 'Subscription create failed');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Subscription failed: $e'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subscribing = false);
+    }
+  }
 
- try {
- final res = await ApiService.createSubscription(planId);
- if (!mounted) return;
+  void _handlePaymentSuccess(PaymentSuccessResponse response) {
+    if (_disposed) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Subscription successful! Activating...'),
+        backgroundColor: AppTheme.success,
+      ),
+    );
+    _fetchData();
+  }
 
- if (res.statusCode == 200) {
- final data = res.data;
- final subscriptionId = data['subscription_id'] ?? '';
- final key = data['key'] ?? '';
- final plan = data['plan'] as Map<String, dynamic>?;
+  void _handlePaymentError(PaymentFailureResponse response) {
+    if (_disposed) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Subscription payment failed: ${response.message}'),
+        backgroundColor: AppTheme.danger,
+      ),
+    );
+  }
 
- if (subscriptionId.isEmpty || key.isEmpty) {
- throw Exception('Invalid subscription response');
- }
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (_disposed) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('External Wallet: ${response.walletName}')),
+    );
+  }
 
- final options = {
- 'key': key,
- 'subscription_id': subscriptionId,
- 'name': 'Adityanveshan',
- 'description': plan?['name'] ?? 'Subscription',
- 'prefill': {
- 'contact': data['user']?['phone'] ?? '',
- 'email': data['user']?['email'] ?? '',
- },
- 'theme': {
- 'color': '#${AppTheme.primaryHex}',
- },
- };
+  Future<void> _cancelSubscription() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceOf(context),
+        title: Text(
+          'Cancel Subscription?',
+          style: Theme.of(ctx).textTheme.titleLarge?.copyWith(color: AppTheme.textPrimaryOf(context)),
+        ),
+        content: Text(
+          'Aapka subscription cancel ho jayega. Current period end tak access rahega.',
+          style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondaryOf(context)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Back', style: TextStyle(color: AppTheme.mutedOf(context))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Confirm Cancel', style: TextStyle(color: AppTheme.surface)),
+          ),
+        ],
+      ),
+    );
 
- _razorpay.open(options);
- } else {
- final errData = res.data;
- throw Exception(errData['error'] ?? 'Subscription create failed');
- }
- } catch (e) {
- if (mounted) {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('Subscription failed: $e'),
- backgroundColor: AppTheme.danger,
- ),
- );
- }
- } finally {
- if (mounted) setState(() => _subscribing = false);
- }
- }
+    if (confirm != true) return;
 
- void _handlePaymentSuccess(PaymentSuccessResponse response) {
- if (_disposed) return;
- // Don't set status to 'active' here — backend webhook may not have fired yet.
- // _fetchData() will return the actual status from the server.
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('Subscription successful! Activating...'),
- backgroundColor: AppTheme.success,
- ),
- );
- _fetchData();
- }
+    setState(() => _cancelling = true);
+    try {
+      final res = await ApiService.cancelSubscription();
+      if (mounted) {
+        if (res.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Subscription cancelled. Access period end tak rahega.'),
+              backgroundColor: AppTheme.success,
+            ),
+          );
+          setState(() => _mySub = null);
+          _fetchData();
+        } else {
+          final errData = res.data;
+          throw Exception(errData['error'] ?? 'Cancel failed');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cancel failed: $e'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
+    }
+  }
 
- void _handlePaymentError(PaymentFailureResponse response) {
- if (_disposed) return;
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('Subscription payment failed: ${response.message}'),
- backgroundColor: AppTheme.danger,
- ),
- );
- }
-
- void _handleExternalWallet(ExternalWalletResponse response) {
- if (_disposed) return;
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('External Wallet: ${response.walletName}'),
- ),
- );
- }
-
- Future<void> _cancelSubscription() async {
- final confirm = await showDialog<bool>(
- context: context,
- builder: (ctx) => AlertDialog(
- backgroundColor: AppTheme.surfaceOf(context),
- title: Text('Cancel Subscription?',
- style: TextStyle(color: AppTheme.textPrimaryOf(context))),
- content: Text(
- 'Aapka subscription cancel ho jayega. Current period end tak access rahega.',
- style: TextStyle(color: AppTheme.textSecondaryOf(context)),
- ),
- actions: [
- TextButton(
- onPressed: () => Navigator.pop(ctx, false),
- child: Text('Cancel',
- style: TextStyle(color: AppTheme.mutedOf(context))),
- ),
- ElevatedButton(
- onPressed: () => Navigator.pop(ctx, true),
- style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
- child: Text('Confirm Cancel',
- style: TextStyle(color: Colors.white)),
- ),
- ],
- ),
- );
-
- if (confirm != true) return;
-
- setState(() => _cancelling = true);
- try {
- final res = await ApiService.cancelSubscription();
- if (mounted) {
- if (res.statusCode == 200) {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('Subscription cancelled. Access period end tak rahega.'),
- backgroundColor: AppTheme.success,
- ),
- );
- setState(() => _mySub = null);
- _fetchData();
- } else {
- final errData = res.data;
- throw Exception(errData['error'] ?? 'Cancel failed');
- }
- }
- } catch (e) {
- if (mounted) {
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(
- content: Text('Cancel failed: $e'),
- backgroundColor: AppTheme.danger,
- ),
- );
- }
- } finally {
- if (mounted) setState(() => _cancelling = false);
- }
- }
-
- @override
- Widget build(BuildContext context) {
- return Scaffold(
- appBar: AppBar(title: Text('Subscription Plans')),
- backgroundColor: AppTheme.backgroundOf(context),
- body: SafeArea(
- child: ResponsiveLayout(
- child: _isLoading
- ? Center(
- child: CircularProgressIndicator(color: AppTheme.primary))
- : _error != null
- ? _buildError()
- : RefreshIndicator(
- onRefresh: _fetchData,
- child: ListView(
- padding: EdgeInsets.all(24),
- children: [
- if (_mySub != null) _buildCurrentSubscription(),
- SizedBox(height: 24),
- Text(
- 'Available Plans',
- style: TextStyle(
- color: AppTheme.textPrimaryOf(context),
- fontSize: 22,
- fontWeight: FontWeight.w900,
- ),
- ),
- SizedBox(height: 4),
- Text(
- 'Ek plan select karein jo aapki zarooraton ke liye sahi ho.',
- style: TextStyle(color: AppTheme.mutedOf(context), fontSize: 13),
- ),
- SizedBox(height: 16),
- if (_plans.isEmpty)
- Padding(
- padding: EdgeInsets.only(top: 40),
- child: Center(
- child: Text(
- 'Abhi koi subscription plan available nahi hai.',
- style: TextStyle(color: AppTheme.mutedOf(context)),
- ),
- ),
- )
- else
- ..._plans.map((plan) => _PlanCard(
- plan: plan as Map<String, dynamic>,
- isCurrentPlan: _mySub?['plan_id'] == plan['id'],
- subscribing: _subscribing,
- onSubscribe: () => _subscribe(plan['id']),
- )),
- ],
- ),
- ),
- ),
- ),
- );
- }
-
- Widget _buildCurrentSubscription() {
- final status = _mySub?['status'] ?? '';
- final planName = _mySub?['plan_name'] ?? 'Subscription';
- final interval = _mySub?['interval'] ?? '';
-
- return Container(
- padding: EdgeInsets.all(20),
- decoration: BoxDecoration(
- gradient: AppTheme.auroraGradient,
- borderRadius: BorderRadius.circular(24),
- border: Border.all(color: Color(0x55FFFFFF)),
- ),
- child: Column(
- crossAxisAlignment: CrossAxisAlignment.start,
- children: [
- Row(
- children: [
- Icon(Icons.verified, color: Colors.white70, size: 20),
- SizedBox(width: 8),
- Text(
- status == 'active' ? 'ACTIVE' : status.toUpperCase(),
- style: TextStyle(
- color: Colors.white,
- fontSize: 12,
- fontWeight: FontWeight.w900,
- letterSpacing: 1.5,
- ),
- ),
- ],
- ),
- SizedBox(height: 16),
- Text('Current Plan',
- style: TextStyle(color: Colors.white70, fontSize: 14)),
- SizedBox(height: 4),
- Text(planName,
- style: TextStyle(
- color: Colors.white,
- fontSize: 22,
- fontWeight: FontWeight.w900,
- ),
- maxLines: 2,
- overflow: TextOverflow.ellipsis,
- ),
- if (interval.isNotEmpty) ...[
- SizedBox(height: 4),
- Text(interval,
- style: TextStyle(color: Colors.white60, fontSize: 13)),
- ],
- SizedBox(height: 20),
- SizedBox(
- width: double.infinity,
- child: ElevatedButton.icon(
- onPressed: _cancelling ? null : _cancelSubscription,
- icon: _cancelling
- ? SizedBox(
- width: 18,
- height: 18,
- child: CircularProgressIndicator(
- strokeWidth: 2, color: Colors.white),
- )
- : Icon(Icons.cancel_outlined, size: 18),
- label: Text(_cancelling ? 'Cancelling...' : 'Cancel Subscription'),
- style: ElevatedButton.styleFrom(
- backgroundColor: Colors.white.withAlphaOpacity( 0.2),
- foregroundColor: Colors.white,
- padding: EdgeInsets.symmetric(vertical: 12),
- shape: RoundedRectangleBorder(
- borderRadius: BorderRadius.circular(14),
- side: BorderSide(color: Colors.white.withAlphaOpacity( 0.3)),
- ),
- ),
- ),
- ),
- ],
- ),
- );
- }
-
- Widget _buildError() {
- return Center(
- child: Padding(
- padding: EdgeInsets.all(24),
- child: Column(
- mainAxisSize: MainAxisSize.min,
- children: [
- Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
- SizedBox(height: 16),
- Text(_error!, textAlign: TextAlign.center,
- style: TextStyle(color: AppTheme.danger)),
- SizedBox(height: 16),
- ElevatedButton(onPressed: _fetchData, child: Text('Retry')),
- ],
- ),
- ),
- );
- }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundOf(context),
+      appBar: AppBar(
+        title: Text(
+          'Subscription Plans',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(color: AppTheme.textPrimaryOf(context)),
+        ),
+        backgroundColor: AppTheme.backgroundOf(context),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: SafeArea(
+        child: ResponsiveLayout(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+              : _error != null
+                  ? _SubscriptionError(message: _error!, onRetry: _fetchData)
+                  : RefreshIndicator(
+                      onRefresh: _fetchData,
+                      color: AppTheme.primary,
+                      backgroundColor: AppTheme.surfaceOf(context),
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          if (_mySub != null)
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(AppTheme.space4, AppTheme.space2, AppTheme.space4, 0),
+                                child: _CurrentSubscriptionCard(
+                                  subscription: _mySub!,
+                                  cancelling: _cancelling,
+                                  onCancel: _cancelSubscription,
+                                ),
+                              ),
+                            ),
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(AppTheme.space4, AppTheme.space5, AppTheme.space4, AppTheme.space3),
+                              child: SectionHeader(
+                                title: 'Available Plans',
+                                subtitle: 'Ek plan select karein jo aapki zarooraton ke liye sahi ho.',
+                              ),
+                            ),
+                          ),
+                          if (_plans.isEmpty)
+                            SliverToBoxAdapter(
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 80),
+                                  child: YuvaEmptyState.noData(
+                                    title: 'No subscription plans',
+                                    subtitle: 'Abhi koi subscription plan available nahi hai.',
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(AppTheme.space4, 0, AppTheme.space4, AppTheme.space6),
+                              sliver: SliverList.separated(
+                                itemCount: _plans.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: AppTheme.space4),
+                                itemBuilder: (context, index) {
+                                  final plan = _plans[index] is Map<String, dynamic>
+                                      ? _plans[index] as Map<String, dynamic>
+                                      : <String, dynamic>{};
+                                  final isCurrentPlan = _mySub?['plan_id'] == plan['id'];
+                                  return SubscriptionPlanCard(
+                                    plan: plan,
+                                    isCurrentPlan: isCurrentPlan,
+                                    subscribing: _subscribing,
+                                    index: index,
+                                    onSubscribe: isCurrentPlan ? null : () => _subscribe(plan['id'].toString()),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+        ),
+      ),
+    );
+  }
 }
 
-class _PlanCard extends StatelessWidget {
- final Map<String, dynamic> plan;
- final bool isCurrentPlan;
- final bool subscribing;
- final VoidCallback onSubscribe;
+class _CurrentSubscriptionCard extends StatelessWidget {
+  final Map<String, dynamic> subscription;
+  final bool cancelling;
+  final VoidCallback onCancel;
 
- _PlanCard({
- required this.plan,
- required this.isCurrentPlan,
- required this.subscribing,
- required this.onSubscribe,
- });
+  const _CurrentSubscriptionCard({
+    required this.subscription,
+    required this.cancelling,
+    required this.onCancel,
+  });
 
- @override
- Widget build(BuildContext context) {
- final name = plan['name'] ?? 'Plan';
- final amountInr = plan['amount_rupees'] ?? 0;
- final interval = plan['interval'] ?? 'monthly';
- final courseAccess = plan['course_access_type'] ?? 'none';
- final batchAccess = plan['batch_access_type'] ?? 'none';
-  final walletTopup = num.tryParse(plan['wallet_amount_rupees']?.toString() ?? '') ?? 0;
-  final liveSessionAccess = plan['live_session_access'] == 1 || plan['live_session_access'] == true;
- final isLifetime = plan['is_lifetime'] == 1 || plan['is_lifetime'] == true;
+  @override
+  Widget build(BuildContext context) {
+    final status = subscription['status'] ?? '';
+    final planName = subscription['plan_name'] ?? 'Subscription';
+    final interval = subscription['interval'] ?? '';
 
- final features = <String>[];
- if (courseAccess == 'all') features.add('All courses access');
- if (courseAccess == 'user_choice') {
- features.add('Choose ${plan['max_course_selection'] ?? '?'} courses');
- }
- if (batchAccess == 'user_choice') {
- features.add('Choose ${plan['max_batch_selection'] ?? '?'} batches');
- }
-  if (walletTopup > 0) features.add('₹${walletTopup.toStringAsFixed(2)} wallet topup');
- if (liveSessionAccess) features.add('Live session access');
- final liveClassAmount = num.tryParse(plan['live_class_amount_rupees']?.toString() ?? '') ?? 0;
- if (liveClassAmount > 0) {
- features.add('₹${liveClassAmount.toStringAsFixed(2)} Live Class Wallet');
- }
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.space5),
+      decoration: BoxDecoration(
+        gradient: AppTheme.auroraGradient,
+        borderRadius: BorderRadius.circular(AppTheme.radius2Xl),
+        boxShadow: AppTheme.mediumShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.verified_rounded, color: AppTheme.surface, size: 20),
+              const SizedBox(width: AppTheme.space2),
+              Text(
+                status == 'active' ? 'ACTIVE' : status.toUpperCase(),
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: AppTheme.surface,
+                      letterSpacing: 1.5,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.space4),
+          Text(
+            'Current Plan',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.surface.withAlphaOpacity(0.85),
+                ),
+          ),
+          const SizedBox(height: AppTheme.space1),
+          Text(
+            planName,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: AppTheme.surface,
+                  fontSize: 24,
+                ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (interval.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.space1),
+            Text(
+              interval,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.surface.withAlphaOpacity(0.7),
+                  ),
+            ),
+          ],
+          const SizedBox(height: AppTheme.space5),
+          YuvaButton.outline(
+            label: cancelling ? 'Cancelling...' : 'Cancel Subscription',
+            onPressed: cancelling ? null : onCancel,
+            isLoading: cancelling,
+            backgroundColor: AppTheme.surface.withAlphaOpacity(0.2),
+            foregroundColor: AppTheme.surface,
+            borderColor: AppTheme.surface.withAlphaOpacity(0.3),
+            height: 48,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
- return Container(
- margin: EdgeInsets.only(bottom: 16),
- decoration: BoxDecoration(
- color: isCurrentPlan
- ? AppTheme.primary.withAlphaOpacity( 0.08)
- : AppTheme.surfaceOf(context),
- borderRadius: BorderRadius.circular(24),
- border: Border.all(
- color: isCurrentPlan ? AppTheme.primaryLight : AppTheme.borderOf(context),
- width: isCurrentPlan ? 2 : 1,
- ),
- ),
- child: Padding(
- padding: EdgeInsets.all(20),
- child: Column(
- crossAxisAlignment: CrossAxisAlignment.start,
- children: [
- Row(
- mainAxisAlignment: MainAxisAlignment.spaceBetween,
- children: [
- Expanded(
- child: Text(name,
- style: TextStyle(
- color: AppTheme.textPrimaryOf(context),
- fontSize: 18,
- fontWeight: FontWeight.w900,
- ),
- maxLines: 2,
- overflow: TextOverflow.ellipsis,
- ),
- ),
- if (isCurrentPlan)
- Container(
- padding:
- EdgeInsets.symmetric(horizontal: 10, vertical: 4),
- decoration: BoxDecoration(
- color: AppTheme.success.withAlphaOpacity( 0.2),
- borderRadius: BorderRadius.circular(8),
- ),
- child: Text('CURRENT',
- style: TextStyle(
- color: AppTheme.success,
- fontSize: 10,
- fontWeight: FontWeight.w900,
- )),
- ),
- ],
- ),
- SizedBox(height: 8),
- Row(
- crossAxisAlignment: CrossAxisAlignment.end,
- children: [
- Text(
- '₹${(amountInr is num ? amountInr : num.tryParse(amountInr.toString()) ?? 0).toStringAsFixed(2)}',
- style: TextStyle(
- color: AppTheme.success,
- fontSize: 28,
- fontWeight: FontWeight.w900,
- ),
- ),
- SizedBox(width: 4),
- Padding(
- padding: EdgeInsets.only(bottom: 4),
- child: Text(
- '/ $interval${isLifetime ? ' (Lifetime)' : ''}',
- style: TextStyle(
- color: AppTheme.mutedOf(context), fontSize: 13),
- ),
- ),
- ],
- ),
- if (features.isNotEmpty) ...[
- SizedBox(height: 16),
- ...features.map((f) => Padding(
- padding: EdgeInsets.only(bottom: 6),
- child: Row(
- children: [
- Icon(Icons.check_circle_outline,
- color: AppTheme.primaryLight, size: 18),
- SizedBox(width: 8),
- Text(f,
- style: TextStyle(
- color: AppTheme.textSecondaryOf(context),
- fontSize: 13,
- ),
- maxLines: 2,
- overflow: TextOverflow.ellipsis,
- ),
- ],
- ),
- )),
- ],
- SizedBox(height: 16),
- SizedBox(
- width: double.infinity,
- child: ElevatedButton(
- onPressed: isCurrentPlan || subscribing ? null : onSubscribe,
- style: ElevatedButton.styleFrom(
- backgroundColor:
- isCurrentPlan ? AppTheme.borderOf(context) : AppTheme.primary,
- disabledBackgroundColor: AppTheme.borderOf(context),
- padding: EdgeInsets.symmetric(vertical: 14),
- shape: RoundedRectangleBorder(
- borderRadius: BorderRadius.circular(14),
- ),
- ),
- child: Text(
- isCurrentPlan
- ? 'Current Plan'
- : (subscribing ? 'Subscribing...' : 'Subscribe Now'),
- style: TextStyle(
- fontSize: 15,
- fontWeight: FontWeight.bold,
- color: AppTheme.surfaceOf(context),
- ),
- ),
- ),
- ),
- ],
- ),
- ),
- );
- }
+class _SubscriptionError extends StatelessWidget {
+  final String message;
+  final Future<void> Function() onRetry;
+
+  const _SubscriptionError({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.space6),
+        child: YuvaEmptyState.error(
+          title: message,
+          actionLabel: 'Try Again',
+          onAction: onRetry,
+        ),
+      ),
+    );
+  }
 }
