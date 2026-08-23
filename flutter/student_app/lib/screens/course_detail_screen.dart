@@ -632,7 +632,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
         httpHeaders: headers,
-        videoPlayerOptions: const VideoPlayerOptions(allowBackgroundPlayback: false),
+        videoPlayerOptions: const VideoPlayerOptions(),
       );
       _videoPlayerController = controller;
 
