@@ -21,6 +21,7 @@ import SQL_0047_RECONCILE_PAISE_FROM_RUPEES from './0047_reconcile_paise_from_ru
 import SQL_0048_COUPON_FIXED_PAISE from './0048_coupon_fixed_discount_paise.sql';
 import SQL_0049_DROP_RUPEE_COLUMNS from './0049_drop_rupee_columns.sql';
 import SQL_0050_ADD_FREE_ENROLL from './0050_add_free_enroll_to_form_templates.sql';
+import SQL_0051_SET_DEFAULT_MODEL_LLAMA from './0051_set_default_model_llama.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -116,4 +117,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0048', version: 47,  filename: '0048_coupon_fixed_discount_paise.sql',  sql: SQL_0048_COUPON_FIXED_PAISE },
   { id: 'sql_0049', version: 48,  filename: '0049_drop_rupee_columns.sql',  sql: SQL_0049_DROP_RUPEE_COLUMNS },
   { id: 'sql_0050', version: 49,  filename: '0050_add_free_enroll_to_form_templates.sql',  sql: SQL_0050_ADD_FREE_ENROLL },
+  { id: 'sql_0051', version: 50,  filename: '0051_set_default_model_llama.sql',  sql: SQL_0051_SET_DEFAULT_MODEL_LLAMA },
 ].sort((a, b) => a.version - b.version);
