@@ -144,7 +144,7 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
     const applied = await isMigrationApplied(db, mig.id);
     if (applied) continue;
 
-    // Strip SQL comments before splitting on semicolons. A naïve substring
+    // Strip SQL comments before splitting on semicolons. A naÃ¯ve substring
     // search for '--' corrupts string literals that happen to contain that
     // sequence, so use a tiny state machine that respects quotes.
     const stripped = stripSqlComments(mig.sql);
@@ -156,7 +156,7 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
 
     if (statements.length === 0) {
       await markMigrationApplied(db, mig.id);
-      logs += `[SQL Migration] ✅ ${mig.filename} (empty)\n`;
+      logs += `[SQL Migration] â ${mig.filename} (empty)\n`;
       continue;
     }
 
@@ -188,7 +188,7 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
     let success = false;
 
     if (coreStmts.length > 0) {
-      // Run DDL/DML atomically via db.batch — if any statement fails the
+      // Run DDL/DML atomically via db.batch â if any statement fails the
       // ENTIRE batch is rolled back, preventing partial migration state.
       try {
         await db.batch(coreStmts.map(s => db.prepare(s)));
@@ -204,10 +204,10 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
           /no such table/i.test(errMsg);
 
         if (isIdempotent) {
-          logs += `  ℹ ${mig.filename}: ${errMsg}\n`;
+          logs += `  â¹ ${mig.filename}: ${errMsg}\n`;
           success = true;
         } else {
-          logs += `[SQL Migration] ❌ ${mig.filename} — ${errMsg}\n`;
+          logs += `[SQL Migration] â ${mig.filename} â ${errMsg}\n`;
           console.warn(`[SQL Migration] ${mig.filename} failed: ${errMsg}`);
         }
       }
@@ -215,7 +215,7 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
       success = true;
     }
 
-    // Always restore PRAGMAs — they are connection-level settings that
+    // Always restore PRAGMAs â they are connection-level settings that
     // persist even after batch rollback (not transactional).
     for (const stmt of trailingPragmas) {
       await db.prepare(stmt).run();
@@ -223,10 +223,10 @@ async function applySqlMigrations(db: D1Database, logs: string): Promise<string>
 
     if (success) {
       await markMigrationApplied(db, mig.id);
-      logs += `[SQL Migration] ✅ ${mig.filename}\n`;
+      logs += `[SQL Migration] â ${mig.filename}\n`;
       console.log(`[SQL Migration] Applied: ${mig.filename}`);
     } else {
-      logs += `[SQL Migration] ❌ ${mig.filename} — failed, will retry next run\n`;
+      logs += `[SQL Migration] â ${mig.filename} â failed, will retry next run\n`;
       console.warn(`[SQL Migration] ${mig.filename} had failures, retrying on next run`);
     }
   }
@@ -473,7 +473,7 @@ async function recreateTableFromSchema(db: D1Database, tableName: string): Promi
     for (const idxSql of indexesToRecreate) statements.push(db.prepare(idxSql));
     for (const trigSql of triggersToRecreate) statements.push(db.prepare(trigSql));
 
-    // Run all DDL statements atomically via db.batch — D1 batch executes
+    // Run all DDL statements atomically via db.batch â D1 batch executes
     // within a single transaction and auto-rolls back on failure.
     await db.batch(statements);
   } catch (err) {
@@ -563,7 +563,7 @@ export async function checkMigrations(db: D1Database) {
             let addColSql = trimmedCol;
             // SQLite ALTER TABLE ADD COLUMN does not support CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME as default values
             addColSql = addColSql.replace(/\s+DEFAULT\s+CURRENT_(TIMESTAMP|DATE|TIME)/i, '');
-            // SQLite cannot add a NOT NULL column without a DEFAULT value — remove NOT NULL in that case
+            // SQLite cannot add a NOT NULL column without a DEFAULT value â remove NOT NULL in that case
             if (/\bNOT\s+NULL\b/i.test(addColSql) && !/\bDEFAULT\b/i.test(addColSql)) {
               addColSql = addColSql.replace(/\s+NOT\s+NULL\s*/i, ' ');
             }
@@ -579,7 +579,7 @@ export async function checkMigrations(db: D1Database) {
   return { missingTables, missingColumns, missingIndices };
 }
 
-const AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const AI_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 
 async function aiFixSql(
   ai: any,
@@ -595,12 +595,12 @@ async function aiFixSql(
 
 Rules:
 - Only output valid SQLite DDL (ALTER TABLE, CREATE TABLE, CREATE INDEX, DROP COLUMN, etc.)
-- For "duplicate column" errors → skip the column (output nothing)
-- For "no such column" errors in RENAME COLUMN → check if column was already renamed
-- For "cannot drop column" errors → Drop any dependent index first with DROP INDEX IF EXISTS, then retry the ALTER TABLE DROP COLUMN
-- For NOT NULL without DEFAULT → strip NOT NULL
-- For "table has X columns but Y values" → add DEFAULT clause to missing columns
-- If the table does not exist → add CREATE TABLE IF NOT EXISTS first
+- For "duplicate column" errors â skip the column (output nothing)
+- For "no such column" errors in RENAME COLUMN â check if column was already renamed
+- For "cannot drop column" errors â Drop any dependent index first with DROP INDEX IF EXISTS, then retry the ALTER TABLE DROP COLUMN
+- For NOT NULL without DEFAULT â strip NOT NULL
+- For "table has X columns but Y values" â add DEFAULT clause to missing columns
+- If the table does not exist â add CREATE TABLE IF NOT EXISTS first
 - Wrap multiple statements in a single response separated by semicolons
 - If you cannot fix it, output: SKIP
 
@@ -649,7 +649,7 @@ async function runWithAiRetry(
       if (ai && attempt < maxAttempts) {
         const aiResult = await aiFixSql(ai, currentSql, errMsg, SCHEMA_SQL);
         if (aiResult) {
-          log(`[AI-Fix] ${type} retry ${attempt}/${maxAttempts - 1}: ${aiResult.explanation}\n  → ${aiResult.fixedSql.substring(0, 80)}...`);
+          log(`[AI-Fix] ${type} retry ${attempt}/${maxAttempts - 1}: ${aiResult.explanation}\n  â ${aiResult.fixedSql.substring(0, 80)}...`);
           currentSql = aiResult.fixedSql;
           continue;
         }
@@ -775,7 +775,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
   // Tracked migration: convert credit balances to single balance_rupees
   if (!(await isMigrationApplied(db, 'v005_credits_to_rupees'))) {
     try {
-      log('[Auto-Migration] v005: Converting credit balances to rupees (÷10)...');
+      log('[Auto-Migration] v005: Converting credit balances to rupees (Ã·10)...');
 
       // Add balance_rupees column if it doesn't exist
       const walletInfo = await db.prepare("PRAGMA table_info(CreditWallets)").all() as any;
@@ -787,7 +787,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         await db.prepare("ALTER TABLE CreditWallets ADD COLUMN lifetime_withdrawals_rupees REAL NOT NULL DEFAULT 0").run();
       }
 
-      // Check if old credit columns exist (legacy DB). On fresh DB these don't exist — skip data migration.
+      // Check if old credit columns exist (legacy DB). On fresh DB these don't exist â skip data migration.
       const wCols = colNames; // from walletInfo above
       const hasOldCreditCols = wCols.includes('ai_balance');
       if (hasOldCreditCols) {
@@ -973,7 +973,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
         log(`[Auto-Migration] Dropped ${table}.${column}`);
       }
     } catch (e) {
-      logErr(`[Auto-Migration] Skip ${table}.${column} — ${e}`);
+      logErr(`[Auto-Migration] Skip ${table}.${column} â ${e}`);
     }
   }
 
@@ -992,7 +992,7 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
           log('[Auto-Migration] v007: Dropped CreditLedger.credit_type (with index)');
         }
       } catch (e) {
-        logErr(`[Auto-Migration] v007: Skip CreditLedger.credit_type — ${e}`);
+        logErr(`[Auto-Migration] v007: Skip CreditLedger.credit_type â ${e}`);
       }
 
       // CreditWallets: drop dead split-credit columns
@@ -1010,12 +1010,12 @@ export async function runAutoMigration(db: D1Database, ai?: any): Promise<string
       // CreditPacks: drop credit_type
       await dropColumnIfExist('CreditPacks', 'credit_type');
 
-      // Drop CreditPlans table (dead — replaced by CreditPacks)
+      // Drop CreditPlans table (dead â replaced by CreditPacks)
       try {
         await db.prepare("DROP TABLE IF EXISTS CreditPlans").run();
         log('[Auto-Migration] v007: Dropped CreditPlans table');
       } catch (e) {
-        logErr(`[Auto-Migration] v007: Skip CreditPlans drop — ${e}`);
+        logErr(`[Auto-Migration] v007: Skip CreditPlans drop â ${e}`);
       }
 
       await markMigrationApplied(db, 'v007_drop_dead_credit_columns');
