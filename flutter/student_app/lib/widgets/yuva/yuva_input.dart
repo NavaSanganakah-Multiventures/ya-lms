@@ -41,24 +41,6 @@ class YuvaInput extends StatelessWidget {
     this.focusNode,
     this.enabled = true,
   });
-    super.key,
-    this.controller,
-    this.label,
-    this.hint,
-    this.helper,
-    this.prefixIcon,
-    this.suffixIcon,
-    this.onSuffixTap,
-    this.obscureText = false,
-    this.keyboardType,
-    this.textInputAction,
-    this.validator,
-    this.onChanged,
-    this.onSubmitted,
-    this.maxLines = 1,
-    this.autofocus = false,
-    this.focusNode,
-  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +70,7 @@ class YuvaInput extends StatelessWidget {
           onFieldSubmitted: onSubmitted,
           maxLines: maxLines,
           autofocus: autofocus,
+          enabled: enabled,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: AppTheme.textPrimaryOf(context),
                 fontWeight: FontWeight.w500,
