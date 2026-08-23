@@ -3,6 +3,7 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../../theme/app_theme.dart';
 import '../course_image.dart';
 import 'yuva_button.dart';
+import 'yuva_card.dart';
 
 class ContinueLearningCard extends StatelessWidget {
   final Map<String, dynamic> course;
