@@ -1,6 +1,31 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* ---------------------------------------------------------------------------
+   Devanagari (Hindi) font support
+   The app shows Hindi (Devanagari) UI text (डैशबोर्ड, वापसी पर स्वागत है) but the default
+   Tailwind sans stack contains no Devanagari font, so Hindi was rendering with a
+   broken fallback on many devices. We bundle "Noto Sans Devanagari" in /public/fonts
+   and load it here, then add it as the Devanagari fallback in the default sans stack.
+   Latin text still uses the native system font; only Devanagari code points fall
+   through to Noto Sans Devanagari.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Noto Sans Devanagari";
+  src: url("/fonts/NotoSansDevanagari-Regular.ttf") format("truetype");
+  /* This single static face serves every requested weight so bold Hindi also
+     uses the Devanagari font (the browser synthesises the bold shape). */
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Devanagari",
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+}
+
 @layer base {
   html,
   body {
@@ -12,6 +37,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    font-family: var(--font-sans);
     background-color: #000;
     color: #fff;
   }
