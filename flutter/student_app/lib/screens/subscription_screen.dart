@@ -282,9 +282,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                           SliverToBoxAdapter(
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(AppTheme.space4, AppTheme.space5, AppTheme.space4, AppTheme.space3),
-                              child: SectionHeader(
-                                title: 'Available Plans',
-                                subtitle: 'Ek plan select karein jo aapki zarooraton ke liye sahi ho.',
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Available Plans',
+                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                          color: AppTheme.textPrimaryOf(context),
+                                          fontSize: 22,
+                                        ),
+                                  ),
+                                  const SizedBox(height: AppTheme.space1),
+                                  Text(
+                                    'Ek plan select karein jo aapki zarooraton ke liye sahi ho.',
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          color: AppTheme.mutedOf(context),
+                                        ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
