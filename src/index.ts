@@ -20218,7 +20218,7 @@ Actions:
 12. get_student_details: { email }
 13. query_users: { filter: 'all' | 'enrolled_all' | 'enrolled_course' | 'subscribers', course_id?: string }
 14. bulk_draft_email: { recipients: string[], subject: string, body: string, isHtml: boolean }
-15. create_form_and_draft_email: { form_title, form_description, form_fields_json, to, subject, email_body, theme?, confirmation_email_body? }
+15. create_form_and_draft_email: { form_title, form_description, form_fields_json, to, subject, email_body, theme?, confirmation_email_body?, free_enroll? }
 16. get_detailed_stats: {}
 17. read_lesson: { lesson_id }
 18. send_email: { to, subject, body, isHtml }
@@ -21659,7 +21659,7 @@ async function executeAIAction(
             ? params.form_fields_json
             : JSON.stringify(params.form_fields_json ?? []);
         await env.DB.prepare(
-          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, free_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             formId,
@@ -21674,6 +21674,7 @@ async function executeAIAction(
             params.linked_course_id ?? null,
             params.linked_batch_id ?? null,
             params.auto_enroll ?? 0,
+            params.free_enroll ? 1 : 0,
             params.eligibility_criteria ?? null,
           )
           .run();
@@ -22079,11 +22080,12 @@ If requested to send an email, you MUST first draft it as HTML.
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
 5. IF REQUESTED to create a form for an invitation or enrollment and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
-   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria }
+   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria, free_enroll }
    - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1"] } ]
    - **CRITICAL**: EVERY form MUST include these fields by default unless strictly asked not to: Full Name (text), Email (email), Phone Number (tel), and Gender (select).
    - "confirmation_email_body" (OPTIONAL): HTML content for the automatic email sent to the user after they fill out the form. Use this if the user asks for a confirmation/thank you email.
    - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
+   - FREE ENROLLMENT (OPTIONAL): If the admin wants the attached paid course to be granted for FREE via this form (no payment), set "free_enroll": 1. Use this only when the admin explicitly says the course should be free / complimentary / scholarship. Otherwise leave it 0.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
 8. For students, use a professional tonality. (Sender: Adityanveshan, om@yagyaashram.com)
