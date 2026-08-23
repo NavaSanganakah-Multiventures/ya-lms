@@ -1,38 +1,39 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 /// Centralised icon helper so the whole app can switch icon families easily.
 ///
-/// For now we use Phosphor icons everywhere; if a platform or design calls
-/// for Lucide, only this file needs to change.
+/// Using Material Icons for maximum Flutter compat and fewer package risks.
+/// We intentionally mirror the Phosphor set names used by the Yuva design.
 class YuvaIcons {
-  static IconData get home => PhosphorIcons.house(PhosphorIconsStyle.fill);
-  static IconData get homeOutline => PhosphorIcons.house(PhosphorIconsStyle.regular);
-  static IconData get library => PhosphorIcons.books(PhosphorIconsStyle.fill);
-  static IconData get libraryOutline => PhosphorIcons.books(PhosphorIconsStyle.regular);
-  static IconData get wallet => PhosphorIcons.wallet(PhosphorIconsStyle.fill);
-  static IconData get walletOutline => PhosphorIcons.wallet(PhosphorIconsStyle.regular);
-  static IconData get profile => PhosphorIcons.user(PhosphorIconsStyle.fill);
-  static IconData get profileOutline => PhosphorIcons.user(PhosphorIconsStyle.regular);
-  static IconData get ai => PhosphorIcons.sparkle(PhosphorIconsStyle.fill);
-  static IconData get aiOutline => PhosphorIcons.sparkle(PhosphorIconsStyle.regular);
+  static IconData get home => Icons.home_rounded;
+  static IconData get homeOutline => Icons.home_outlined;
+  static IconData get library => Icons.library_books_rounded;
+  static IconData get libraryOutline => Icons.library_books_outlined;
+  static IconData get wallet => Icons.account_balance_wallet_rounded;
+  static IconData get walletOutline => Icons.account_balance_wallet_outlined;
+  static IconData get profile => Icons.person_rounded;
+  static IconData get profileOutline => Icons.person_outlined;
+  static IconData get ai => Icons.auto_awesome_rounded;
+  static IconData get aiOutline => Icons.auto_awesome_outlined;
 
-  static IconData get search => PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular);
-  static IconData get notification => PhosphorIcons.bell(PhosphorIconsStyle.regular);
-  static IconData get settings => PhosphorIcons.gear(PhosphorIconsStyle.regular);
-  static IconData get logout => PhosphorIcons.signOut(PhosphorIconsStyle.regular);
-  static IconData get play => PhosphorIcons.playCircle(PhosphorIconsStyle.fill);
-  static IconData get check => PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
-  static IconData get lock => PhosphorIcons.lockKey(PhosphorIconsStyle.fill);
-  static IconData get bookOpen => PhosphorIcons.bookOpen(PhosphorIconsStyle.regular);
-  static IconData get video => PhosphorIcons.video(PhosphorIconsStyle.regular);
-  static IconData get pdf => PhosphorIcons.fileText(PhosphorIconsStyle.regular);
-  static IconData get quiz => PhosphorIcons.clipboardText(PhosphorIconsStyle.regular);
-  static IconData get live => PhosphorIcons.broadcast(PhosphorIconsStyle.regular);
-  static IconData get arrowRight => PhosphorIcons.caretRight(PhosphorIconsStyle.regular);
-  static IconData get arrowLeft => PhosphorIcons.caretLeft(PhosphorIconsStyle.regular);
-  static IconData get arrowDown => PhosphorIcons.caretDown(PhosphorIconsStyle.regular);
-  static IconData get more => PhosphorIcons.dotsThree(PhosphorIconsStyle.regular);
-  static IconData get close => PhosphorIcons.x(PhosphorIconsStyle.regular);
-  static IconData get filter => PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular);
+  static IconData get search => Icons.search_rounded;
+  static IconData get notification => Icons.notifications_rounded;
+  static IconData get settings => Icons.settings_rounded;
+  static IconData get logout => Icons.logout_rounded;
+  static IconData get play => Icons.play_circle_fill_rounded;
+  static IconData get playOutline => Icons.play_circle_outline_rounded;
+  static IconData get check => Icons.check_circle_rounded;
+  static IconData get checkOutline => Icons.check_circle_outlined;
+  static IconData get lock => Icons.lock_rounded;
+  static IconData get bookOpen => Icons.menu_book_rounded;
+  static IconData get video => Icons.play_arrow_rounded;
+  static IconData get pdf => Icons.picture_as_pdf_rounded;
+  static IconData get quiz => Icons.quiz_rounded;
+  static IconData get live => Icons.live_tv_rounded;
+  static IconData get arrowRight => Icons.chevron_right_rounded;
+  static IconData get arrowLeft => Icons.chevron_left_rounded;
+  static IconData get arrowDown => Icons.keyboard_arrow_down_rounded;
+  static IconData get more => Icons.more_horiz_rounded;
+  static IconData get close => Icons.close_rounded;
+  static IconData get filter => Icons.tune_rounded;
 }
