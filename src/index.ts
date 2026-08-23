@@ -20005,6 +20005,21 @@ function applySystemPrompt(messages: any[], systemPrompt?: string | null) {
   return newMessages;
 }
 
+// Runs Workers AI, transparently falling back to a direct (no-gateway) call if the
+// optional AI Gateway is misconfigured (e.g. "Invalid request path. Expected path
+// prefix /v1/:accountTag/:gatewayId"). Keeps AI features working even when gateway
+// routing is broken, at the cost of losing gateway caching for that single call.
+async function runWorkersAI(env: Env, modelId: string, inputs: any, gatewayOpts: any): Promise<any> {
+  if (gatewayOpts && Object.keys(gatewayOpts).length > 0) {
+    try {
+      return await env.AI.run(modelId as any, inputs, gatewayOpts);
+    } catch (e: any) {
+      console.warn(`[AI] Gateway call failed for ${modelId} (${e?.message || e}); retrying without gateway...`);
+    }
+  }
+  return await env.AI.run(modelId as any, inputs);
+}
+
 export async function generateAIContent(
   messages: any[],
   env: Env,
@@ -20036,7 +20051,8 @@ export async function generateAIContent(
     }
 
     try {
-      const aiResult: any = await env.AI.run(
+      const aiResult: any = await runWorkersAI(
+        env,
         m.id,
         { messages: modelMessages, max_tokens: 4000 },
         gatewayOpts,
@@ -20079,7 +20095,8 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
     ? { gateway: { id: gatewayId, skipCache: false, cacheTtl: 3600 } }
     : {};
 
-  const aiStream = await env.AI.run(
+  const aiStream = await runWorkersAI(
+    env,
     m.id,
     {
       messages: applySystemPrompt(messages, m.system_prompt),
