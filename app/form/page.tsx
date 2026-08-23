@@ -14,7 +14,7 @@ const CountrySelect = React.memo(function CountrySelect({ value, countries, onCh
   return (
     <div className="relative">
       <select value={value} onChange={e => onChange(e.target.value)} className={className}>
-        {countries.map(c => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
+        {countries.map((c: any) => <option key={c.code} value={c.code} className="bg-neutral-900">{c.name} ({c.code})</option>)}
       </select>
       <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
     </div>
@@ -25,7 +25,7 @@ const StateSelect = React.memo(function StateSelect({ value, states, onChange, c
   return (
     <div className="relative">
       <select value={value} onChange={e => onChange(e.target.value)} className={className}>
-        {states.map(s => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
+        {states.map((s: any) => <option key={s.code} value={s.code} className="bg-neutral-900">{s.name}</option>)}
       </select>
       <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
     </div>
@@ -101,7 +101,7 @@ function FormContent() {
 
   // Memoized field change handler + parsed fields to avoid re-rendering every field on each keystroke
   const onFieldChange = useCallback((name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
   }, []);
   const onCountryChange = useCallback((code: string) => {
     setSelectedCountry(countriesList.find(x => x.code === code) || countriesList[0]);
