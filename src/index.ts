@@ -21225,17 +21225,21 @@ async function executeAIAction(
 ) {
   const { type, params } = action;
 
-  // LLM auto-execution of any mutation (create/update/delete/save/assign)
-  // is disabled because there is no human confirmation loop.
-  // Only read-only query actions are allowed automatically.
-  const READ_ONLY_ACTIONS = [
-    "get_detailed_stats",
-    "get_student_details",
+  // Auto-execute most actions per admin request (drafts, creates, edits,
+  // queries, form creation, sending). Only irreversible DELETE actions remain
+  // gated and must be done from the admin UI, to prevent accidental data loss
+  // from a misunderstood AI instruction.
+  const GATED_ACTIONS = [
+    "delete_course",
+    "delete_batch",
+    "delete_lesson",
+    "delete_student",
+    "delete_enrollment",
   ];
-  if (!READ_ONLY_ACTIONS.includes(type)) {
+  if (GATED_ACTIONS.includes(type)) {
     return {
       success: false,
-      message: `Action '${type}' is disabled for auto-execution. Please use the admin UI.`,
+      message: `Action '${type}' is disabled for auto-execution (irreversible delete). Please use the admin UI.`,
     };
   }
 
@@ -22068,6 +22072,15 @@ CONVERSATIONAL PROTOCOL (LIKE CHATGPT):
 3. If you perform an action, briefly explain what you did conversationally and ask if the admin needs anything else.
 4. Keep your tone professional yet helpful and engaging.
 
+LANGUAGE & BRANDING (MANDATORY):
+1. Respond PRIMARILY in fluent, natural, grammatically correct Devanagari Hindi. Only switch to English if the admin explicitly writes in English or asks for English.
+2. Your Hindi MUST be natural and correct — use proper Devanagari matras (ा ि ी ु ू े ै ो ौ), halant (्), anusvara (ं), visarga (ः), chandrabindu (ँ) where needed. NEVER write romanized Hindi like "aap"/"kaise" — always use Devanagari "आप"/"कैसे".
+3. Platform name — ALWAYS spell EXACTLY:
+   - English: "Adityanveshan" (one word; NOT "Aditya Nveshan" / "Adityanveshn").
+   - Hindi: "यज्ञ आश्रम" (NOT "यज आश्रम" / "याग्या आश्रम").
+   - Email sender: "Adityanveshan <om@yagyaashram.com>".
+4. Never invent, abbreviate, or alter the platform name, domain (yagyaashram.com), or sender email.
+
 ELECTRONIC MAIL PROTOCOL:
 If requested to send an email, you MUST first draft it as HTML.
 1. Draft the email for the user's review. Use clean, modern HTML with inline CSS for buttons and layout.
@@ -22096,7 +22109,7 @@ FAILURE TO OUTPUT JSON WILL BREAK THE SYSTEM.
 
 Example JSON structure:
 {
-  "reply": "System response in Hindi or English, conversing with the admin, explaining the draft or action, or asking clarifying questions.",
+  "reply": "System response in Devanagari Hindi (default) or English if the admin wrote in English — conversing with the admin, explaining the draft or action, or asking clarifying questions.",
   "action": { "type": "action_name", "params": { ... } }
 }
 
