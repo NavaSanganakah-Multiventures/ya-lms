@@ -58,6 +58,14 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   shimmer: ^3.0.0
   cached_network_image: ^3.4.1
+
+  # ── Yuva UI redesign dependencies ───────────────────────────
+  google_fonts: ^6.2.1
+  phosphor_flutter: ^2.1.0
+  flutter_svg: ^2.0.17
+  flutter_animate: ^4.5.2
+  flutter_staggered_animations: ^1.1.1
+  percent_indicator: ^4.2.4
   # Play Integrity: implemented via direct MethodChannel (see MainActivity.kt)
 
 dev_dependencies:
@@ -86,6 +94,8 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icon.png
+    - assets/images/
+    - assets/animations/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
