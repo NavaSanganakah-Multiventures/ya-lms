@@ -17762,28 +17762,6 @@ async function checkAndConsumeAICredit(
   // 3) No per-request charge configured (0 paise) -- free even beyond the daily limit.
   return { allowed: true, remaining: undefined, deductionAmount: 0 };
 }
-> {
-  const deduction = await getAICreditDeductionPerRequest(env);
-
-  const deductionResult = await deductFromWallet(
-    env,
-    userId,
-    deduction,
-    "ai_usage",
-    "ai_request",
-    generateCustomId("YA-REF"),
-  );
-
-  if (!deductionResult.ok) {
-    return {
-      allowed: false,
-      reason: `Balance à¤à¤® à¤¹à¥à¥¤ à¤à¤¸ action à¤à¥ à¤²à¤¿à¤ â¹${deduction} à¤à¤¾à¤¹à¤¿à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ wallet recharge à¤à¤°à¥à¤à¥¤ (Insufficient balance. â¹${deduction} required. Please recharge your wallet.)`,
-      remaining: deductionResult.balance_rupees,
-    };
-  }
-
-  return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
-}
 
 async function searchCourseContent(
   env: Env,
