@@ -1384,6 +1384,15 @@ async function getStudentAIFreeDailyLimit(env: Env): Promise<number> {
   return Math.floor(value);
 }
 
+const DEFAULT_AI_CREDIT_DEDUCTION_PAISE_PER_REQUEST = 200; // 200 paise = Rs.2
+async function getAICreditDeductionPaisePerRequest(env: Env): Promise<number> {
+  const settings = await getSiteSettings(env);
+  const raw = settings["ai_credit_deduction_paise_per_request"];
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return DEFAULT_AI_CREDIT_DEDUCTION_PAISE_PER_REQUEST;
+  return Math.floor(value);
+}
+
 
 export async function safeSendEmail(
   env: Env,
@@ -17707,10 +17716,8 @@ async function checkAndConsumeAICredit(
   userId: string,
   env: Env,
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number; deductionAmount?: number }> {
-  // Student AI is COMPLETELY FREE. There is NO wallet / credit / paise deduction
-  // for student AI at all. We only apply a simple daily request limit (anti-abuse),
-  // configurable via site setting "student_ai_free_daily_limit" (default 30).
-  // Set it to 0 to disable the limit entirely (unlimited free requests).
+  // 1) Free daily quota for students (configurable via site setting
+  //    "student_ai_free_daily_limit", default 30). Within this quota AI is free.
   const freeLimit = await getStudentAIFreeDailyLimit(env);
   if (freeLimit > 0) {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
@@ -17721,14 +17728,37 @@ async function checkAndConsumeAICredit(
        RETURNING window_used`,
     ).bind(dailyKey, today, freeLimit).first();
     const used = Number(result?.window_used ?? 1);
-    if (used > freeLimit) {
-      return {
-        allowed: false,
-        reason: `Aaj ka free AI request limit poora ho gaya. Kal phir try karein. (Daily free AI request limit reached. Please try again tomorrow.)`,
-      };
+    if (used <= freeLimit) {
+      // Free within the daily quota -- no wallet involvement.
+      return { allowed: true, remaining: undefined, deductionAmount: 0 };
     }
   }
-  // No credit deduction -- student AI is completely free.
+
+  // 2) Free quota exhausted -- charge the wallet. The wallet stores integer PAISE
+  //    (source of truth); we deduct in paise directly. Configurable via site setting
+  //    "ai_credit_deduction_paise_per_request" (default 200 paise). deductionAmount
+  //    is returned in PAISE so the on-error refund uses addToWalletPaise.
+  const deductionPaise = await getAICreditDeductionPaisePerRequest(env);
+  if (deductionPaise > 0) {
+    const deductionResult = await deductFromWalletPaise(
+      env,
+      userId,
+      deductionPaise,
+      "ai_usage",
+      "ai_request",
+      generateCustomId("YA-REF"),
+    );
+    if (!deductionResult.ok) {
+      return {
+        allowed: false,
+        reason: `Daily free AI limit poori ho gayi hai aur wallet balance kam hai. Kripya wallet recharge karein. (Daily free AI limit reached and wallet balance is insufficient. Please recharge your wallet.)`,
+        remaining: deductionResult.balance_rupees,
+      };
+    }
+    return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deductionPaise };
+  }
+
+  // 3) No per-request charge configured (0 paise) -- free even beyond the daily limit.
   return { allowed: true, remaining: undefined, deductionAmount: 0 };
 }
 > {
@@ -22268,7 +22298,7 @@ Example JSON structure:
 
       if (userId && role === "student" && deductedAmount) {
         try {
-          await addToWallet(env, userId, deductedAmount, "refund", "system_error", generateCustomId("YA-REF"));
+          await addToWalletPaise(env, userId, deductedAmount, "refund", "system_error", generateCustomId("YA-REF"));
           console.log("[AI Chat] Refunded", deductedAmount, "to", userId, "due to AI Gen Error");
         } catch (refundError) {
           console.error("[AI Chat] Failed to refund:", refundError);
