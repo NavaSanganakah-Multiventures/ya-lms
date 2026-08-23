@@ -29,6 +29,7 @@ export default function AdminFormsPage() {
   const [linkedBookId, setLinkedBookId] = useState('');
   const [linkedBatchId, setLinkedBatchId] = useState('');
   const [autoEnroll, setAutoEnroll] = useState(false);
+  const [freeEnroll, setFreeEnroll] = useState(false);
 
   const router = useRouter();
 
@@ -74,7 +75,7 @@ export default function AdminFormsPage() {
   }, [router]);
 
   const addField = () => {
-    setFormFields([...formFields, { name: '', label: '', type: 'text', required: true, options: [] }]);
+    setFormFields([...formFields, { name: '', label: '', label_hi: '', type: 'text', required: true, options: [] }]);
   };
 
   const removeField = (idx: number) => {
@@ -97,7 +98,8 @@ export default function AdminFormsPage() {
       linked_course_id: scopeType === 'course' ? (linkedCourseId || null) : null,
       book_id: scopeType === 'book' ? (linkedBookId || null) : null,
       linked_batch_id: linkedBatchId || null,
-      auto_enroll: autoEnroll
+      auto_enroll: autoEnroll,
+      free_enroll: freeEnroll
     };
 
     const method = editingTemplate ? 'PUT' : 'POST';
@@ -138,6 +140,7 @@ export default function AdminFormsPage() {
     setLinkedBookId(t.book_id || '');
     setLinkedBatchId(t.linked_batch_id || '');
     setAutoEnroll(!!t.auto_enroll);
+    setFreeEnroll(!!t.free_enroll);
     setShowModal(true);
   };
 
@@ -177,7 +180,7 @@ export default function AdminFormsPage() {
             <ChevronRight className="w-4 h-4" />
           </button>
           <button 
-            onClick={() => { setEditingTemplate(null); setTitle(''); setTitleHi(''); setSlug(''); setDescription(''); setDescriptionHi(''); setFormFields([]); setSeo({title:'', description:''}); setScopeType('course'); setLinkedCourseId(''); setLinkedBookId(''); setLinkedBatchId(''); setAutoEnroll(false); setShowModal(true); }}
+            onClick={() => { setEditingTemplate(null); setTitle(''); setTitleHi(''); setSlug(''); setDescription(''); setDescriptionHi(''); setFormFields([]); setSeo({title:'', description:''}); setScopeType('course'); setLinkedCourseId(''); setLinkedBookId(''); setLinkedBatchId(''); setAutoEnroll(false); setFreeEnroll(false); setShowModal(true); }}
             className="flex-1 md:flex-none py-3 px-6 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -206,6 +209,10 @@ export default function AdminFormsPage() {
                <p className="text-neutral-500 text-sm line-clamp-2 mb-4">{t.description}</p>
                <div className="text-[10px] font-mono text-neutral-700 uppercase tracking-widest bg-neutral-950 px-2 py-1 rounded inline-block">
                  Slug: {t.slug}
+               </div>
+               <div className="flex flex-wrap gap-1.5 mt-3">
+                 {t.auto_enroll ? <span className="text-[10px] font-bold px-2 py-1 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">AUTO-ENROLL</span> : null}
+                 {t.free_enroll ? <span className="text-[10px] font-bold px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">FREE ग्रांट</span> : null}
                </div>
             </div>
 
@@ -391,6 +398,18 @@ export default function AdminFormsPage() {
                               Auto-enroll on form submit?
                             </label>
                           </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input 
+                              type="checkbox"
+                              checked={freeEnroll}
+                              onChange={e => setFreeEnroll(e.target.checked)}
+                              className="w-4 h-4 bg-neutral-950 border-neutral-800 rounded"
+                              id="freeEnrollCheck"
+                            />
+                            <label htmlFor="freeEnrollCheck" className="text-sm text-neutral-400 cursor-pointer">
+                              Paid course को FREE में दें? (भुगतान नहीं, पूरा access)
+                            </label>
+                          </div>
                         </>
                       )}
                     </div>
@@ -448,6 +467,15 @@ export default function AdminFormsPage() {
                             </select>
                          </div>
                          
+                         <div className="mt-4">
+                            <input 
+                              placeholder="हिंदी लेबल (Label HI) — optional"
+                              value={field.label_hi || ''}
+                              onChange={e => updateField(idx, 'label_hi', e.target.value)}
+                              className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 text-white text-sm outline-none"
+                            />
+                         </div>
+
                          {field.type === 'select' && (
                            <div className="mt-4">
                               <input 

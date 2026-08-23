@@ -289,7 +289,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <button 
           onClick={() => setIsAdminAIOpen(true)}
           aria-label="Toggle Admin AI"
-          className="fixed bottom-5 right-5 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-40 border border-orange-500/30 sm:bottom-8 sm:right-8"
+          className="fixed bottom-24 right-5 bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 group transition-all hover:scale-105 z-50 border border-orange-500/30 md:bottom-8 md:right-8"
         >
           <Sparkles className="w-6 h-6 animate-pulse" />
           <span className="font-bold hidden sm:inline">Admin AI</span>

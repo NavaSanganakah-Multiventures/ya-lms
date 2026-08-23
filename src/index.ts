@@ -1344,7 +1344,6 @@ function parsePagination(
   return { page, limit, offset: (page - 1) * limit };
 }
 
-const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
 // Single source of truth: all monetary amounts are stored in integer paise.
@@ -1367,14 +1366,6 @@ function getPositiveIntegerSetting(
   return Math.floor(value);
 }
 
-async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
-  const settings = await getSiteSettings(env);
-  return getPositiveIntegerSetting(
-    settings,
-    "ai_credit_deduction_per_request",
-    DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST,
-  );
-}
 const DEFAULT_STUDENT_AI_FREE_DAILY_LIMIT = 30;
 async function getStudentAIFreeDailyLimit(env: Env): Promise<number> {
   const settings = await getSiteSettings(env);
@@ -12892,6 +12883,7 @@ async function handleAdminFormTemplates(
         book_id,
         linked_batch_id,
         auto_enroll,
+        free_enroll,
       } = (await request.json()) as any;
       const id = generateCustomId("YA-FRM");
 
@@ -12910,7 +12902,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, seo_json, theme_json, confirmation_email_body, linked_course_id, book_id, linked_batch_id, auto_enroll, free_enroll, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
         .bind(
           id,
@@ -12927,6 +12919,7 @@ async function handleAdminFormTemplates(
           book_id || null,
           linked_batch_id || null,
           auto_enroll ? 1 : 0,
+          free_enroll ? 1 : 0,
           teacherId,
         )
         .run();
@@ -12955,6 +12948,7 @@ async function handleAdminFormTemplates(
         book_id,
         linked_batch_id,
         auto_enroll,
+        free_enroll,
       } = (await request.json()) as any;
 
       if (userAuth.role === "teacher") {
@@ -12996,7 +12990,7 @@ async function handleAdminFormTemplates(
       }
 
       await env.DB.prepare(
-        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ? WHERE id = ?",
+        "UPDATE FormTemplates SET slug = ?, title = ?, title_hi = ?, description = ?, description_hi = ?, fields_json = ?, seo_json = ?, theme_json = ?, confirmation_email_body = ?, linked_course_id = ?, book_id = ?, linked_batch_id = ?, auto_enroll = ?, free_enroll = ? WHERE id = ?",
       )
         .bind(
           slug,
@@ -13012,6 +13006,7 @@ async function handleAdminFormTemplates(
           book_id || null,
           linked_batch_id || null,
           auto_enroll ? 1 : 0,
+          free_enroll ? 1 : 0,
           id,
         )
         .run();
@@ -13305,6 +13300,7 @@ async function handleFormResponseSubmit(
     let aiFeedback = null;
     let isFit = false;
     let autoEnrolled = false;
+    const freeEnroll = !!template.free_enroll;
 
     if (template.eligibility_criteria || template.auto_enroll) {
       try {
@@ -13378,17 +13374,17 @@ async function handleFormResponseSubmit(
 
           // Welcome email for new account
           const welcomeHtml = `
-            <p style="font-size:16px;">à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-            <p>à¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
+            <p style="font-size:16px;">नमस्ते <strong>${fullName}</strong>,</p>
+            <p>आपका Adityanveshan LMS पर account बन गया है।</p>
             <p><strong>Student ID:</strong> <code style="background:#ede9fe;padding:4px 8px;border-radius:6px;color:#4f46e5;">${newUserId}</code></p>
-            <p>Login à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (<strong>${email}</strong>) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤</p>
+            <p>Login करने के लिए अपना email (<strong>${email}</strong>) use करें और OTP से verify करें।</p>
           `;
-          const welcomeText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ Adityanveshan LMS à¤ªà¤° account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥à¥¤\nStudent ID: ${newUserId}\n\nLogin à¤à¤°à¤¨à¥ à¤à¥ à¤²à¤¿à¤ à¤à¤ªà¤¨à¤¾ email (${email}) use à¤à¤°à¥à¤ à¤à¤° OTP à¤¸à¥ verify à¤à¤°à¥à¤à¥¤`;
+          const welcomeText = `नमस्ते ${fullName},\n\nआपका Adityanveshan LMS पर account बन गया है।\nStudent ID: ${newUserId}\n\nLogin करने के लिए अपना email (${email}) use करें और OTP से verify करें।`;
           await safeSendEmail(
             env,
             email,
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® - Account Created",
-            "à¤¯à¤à¥à¤ à¤à¤¶à¥à¤°à¤® à¤®à¥à¤ à¤¸à¥à¤µà¤¾à¤à¤¤!",
+            "यज्ञ आश्रम - Account Created",
+            "यज्ञ आश्रम में स्वागत!",
             welcomeHtml,
             welcomeText,
           );
@@ -13412,14 +13408,14 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ course enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `आपके course enrollment का batch अपडेट कर दिया गया है।`,
                 "success",
               );
             }
           } else {
             const enrollId = generateCustomId("YA-ENR");
             await env.DB.prepare(
-              "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+              "INSERT INTO Enrollments (id, user_id, course_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
               .bind(
                 enrollId,
@@ -13427,14 +13423,16 @@ async function handleFormResponseSubmit(
                 template.linked_course_id,
                 selectedBatchId,
                 "active",
-                "unpaid",
+                freeEnroll ? "paid" : "unpaid",
+                0,
+                freeEnroll ? "form-free-grant" : null,
               )
               .run();
             await createNotification(
               env,
               user.id,
               "Course Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ course à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `आपको form के माध्यम से course में enroll किया गया है।${freeEnroll ? " यह course आपको free में मिल गया है — पूरा access उपलब्ध है!" : ""}`,
               "success",
             );
           }
@@ -13457,14 +13455,14 @@ async function handleFormResponseSubmit(
                 env,
                 user.id,
                 "Batch Updated",
-                `à¤à¤ªà¤à¥ à¤ªà¥à¤¸à¥à¤¤à¤ enrollment à¤à¤¾ batch à¤à¤ªà¤¡à¥à¤ à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+                `आपकी पुस्तक enrollment का batch अपडेट कर दिया गया है।`,
                 "success",
               );
             }
           } else {
             const enrollId = generateCustomId("YA-ENR");
             await env.DB.prepare(
-              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status) VALUES (?, ?, ?, ?, ?, ?)",
+              "INSERT INTO Enrollments (id, user_id, book_id, batch_id, status, payment_status, amount_paid, payment_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
               .bind(
                 enrollId,
@@ -13472,14 +13470,16 @@ async function handleFormResponseSubmit(
                 template.book_id,
                 selectedBatchId,
                 "active",
-                "unpaid",
+                freeEnroll ? "paid" : "unpaid",
+                0,
+                freeEnroll ? "form-free-grant" : null,
               )
               .run();
             await createNotification(
               env,
               user.id,
               "Book Enrollment",
-              `à¤à¤ªà¤à¥ form à¤à¥ à¤®à¤¾à¤§à¥à¤¯à¤® à¤¸à¥ à¤ªà¥à¤¸à¥à¤¤à¤ à¤®à¥à¤ enroll à¤à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥à¥¤`,
+              `आपको form के माध्यम से पुस्तक में enroll किया गया है।${freeEnroll ? " यह पुस्तक आपको free में मिल गई है!" : ""}`,
               "success",
             );
           }
@@ -13520,17 +13520,17 @@ async function handleFormResponseSubmit(
       let userBody = template.confirmation_email_body;
       if (!userBody) {
         userBody = `
-          <p>à¤¨à¤®à¤¸à¥à¤¤à¥ <strong>${fullName}</strong>,</p>
-          <p>à¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "<strong>${template.title}</strong>" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤</p>
-          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">ð à¤à¤ªà¤à¥ <strong>${courseInfo.title}</strong> à¤®à¥à¤ enroll à¤à¤° à¤¦à¤¿à¤¯à¤¾ à¤à¤¯à¤¾ à¤¹à¥!${courseInfo.price_rupees > 0 ? " Premium access à¤à¥ à¤²à¤¿à¤ course page à¤ªà¤° à¤­à¥à¤à¤¤à¤¾à¤¨ à¤à¤°à¥à¤à¥¤" : ""}</p></div>` : ""}
+          <p>नमस्ते <strong>${fullName}</strong>,</p>
+          <p>आपका फॉर्म "<strong>${template.title}</strong>" सफलतापूर्वक प्राप्त हो गया है।</p>
+          ${autoEnrolled && courseInfo ? `<div style="background:#dcfce7;border-radius:12px;padding:16px;margin:16px 0;"><p style="color:#166534;font-weight:600;margin:0;">🎓 आपको <strong>${courseInfo.title}</strong> में enroll कर दिया गया है!${freeEnroll ? " आपको यह course <strong>free</strong> में मिल गया है — पूरा access उपलब्ध है!" : (courseInfo.price_rupees > 0 ? " Premium access के लिए course page पर भुगतान करें।" : "")}</p></div>` : ""}
         `;
       }
-      const userText = `à¤¨à¤®à¤¸à¥à¤¤à¥ ${fullName},\n\nà¤à¤ªà¤à¤¾ à¤«à¥à¤°à¥à¤® "${template.title}" à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤\n\nOm!`;
+      const userText = `नमस्ते ${fullName},\n\nआपका फॉर्म "${template.title}" सफलतापूर्वक प्राप्त हो गया है।\n\nOm!`;
       await safeSendEmail(
         env,
         email,
         subject,
-        "â à¤«à¥à¤°à¥à¤® à¤à¤®à¤¾ à¤¹à¥à¤!",
+        "✅ फॉर्म जमा हुआ!",
         userBody,
         userText,
       );
@@ -13560,7 +13560,7 @@ async function handleFormResponseSubmit(
       env,
       adminEmail,
       `[LMS Form] New Submission: ${template.title}`,
-      "ð New Form Submission",
+      "📋 New Form Submission",
       adminHtml,
       adminText,
     );
@@ -13571,6 +13571,7 @@ async function handleFormResponseSubmit(
         id: submissionId,
         ai_analysis: aiFeedback,
         auto_enrolled: autoEnrolled,
+        free_access: freeEnroll,
       }),
       { status: 201, headers: { "Content-Type": "application/json" } },
     );
@@ -17761,28 +17762,6 @@ async function checkAndConsumeAICredit(
   // 3) No per-request charge configured (0 paise) -- free even beyond the daily limit.
   return { allowed: true, remaining: undefined, deductionAmount: 0 };
 }
-> {
-  const deduction = await getAICreditDeductionPerRequest(env);
-
-  const deductionResult = await deductFromWallet(
-    env,
-    userId,
-    deduction,
-    "ai_usage",
-    "ai_request",
-    generateCustomId("YA-REF"),
-  );
-
-  if (!deductionResult.ok) {
-    return {
-      allowed: false,
-      reason: `Balance à¤à¤® à¤¹à¥à¥¤ à¤à¤¸ action à¤à¥ à¤²à¤¿à¤ â¹${deduction} à¤à¤¾à¤¹à¤¿à¤à¥¤ à¤à¥à¤ªà¤¯à¤¾ wallet recharge à¤à¤°à¥à¤à¥¤ (Insufficient balance. â¹${deduction} required. Please recharge your wallet.)`,
-      remaining: deductionResult.balance_rupees,
-    };
-  }
-
-  return { allowed: true, remaining: deductionResult.balance_rupees, deductionAmount: deduction };
-}
 
 async function searchCourseContent(
   env: Env,
@@ -20034,14 +20013,6 @@ export async function generateAIContent(
 ): Promise<string> {
   const models = await getAiModelConfig(env, modelId);
 
-  // Optional AI Gateway via the Workers AI binding (caching/analytics). Still a
-  // fast in-process binding call, NOT an external HTTP round-trip. If no gateway
-  // is configured we run the binding directly (simplest & fastest path).
-  const gatewayId = await getSecret(env, "AI_GATEWAY_ID", false);
-  const gatewayOpts: any = gatewayId
-    ? { gateway: { id: gatewayId, skipCache: false, cacheTtl: 3600 } }
-    : {};
-
   let lastError: any = null;
   for (const m of models) {
     let modelMessages = applySystemPrompt(messages, m.system_prompt);
@@ -20060,7 +20031,6 @@ export async function generateAIContent(
       const aiResult: any = await env.AI.run(
         m.id,
         { messages: modelMessages, max_tokens: 4000 },
-        gatewayOpts,
       );
 
       const rawResult = (aiResult as any)?.response;
@@ -20095,11 +20065,6 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
   const models = await getAiModelConfig(env, modelId);
   const m = models[0];
 
-  const gatewayId = await getSecret(env, "AI_GATEWAY_ID", false);
-  const gatewayOpts: any = gatewayId
-    ? { gateway: { id: gatewayId, skipCache: false, cacheTtl: 3600 } }
-    : {};
-
   const aiStream = await env.AI.run(
     m.id,
     {
@@ -20107,7 +20072,6 @@ async function fetchAIStream(messages: any[], env: Env, modelId?: string | null)
       max_tokens: 4000,
       stream: true,
     },
-    gatewayOpts,
   );
 
   const sseStream = transformWorkersAIStreamToOpenAI(aiStream as any);
@@ -20254,7 +20218,7 @@ Actions:
 12. get_student_details: { email }
 13. query_users: { filter: 'all' | 'enrolled_all' | 'enrolled_course' | 'subscribers', course_id?: string }
 14. bulk_draft_email: { recipients: string[], subject: string, body: string, isHtml: boolean }
-15. create_form_and_draft_email: { form_title, form_description, form_fields_json, to, subject, email_body, theme?, confirmation_email_body? }
+15. create_form_and_draft_email: { form_title, form_description, form_fields_json, to, subject, email_body, theme?, confirmation_email_body?, free_enroll? }
 16. get_detailed_stats: {}
 17. read_lesson: { lesson_id }
 18. send_email: { to, subject, body, isHtml }
@@ -21695,7 +21659,7 @@ async function executeAIAction(
             ? params.form_fields_json
             : JSON.stringify(params.form_fields_json ?? []);
         await env.DB.prepare(
-          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO FormTemplates (id, slug, title, title_hi, description, description_hi, fields_json, theme_json, confirmation_email_body, linked_course_id, linked_batch_id, auto_enroll, free_enroll, eligibility_criteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
           .bind(
             formId,
@@ -21710,6 +21674,7 @@ async function executeAIAction(
             params.linked_course_id ?? null,
             params.linked_batch_id ?? null,
             params.auto_enroll ?? 0,
+            params.free_enroll ? 1 : 0,
             params.eligibility_criteria ?? null,
           )
           .run();
@@ -22044,12 +22009,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       const creditCheck = await checkAndConsumeAICredit(userId, env);
       if (!creditCheck.allowed) {
         return new Response(
-          JSON.stringify({ error: creditCheck.reason, remaining: 0 }),
+          JSON.stringify({ error: creditCheck.reason, remaining: creditCheck.remaining ?? 0 }),
           {
             status: 429,
             headers: {
               "Content-Type": "application/json",
-              "X-AI-Credits-Remaining": "0",
+              "X-AI-Credits-Remaining": String(creditCheck.remaining ?? 0),
             },
           },
         );
@@ -22115,11 +22080,12 @@ If requested to send an email, you MUST first draft it as HTML.
 3. Return an action of type "draft_email" with params { to, subject, body, isHtml: true }.
 4. IMPORTANT: Use the EXACT recipient email(s) provided. NEVER use placeholders. If querying users, extract their emails and compile them into a comma-separated string for the "to" field.
 5. IF REQUESTED to create a form for an invitation or enrollment and send it via email, use the action "create_form_and_draft_email" which generates the form and automatically appends the form link inside the drafted email body.
-   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria }
+   - params: { form_title, form_description, form_fields_json, to, subject, email_body, confirmation_email_body, theme, linked_course_id, linked_batch_id, auto_enroll, eligibility_criteria, free_enroll }
    - "form_fields_json" SCHEMA (MANDATORY): [ { "name": "slug_style_id", "label": "Display Label", "type": "text|email|tel|select|textarea", "required": true, "options": ["Option1"] } ]
    - **CRITICAL**: EVERY form MUST include these fields by default unless strictly asked not to: Full Name (text), Email (email), Phone Number (tel), and Gender (select).
    - "confirmation_email_body" (OPTIONAL): HTML content for the automatic email sent to the user after they fill out the form. Use this if the user asks for a confirmation/thank you email.
    - ENROLLMENT / ELIGIBILITY (OPTIONAL): If the admin wants to attach a course or batch to the form for auto-enrollment, set "linked_course_id" or "linked_batch_id" (use the ID if known, otherwise ask the admin), set "auto_enroll": 1, and set "eligibility_criteria" explaining how the AI should evaluate submissions (e.g., "Must be female, age 18+, interested in yoga"). If the AI evaluates them as eligible, they will be auto-enrolled. If not, they are marked pending for admin review.
+   - FREE ENROLLMENT (OPTIONAL): If the admin wants the attached paid course to be granted for FREE via this form (no payment), set "free_enroll": 1. Use this only when the admin explicitly says the course should be free / complimentary / scholarship. Otherwise leave it 0.
 6. The UI will show a rich "Real-time" preview of this HTML draft.
 7. Do NOT attempt to send it immediately. The drafting process handles it.
 8. For students, use a professional tonality. (Sender: Adityanveshan, om@yagyaashram.com)
