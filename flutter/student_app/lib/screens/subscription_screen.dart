@@ -397,14 +397,30 @@ class _CurrentSubscriptionCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppTheme.space5),
-          YuvaButton.outline(
-            label: cancelling ? 'Cancelling...' : 'Cancel Subscription',
-            onPressed: cancelling ? null : onCancel,
-            isLoading: cancelling,
-            backgroundColor: AppTheme.surface.withAlphaOpacity(0.2),
-            foregroundColor: AppTheme.surface,
-            borderColor: AppTheme.surface.withAlphaOpacity(0.3),
+          SizedBox(
+            width: double.infinity,
             height: 48,
+            child: OutlinedButton.icon(
+              onPressed: cancelling ? null : onCancel,
+              icon: cancelling
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.surface),
+                    )
+                  : const Icon(Icons.cancel_outlined, size: 18),
+              label: Text(cancelling ? 'Cancelling...' : 'Cancel Subscription'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.surface,
+                backgroundColor: AppTheme.surface.withAlphaOpacity(0.2),
+                side: BorderSide(color: AppTheme.surface.withAlphaOpacity(0.3)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMd)),
+                textStyle: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppTheme.surface,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
           ),
         ],
       ),
