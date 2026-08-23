@@ -112,13 +112,13 @@ class CustomBottomNav extends StatelessWidget {
                       top: -2,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: AppTheme.premiumGradient,
-                          borderRadius: BorderRadius.all(Radius.circular(999)),
+                          borderRadius: const BorderRadius.all(Radius.circular(999)),
                         ),
-                        child: Text(
+                        child: const Text(
                           badge,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.surface,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
