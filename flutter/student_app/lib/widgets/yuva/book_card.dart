@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../screens/pdf_viewer_screen.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import 'yuva_button.dart';
@@ -109,9 +110,14 @@ class BookCard extends StatelessWidget {
           ? '${ApiService.baseUrl}$fileUrl'
           : '${ApiService.baseUrl}/$fileUrl';
     }
-    Navigator.pushNamed(context, '/pdf', arguments: {
-      'pdfUrl': fileUrl,
-      'title': book['title']?.toString() ?? 'Book',
-    });
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PdfViewerScreen(
+          pdfUrl: fileUrl,
+          title: book['title']?.toString() ?? 'Book',
+        ),
+      ),
+    );
   }
 }
