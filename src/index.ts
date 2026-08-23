@@ -1344,7 +1344,6 @@ function parsePagination(
   return { page, limit, offset: (page - 1) * limit };
 }
 
-const DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST = 2;
 
 // --- INR / Paise Conversion Helpers ---
 // Single source of truth: all monetary amounts are stored in integer paise.
@@ -1367,14 +1366,6 @@ function getPositiveIntegerSetting(
   return Math.floor(value);
 }
 
-async function getAICreditDeductionPerRequest(env: Env): Promise<number> {
-  const settings = await getSiteSettings(env);
-  return getPositiveIntegerSetting(
-    settings,
-    "ai_credit_deduction_per_request",
-    DEFAULT_AI_CREDIT_DEDUCTION_PER_REQUEST,
-  );
-}
 const DEFAULT_STUDENT_AI_FREE_DAILY_LIMIT = 30;
 async function getStudentAIFreeDailyLimit(env: Env): Promise<number> {
   const settings = await getSiteSettings(env);
@@ -22044,12 +22035,12 @@ async function handleAIChat(request: Request, env: Env): Promise<Response> {
       const creditCheck = await checkAndConsumeAICredit(userId, env);
       if (!creditCheck.allowed) {
         return new Response(
-          JSON.stringify({ error: creditCheck.reason, remaining: 0 }),
+          JSON.stringify({ error: creditCheck.reason, remaining: creditCheck.remaining ?? 0 }),
           {
             status: 429,
             headers: {
               "Content-Type": "application/json",
-              "X-AI-Credits-Remaining": "0",
+              "X-AI-Credits-Remaining": String(creditCheck.remaining ?? 0),
             },
           },
         );
