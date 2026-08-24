@@ -18,25 +18,25 @@ import '../widgets/mini_player_widget.dart';
 import '../widgets/custom_bottom_nav.dart';
 
 class MainLayoutScreen extends StatefulWidget {
- const MainLayoutScreen({super.key});
+  const MainLayoutScreen({super.key});
 
- @override
- State<MainLayoutScreen> createState() => _MainLayoutScreenState();
+  @override
+  State<MainLayoutScreen> createState() => _MainLayoutScreenState();
 }
 
 class _MainLayoutScreenState extends State<MainLayoutScreen>
- with WidgetsBindingObserver {
- int _currentIndex = 0;
- final Set<int> _visitedTabs = {0};
- int _refreshCounter = 0;
- int _unreadCount = 0;
- Timer? _notificationTimer;
+    with WidgetsBindingObserver {
+  int _currentIndex = 0;
+  final Set<int> _visitedTabs = {0};
+  int _refreshCounter = 0;
+  int _unreadCount = 0;
+  Timer? _notificationTimer;
 
- // ── Live Class PiP ──────────────────────────────────────────
- final LiveClassPipManager _pip = LiveClassPipManager.instance;
- bool _pipSupported = false;
+  // ── Live Class PiP ──────────────────────────────────────────
+  final LiveClassPipManager _pip = LiveClassPipManager.instance;
+  bool _pipSupported = false;
 
- late List<Widget> _screens;
+  late List<Widget> _screens;
 
   void _updateScreens() {
     _screens = [
@@ -48,121 +48,72 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     ];
   }
 
- late final StreamSubscription? _realtimeSub;
- late final StreamSubscription? _connectionSub;
- bool _isRealtimeConnected = false;
+  late final StreamSubscription? _realtimeSub;
+  late final StreamSubscription? _connectionSub;
+  bool _isRealtimeConnected = false;
 
- @override
- void initState() {
- super.initState();
- WidgetsBinding.instance.addObserver(this);
- _pip.addListener(_onPipChange);
- _fetchUnreadCount();
- _notificationTimer =
- Timer.periodic( Duration(seconds: 120), (_) => _fetchUnreadCount());
- _checkPipSupport();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pip.addListener(_onPipChange);
+    _fetchUnreadCount();
+    _notificationTimer = Timer.periodic(const Duration(seconds: 120), (_) => _fetchUnreadCount());
+    _checkPipSupport();
 
- // Build the tab screen list once; refresh only by _refresh().
     _updateScreens();
 
-    // Connect to WebSocket and listen for events
     RealTimeService.instance.connect();
- _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
- if (mounted) setState(() => _isRealtimeConnected = connected);
- });
-  _realtimeSub = RealTimeService.instance.dataStream.listen((event) {
-  if (!mounted) return;
-  final action = event['action'];
-  final entity = event['entity'];
-  if (action == 'course_published') {
-    final publishedTitle = (event['data'] is Map)
-        ? (event['data']['title'] ?? 'New Course').toString()
-        : 'New Course';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('🚀 New Course Published: $publishedTitle')),
-    );
-  } else if (entity == 'wallet' && action == 'wallet_updated') {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('💰 Wallet Balance Updated!')),
-    );
-  } else if (event['type'] == 'wallet') {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('💰 Wallet Balance Updated!')),
-    );
-  } else if (entity == 'notification' && action == 'new_notification') {
-    _fetchUnreadCount();
-  } else if (entity == 'user' && action == 'profile_updated') {
-    context.read<AuthProvider>().refreshProfile();
-  } else if (entity == 'broadcast' && action == 'new_broadcast') {
-    final title = event['data']?['title'] ?? 'New Broadcast';
-    final message = event['data']?['message'] ?? '';
-    _showBroadcastDialog(title, message);
-  }
-  });
+    _connectionSub = RealTimeService.instance.connectionState.listen((connected) {
+      if (mounted) setState(() => _isRealtimeConnected = connected);
+    });
+    _realtimeSub = RealTimeService.instance.dataStream.listen(_onRealtimeEvent);
   }
 
-  Future<void> _showBroadcastDialog(String title, String message) async {
-  if (!mounted) return;
-  await showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('OK')),
-      ],
-    ),
-  );
+  @override
+  void dispose() {
+    _connectionSub?.cancel();
+    _realtimeSub?.cancel();
+    RealTimeService.instance.disconnect();
+    _notificationTimer?.cancel();
+    _pip.removeListener(_onPipChange);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
- @override
- void dispose() {
- _connectionSub?.cancel();
- _realtimeSub?.cancel();
- RealTimeService.instance.disconnect();
- _notificationTimer?.cancel();
- _pip.removeListener(_onPipChange);
- WidgetsBinding.instance.removeObserver(this);
- super.dispose();
- }
+  void _onPipChange() {
+    if (mounted) setState(() {});
+  }
 
- void _onPipChange() {
- if (mounted) setState(() {});
- }
+  Future<void> _checkPipSupport() async {
+    final supported = await PictureInPictureService.isSupported();
+    if (mounted) setState(() => _pipSupported = supported);
+  }
 
- Future<void> _checkPipSupport() async {
- final supported = await PictureInPictureService.isSupported();
- if (mounted) setState(() => _pipSupported = supported);
- }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused &&
+        _pipSupported &&
+        _pip.isActive &&
+        _pip.mode == PipDisplayMode.fullScreen) {
+      PictureInPictureService.enter();
+      PictureInPictureService.updatePiPActions(micEnabled: _pip.micEnabled);
+    }
+  }
 
- // ── PiP auto-enter when app goes to background ──────────────
- @override
- void didChangeAppLifecycleState(AppLifecycleState state) {
- super.didChangeAppLifecycleState(state);
- if (state == AppLifecycleState.paused &&
- _pipSupported &&
- _pip.isActive &&
- _pip.mode == PipDisplayMode.fullScreen) {
- PictureInPictureService.enter();
- PictureInPictureService.updatePiPActions(micEnabled: _pip.micEnabled);
- }
- }
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final res = await ApiService.getNotifications();
+      if (res.statusCode == 200 && mounted) {
+        setState(() => _unreadCount = (res.data['unreadCount'] ?? 0) as int);
+      }
+    } catch (e) {
+      debugPrint('_fetchUnreadCount failed: $e');
+    }
+  }
 
- Future<void> _fetchUnreadCount() async {
- try {
- final res = await ApiService.getNotifications();
- if (res.statusCode == 200 && mounted) {
- final data = res.data;
- setState(() {
- _unreadCount = data['unreadCount'] ?? 0;
- });
- }
- } catch (e) {
- debugPrint('_fetchUnreadCount failed: $e');
- }
- }
-
- void _refresh() {
+  void _refresh() {
     setState(() {
       _refreshCounter++;
       _updateScreens();
@@ -189,124 +140,79 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
     return _screens[index];
   }
 
- // ── Tap mini player → back to full screen ───────────────────
- void _openFullScreen() {
- _pip.enterFullScreen();
- // Navigator.push to the live class screen
- Navigator.push(
- context,
- MaterialPageRoute(
- builder: (_) => LiveClassRealtimeKitScreen(
- meetingId: _pip.meetingId,
- sessionId: _pip.sessionId,
- title: _pip.title,
- requiredCredits: _pip.maxMinutes,
- ),
- ),
- );
- }
+  void _openFullScreen() {
+    _pip.enterFullScreen();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LiveClassRealtimeKitScreen(
+          meetingId: _pip.meetingId,
+          sessionId: _pip.sessionId,
+          title: _pip.title,
+          requiredCredits: _pip.maxMinutes,
+        ),
+      ),
+    );
+  }
 
- // ── Build ────────────────────────────────────────────────────
- @override
- Widget build(BuildContext context) {
- final titles = [
- 'Student Dashboard',
- 'Books Library',
- 'Yagya Mitra',
- 'My Wallet',
- 'My Profile',
- ];
+  Future<void> _onRealtimeEvent(Map<String, dynamic> event) async {
+    if (!mounted) return;
+    final action = event['action'];
+    final entity = event['entity'];
 
- return Scaffold(
- extendBodyBehindAppBar: true,
- appBar: AppBar(
- title: Text(titles[_currentIndex]),
- backgroundColor: AppTheme.backgroundOf(context).withAlphaOpacity(0.92),
- elevation: 0,
- actions: [
- // Real-time connection indicator
- Tooltip(
- message: _isRealtimeConnected ? 'Realtime connected' : 'Realtime disconnected',
- child: Container(
- width: 10,
- height: 10,
- margin: EdgeInsets.only(right: 4),
- decoration: BoxDecoration(
- color: _isRealtimeConnected ? AppTheme.success : AppTheme.mutedOf(context),
- shape: BoxShape.circle,
- boxShadow: _isRealtimeConnected
- ? [
- BoxShadow(
- color: AppTheme.success.withAlphaOpacity(0.5),
- blurRadius: 8,
- spreadRadius: 2,
- ),
- ]
- : null,
- ),
- ),
- ),
- Stack(
- children: [
- IconButton(
- icon: Icon(Icons.notifications_outlined),
- onPressed: () {
- _fetchUnreadCount();
- ScaffoldMessenger.of(context).showSnackBar(
- SnackBar(content: Text('आपके पास $_unreadCount अपठित सूचनाएँ हैं')),
- );
- },
- color: AppTheme.textPrimaryOf(context),
- ),
- if (_unreadCount > 0)
- Positioned(
- right: 6,
- top: 6,
- child: Container(
- padding: EdgeInsets.all(4),
- decoration: BoxDecoration(
- color: AppTheme.danger,
- shape: BoxShape.circle,
- ),
- constraints:
- BoxConstraints(minWidth: 18, minHeight: 18),
- child: Text(
- _unreadCount > 99 ? '99+' : _unreadCount.toString(),
- style: TextStyle(
- color: Colors.white,
- fontSize: 10,
- fontWeight: FontWeight.bold),
- textAlign: TextAlign.center,
- ),
- ),
- ),
- ],
- ),
- if (_currentIndex <= 1) ...[
- IconButton(
- tooltip: 'Refresh',
- icon: Icon(Icons.refresh_rounded),
- onPressed: _refresh,
- ),
- SizedBox(width: 8),
- ],
- ],
- ),
- body: Stack(
- children: [
- // Layer 1: Normal tab content
- IndexedStack(
- index: _currentIndex,
- children: [
- _tabOrPlaceholder(0),
- _tabOrPlaceholder(1),
- _tabOrPlaceholder(2),
- _tabOrPlaceholder(3),
- _tabOrPlaceholder(4),
- ],
- ),
+    if (action == 'course_published') {
+      final publishedTitle = (event['data'] is Map)
+          ? (event['data']['title'] ?? 'New Course').toString()
+          : 'New Course';
+      _showSnack('🚀 New Course Published: $publishedTitle');
+    } else if ((entity == 'wallet' && action == 'wallet_updated') || event['type'] == 'wallet') {
+      _showSnack('💰 Wallet Balance Updated!');
+    } else if (entity == 'notification' && action == 'new_notification') {
+      _fetchUnreadCount();
+    } else if (entity == 'user' && action == 'profile_updated') {
+      context.read<AuthProvider>().refreshProfile();
+    } else if (entity == 'broadcast' && action == 'new_broadcast') {
+      final title = event['data']?['title'] ?? 'New Broadcast';
+      final message = event['data']?['message'] ?? '';
+      _showBroadcastDialog(title, message);
+    }
+  }
 
- // Layer 2: Mini player overlay (when live class is in mini mode)
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showBroadcastDialog(String title, String message) async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: _buildAppBar(context),
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: [
+              _tabOrPlaceholder(0),
+              _tabOrPlaceholder(1),
+              _tabOrPlaceholder(2),
+              _tabOrPlaceholder(3),
+              _tabOrPlaceholder(4),
+            ],
+          ),
           if (_pip.isMiniPlayerVisible)
             MiniPlayerWidget(
               onOpenFullScreen: _openFullScreen,
@@ -315,23 +221,134 @@ class _MainLayoutScreenState extends State<MainLayoutScreen>
                 try {
                   RealtimeKitUIBuilder.dispose();
                 } catch (e, st) {
-                  debugPrint('[MainLayout] RealtimeKit dispose error: $e\n$st');
+                  debugPrint('[MainLayout] RealtimeKit dispose error: $e / stack: $st');
                 }
               },
               onToggleMic: () {
                 _pip.toggleMic();
-                PictureInPictureService.updatePiPActions(
-                    micEnabled: _pip.micEnabled);
+                PictureInPictureService.updatePiPActions(micEnabled: _pip.micEnabled);
               },
               title: _pip.title,
               micEnabled: _pip.micEnabled,
             ),
- ],
- ),
+        ],
+      ),
       bottomNavigationBar: CustomBottomNav(
         currentIndex: _currentIndex,
         onTap: _selectTab,
+        unreadCount: _unreadCount,
       ),
- );
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
+    return AppBar(
+      backgroundColor: AppTheme.backgroundOf(context).withAlphaOpacity(0.92),
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      surfaceTintColor: Colors.transparent,
+      title: Text(
+        _pageTitle(_currentIndex),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppTheme.textPrimaryOf(context),
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+      actions: [
+        _RealtimeIndicator(connected: _isRealtimeConnected),
+        _NotificationBell(count: _unreadCount, onTap: _fetchUnreadCount),
+        if (_currentIndex <= 1)
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refresh,
+          ),
+        const SizedBox(width: AppTheme.space2),
+      ],
+    );
+  }
+
+  String _pageTitle(int index) {
+    const titles = ['Home', 'Library', 'Yagya Mitra', 'Wallet', 'Profile'];
+    return titles[index];
+  }
+}
+
+class _RealtimeIndicator extends StatelessWidget {
+  final bool connected;
+  const _RealtimeIndicator({required this.connected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: connected ? 'Realtime connected' : 'Realtime disconnected',
+      child: Container(
+        width: 8,
+        height: 8,
+        margin: const EdgeInsets.only(right: AppTheme.space2),
+        decoration: BoxDecoration(
+          color: connected ? AppTheme.success : AppTheme.mutedOf(context),
+          shape: BoxShape.circle,
+          boxShadow: connected
+              ? [
+                  BoxShadow(
+                    color: AppTheme.success.withAlphaOpacity(0.5),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationBell extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _NotificationBell({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () {
+            onTap();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('आपके पास $count अपठित सूचनाएँ हैं')),
+            );
+          },
+          color: AppTheme.textPrimaryOf(context),
+        ),
+        if (count > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                gradient: AppTheme.premiumGradient,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              child: Text(
+                count > 99 ? '99+' : count.toString(),
+                style: const TextStyle(
+                  color: AppTheme.surface,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

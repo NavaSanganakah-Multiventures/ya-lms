@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../../theme/app_theme.dart';
 
 class CenterNavItem extends StatefulWidget {
   final VoidCallback onTap;
+  final bool isSelected;
 
-  const CenterNavItem({super.key, required this.onTap});
+  const CenterNavItem({
+    super.key,
+    required this.onTap,
+    this.isSelected = false,
+  });
 
   @override
   State<CenterNavItem> createState() => _CenterNavItemState();
@@ -35,6 +40,7 @@ class _CenterNavItemState extends State<CenterNavItem>
 
   @override
   Widget build(BuildContext context) {
+    final selected = widget.isSelected;
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
@@ -45,35 +51,43 @@ class _CenterNavItemState extends State<CenterNavItem>
         return Transform.scale(
           scale: scale,
           child: Padding(
-            padding: const EdgeInsets.only(bottom: AppTheme.space2),
-            child: Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                gradient: AppTheme.premiumGradient,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.accent
-                        .withAlpha((100 * glowOpacity).round()),
-                    blurRadius: 16 + (pulseValue * 8),
-                    spreadRadius: 2 + (pulseValue * 2),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: widget.onTap,
-                  child: const Icon(
-                    Icons.auto_awesome_rounded,
-                    color: AppTheme.surface,
-                    size: 26,
+            padding: const EdgeInsets.only(bottom: AppTheme.space2 + 4),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    gradient: selected ? AppTheme.auroraGradient : AppTheme.premiumGradient,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.accent.withAlpha((120 * glowOpacity).round()),
+                        blurRadius: 18 + (pulseValue * 10),
+                        spreadRadius: 3 + (pulseValue * 3),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+                Material(
+                  color: Colors.transparent,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: widget.onTap,
+                    child: const SizedBox(
+                      width: 58,
+                      height: 58,
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: AppTheme.surface,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
