@@ -227,7 +227,10 @@ function FormContent() {
     }
   };
 
+  // NOTE: All hooks (useMemo) must run before any conditional early returns,
+  // otherwise the number of hooks changes between renders -> React error #310.
   const fields = useMemo<any[]>(() => {
+    if (!template) return [];
     try { return typeof template.fields_json === 'string' ? JSON.parse(template.fields_json || '[]') : (template.fields_json || []); }
     catch (e) { return []; }
   }, [template]);
@@ -235,7 +238,6 @@ function FormContent() {
   if (!slug) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">No slug provided.</div>;
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>;
   if (!template) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">Form not found.</div>;
-
 
   return (
     <div className="min-h-screen selection:bg-orange-500/30 transition-colors duration-700" style={{ backgroundColor: theme.backgroundColor, fontFamily: theme.font }}>
