@@ -265,14 +265,14 @@ function FormContent() {
               <div className="mb-10">
                 <div className="flex justify-between items-start">
                   <span className="text-xs font-bold uppercase tracking-[0.2em] mb-4 block" style={{ color: theme.primaryColor }}>
-                    {lang === 'hi' ? 'à¤à¤§à¤¿à¤à¤¾à¤°à¤¿à¤ à¤«à¥à¤°à¥à¤®' : 'Official Form'}
+                    {lang === 'hi' ? 'आधिकारिक फॉर्म' : 'Official Form'}
                   </span>
                   <button 
                     onClick={() => setLang(lang === 'hi' ? 'en' : 'hi')}
                     className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black text-white hover:bg-white/10 transition-all uppercase tracking-widest flex items-center gap-2"
                   >
                     <Globe className="w-3 h-3" />
-                    {lang === 'hi' ? 'Switch to English' : 'à¤¹à¤¿à¤à¤¦à¥ à¤®à¥à¤ à¤¬à¤¦à¤²à¥à¤'}
+                    {lang === 'hi' ? 'Switch to English' : 'हिंदी में बदलें'}
                   </button>
                 </div>
                 <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4">
@@ -286,7 +286,7 @@ function FormContent() {
                     <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />
                     <span className="text-orange-300 text-sm font-medium">
                       {lang === 'hi'
-                        ? (template.free_enroll ? 'à¤¯à¤¹ à¤«à¥à¤°à¥à¤® à¤­à¤°à¤¨à¥ à¤ªà¤° à¤à¤ªà¤à¥ à¤à¥à¤°à¥à¤¸ FREE à¤®à¥à¤ à¤®à¤¿à¤²à¥à¤à¤¾ (à¤ªà¥à¤°à¤¾ access)à¥¤' : 'à¤¯à¤¹ à¤«à¥à¤°à¥à¤® à¤­à¤°à¤¨à¥ à¤ªà¤° à¤à¤ªà¤à¥ à¤à¥à¤°à¥à¤¸ à¤®à¥à¤ à¤à¤à¥à¤®à¥à¤à¤¿à¤ à¤à¤à¥à¤¸à¥à¤¸ à¤®à¤¿à¤²à¥à¤à¤¾à¥¤')
+                        ? (template.free_enroll ? 'यह फॉर्म भरने पर आपको कोर्स FREE में मिलेगा (पूरा access)।' : 'यह फॉर्म भरने पर आपको कोर्स में ऑटोमैटिक एक्सेस मिलेगा।')
                         : (template.free_enroll ? 'Submitting this form grants you FREE access to the course.' : 'Submitting this form grants you automatic access to the course.')}
                     </span>
                   </div>
@@ -296,8 +296,8 @@ function FormContent() {
               <form onSubmit={handleSubmit} className="space-y-7">
                 {isDuplicate && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-5 py-4 rounded-xl flex items-center gap-3">
-                    <span className="text-2xl">â ï¸</span>
-                    <p className="text-sm font-bold">à¤à¤ª à¤¯à¤¹ à¤«à¥à¤°à¥à¤® à¤ªà¤¹à¤²à¥ à¤¹à¥ à¤­à¤° à¤à¥à¤à¥ à¤¹à¥à¤à¥¤ (You have already submitted this form.)</p>
+                    <span className="text-2xl">⚠️</span>
+                    <p className="text-sm font-bold">आप यह फॉर्म पहले ही भर चुके हैं। (You have already submitted this form.)</p>
                   </div>
                 )}
                 
@@ -312,12 +312,12 @@ function FormContent() {
                     </label>
                     {field.type === 'textarea' ? (
                       <textarea required={field.required} value={formData[field.name] || ''} onChange={e => onFieldChange(field.name, e.target.value)}
-                        placeholder={lang === 'hi' ? 'à¤²à¤¿à¤à¥à¤...' : 'Write...'} rows={4} className={inputClass + " resize-none"} />
+                        placeholder={lang === 'hi' ? 'लिखें...' : 'Write...'} rows={4} className={inputClass + " resize-none"} />
                     ) : field.type === 'select' ? (
                       <div className="relative">
                         <select required={field.required} value={formData[field.name] || ''} onChange={e => onFieldChange(field.name, e.target.value)}
                           className={selectClass}>
-                          <option value="" disabled className="bg-neutral-900">{lang === 'hi' ? 'à¤à¥à¤¨à¥à¤...' : 'Select...'}</option>
+                          <option value="" disabled className="bg-neutral-900">{lang === 'hi' ? 'चुनें...' : 'Select...'}</option>
                           {field.options?.map((opt: string) => <option key={opt} value={opt} className="bg-neutral-900">{opt}</option>)}
                         </select>
                         <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 rotate-90 pointer-events-none" />
@@ -333,7 +333,7 @@ function FormContent() {
                 {/* Country Selection */}
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="space-y-2">
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'à¤¦à¥à¤¶ (Country)' : 'Country'} <span className="text-orange-500">*</span>
+                    <Globe className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'देश (Country)' : 'Country'} <span className="text-orange-500">*</span>
                   </label>
                   <CountrySelect value={selectedCountry.code} countries={countriesList} onChange={onCountryChange} className={selectClass} />
                   <p className="text-xs text-neutral-600">Country Code: <span className="text-orange-400 font-mono font-bold">{selectedCountry.code}</span> | Dial: {selectedCountry.dialCode}</p>
@@ -342,7 +342,7 @@ function FormContent() {
                 {/* State / District */}
                 <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }} className="space-y-2">
                   <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'à¤°à¤¾à¤à¥à¤¯ (State)' : 'State'} <span className="text-orange-500">*</span>
+                    <MapPin className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'राज्य (State)' : 'State'} <span className="text-orange-500">*</span>
                   </label>
                   <StateSelect value={selectedState.code} states={statesList} onChange={onStateChange} className={selectClass} />
                   <p className="text-xs text-neutral-600">State Code: <span className="text-orange-400 font-mono font-bold">{selectedState.code}</span></p>
@@ -352,22 +352,22 @@ function FormContent() {
                 {template.linked_course_id && (
                   <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }} className="space-y-2">
                     <label className="text-sm font-bold text-neutral-300 flex items-center gap-2">
-                      <Users className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'Batch à¤à¥à¤¨à¥à¤ (Select Batch)' : 'Select Batch'}
+                      <Users className="w-4 h-4 text-orange-400" /> {lang === 'hi' ? 'Batch चुनें (Select Batch)' : 'Select Batch'}
                     </label>
                     {loadingBatches ? (
                       <div className="flex items-center gap-2 text-neutral-500 text-sm py-3">
-                        <Loader2 className="w-4 h-4 animate-spin" /> {lang === 'hi' ? 'Batches load à¤¹à¥ à¤°à¤¹à¥ à¤¹à¥à¤...' : 'Loading batches...'}
+                        <Loader2 className="w-4 h-4 animate-spin" /> {lang === 'hi' ? 'Batches load हो रहे हैं...' : 'Loading batches...'}
                       </div>
                     ) : batches.length === 0 ? (
                       <div className="px-5 py-4 bg-neutral-900/50 border border-white/5 rounded-2xl text-neutral-500 text-sm">
-                        {lang === 'hi' ? 'à¤à¥à¤ batch à¤à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥à¤ â Default batch à¤®à¥à¤ enroll à¤¹à¥à¤à¤à¥à¥¤' : 'No batches available â you will be enrolled in the default batch.'}
+                        {lang === 'hi' ? 'कोई batch उपलब्ध नहीं — Default batch में enroll होंगे।' : 'No batches available — you will be enrolled in the default batch.'}
                       </div>
                     ) : (
                       <div className="relative">
                         <select value={selectedBatchId} onChange={e => setSelectedBatchId(e.target.value)} className={selectClass}>
                           {batches.map((b: any) => (
                             <option key={b.id} value={b.id} className="bg-neutral-900">
-                               {b.name} {b.start_date ? `â à¤¶à¥à¤°à¥: ${formatLocalDate(b.start_date)}` : ''} [{b.status}]
+                               {b.name} {b.start_date ? `— शुरू: ${formatLocalDate(b.start_date)}` : ''} [{b.status}]
                             </option>
                           ))}
                         </select>
@@ -384,7 +384,7 @@ function FormContent() {
                     {isSubmitting || checkingDuplicate ? <Loader2 className="w-6 h-6 animate-spin" /> : (
                       <>
                         <Send className="w-5 h-5" /> 
-                        {lang === 'hi' ? 'à¤«à¥à¤°à¥à¤® à¤à¤®à¤¾ à¤à¤°à¥à¤' : 'Submit Form'}
+                        {lang === 'hi' ? 'फॉर्म जमा करें' : 'Submit Form'}
                       </>
                     )}
                   </button>
@@ -398,8 +398,8 @@ function FormContent() {
                 className="w-24 h-24 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-8">
                 <CheckCircle2 className="w-12 h-12" />
               </motion.div>
-              <h1 className="text-4xl font-black text-white mb-3">{lang === 'hi' ? 'à¤¸à¤«à¤²à¤¤à¤¾à¤ªà¥à¤°à¥à¤µà¤ à¤à¤®à¤¾!' : 'Submitted Successfully!'}</h1>
-              <p className="text-neutral-400 text-lg mb-6">{lang === 'hi' ? 'à¤à¤ªà¤à¤¾ à¤à¤µà¥à¤¦à¤¨ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥ à¤à¤¯à¤¾ à¤¹à¥à¥¤ Email check à¤à¤°à¥à¤à¥¤' : 'Your application has been received. Please check your email.'}</p>
+              <h1 className="text-4xl font-black text-white mb-3">{lang === 'hi' ? 'सफलतापूर्वक जमा!' : 'Submitted Successfully!'}</h1>
+              <p className="text-neutral-400 text-lg mb-6">{lang === 'hi' ? 'आपका आवेदन प्राप्त हो गया है। Email check करें।' : 'Your application has been received. Please check your email.'}</p>
 
               {/* Auto-enrollment badge */}
               {autoEnrolled && (
@@ -410,8 +410,8 @@ function FormContent() {
                       <CheckCircle2 className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                      <p className="text-white font-black text-lg mb-1">{lang === 'hi' ? 'ð Course Access à¤®à¤¿à¤² à¤à¤¯à¤¾!' : 'ð Course Access Granted!'}</p>
-                      <p className="text-neutral-400 text-sm">{lang === 'hi' ? 'à¤à¤ªà¤à¤¾ account à¤¬à¤¨ à¤à¤¯à¤¾ à¤¹à¥ à¤à¤° course à¤®à¥à¤ enroll à¤¹à¥ à¤à¤ à¤¹à¥à¤à¥¤ Login à¤à¤°à¥à¤ (email + OTP) à¤à¤° à¤à¤­à¥ à¤¶à¥à¤°à¥ à¤à¤°à¥à¤!' : 'Your account has been created and you are enrolled in the course. Login with email + OTP to start!'}</p>
+                      <p className="text-white font-black text-lg mb-1">{lang === 'hi' ? '🎓 Course Access मिल गया!' : '🎓 Course Access Granted!'}</p>
+                      <p className="text-neutral-400 text-sm">{lang === 'hi' ? 'आपका account बन गया है और course में enroll हो गए हैं। Login करें (email + OTP) और अभी शुरू करें!' : 'Your account has been created and you are enrolled in the course. Login with email + OTP to start!'}</p>
                     </div>
                   </div>
                 </motion.div>
@@ -420,7 +420,7 @@ function FormContent() {
               {aiFeedback && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
                   className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-left max-w-md mx-auto mb-8">
-                  <span className="text-orange-400 text-[10px] font-bold uppercase tracking-widest mb-4 block">{lang === 'hi' ? 'AI à¤¤à¥à¤µà¤°à¤¿à¤¤ à¤ªà¥à¤°à¤¤à¤¿à¤à¥à¤°à¤¿à¤¯à¤¾' : 'AI Quick Feedback'}</span>
+                  <span className="text-orange-400 text-[10px] font-bold uppercase tracking-widest mb-4 block">{lang === 'hi' ? 'AI त्वरित प्रतिक्रिया' : 'AI Quick Feedback'}</span>
                   <p className="text-neutral-200 text-lg italic leading-relaxed font-medium">
                     &quot;{aiFeedback.feedback || aiFeedback}&quot;
                   </p>
@@ -437,7 +437,7 @@ function FormContent() {
 
               <button onClick={() => window.location.href = '/'}
                 className="text-neutral-500 hover:text-white transition-colors flex items-center gap-2 mx-auto font-bold">
-                {lang === 'hi' ? 'à¤¹à¥à¤® à¤ªà¥à¤ à¤ªà¤° à¤µà¤¾à¤ªà¤¸ à¤à¤¾à¤à¤' : 'Back to Home'} <ChevronRight className="w-4 h-4" />
+                {lang === 'hi' ? 'होम पेज पर वापस जाएं' : 'Back to Home'} <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           )}
@@ -445,7 +445,7 @@ function FormContent() {
       </main>
 
       <footer className="relative z-10 py-10 px-6 border-t border-neutral-900 text-center">
-        <p className="text-neutral-600 text-xs font-mono">&copy; {new Date().getFullYear()} YAGYA ASHRAM â¢ ENLIGHTENING THE WORLD</p>
+        <p className="text-neutral-600 text-xs font-mono">&copy; {new Date().getFullYear()} YAGYA ASHRAM • ENLIGHTENING THE WORLD</p>
       </footer>
     </div>
   );
