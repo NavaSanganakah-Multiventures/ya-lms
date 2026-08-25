@@ -4,12 +4,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import 'admin_routes.dart';
 import 'admin_api_service.dart';
+import 'session_storage_service.dart';
 
 typedef ForegroundNotificationHandler = void Function(
   String title,
@@ -65,6 +65,8 @@ class AdminNotificationService {
   }
 
   Future<void> _initLocalNotifications() async {
+    // flutter_local_notifications does not support web.
+    if (kIsWeb) return;
     _localNotifications = FlutterLocalNotificationsPlugin();
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
@@ -98,7 +100,6 @@ class AdminNotificationService {
 
   void setOnTap(NotificationTapHandler handler) {
     _onTap = handler;
-    // Process any pending tap notifications
     for (final pending in _pendingTaps) {
       final url = pending['url']?.toString() ?? '';
       final data = (pending['data'] as Map<String, dynamic>?) ?? const {};
@@ -145,7 +146,10 @@ class AdminNotificationService {
   Future<void> _refreshToken() async {
     if (_messaging == null) return;
     try {
-      _fcmToken = await _messaging!.getToken();
+      const vapidKey = String.fromEnvironment('VAPID_PUBLIC_KEY');
+      _fcmToken = vapidKey.isNotEmpty
+          ? await _messaging!.getToken(vapidKey: vapidKey)
+          : await _messaging!.getToken();
       if (_fcmToken != null) {
         await _registerDevice();
       }
@@ -155,7 +159,7 @@ class AdminNotificationService {
   }
 
   Future<void> _retrieveAPNSToken() async {
-    if (_messaging == null) return;
+    if (_messaging == null || kIsWeb) return;
     try {
       _apnsToken = await _messaging!.getAPNSToken();
       if (_apnsToken != null) {
@@ -190,7 +194,6 @@ class AdminNotificationService {
         Map<String, dynamic>.from(data),
       );
     }
-
     _showLocalNotification(notification, data);
   }
 
@@ -198,7 +201,7 @@ class AdminNotificationService {
     RemoteNotification? notification,
     Map<String, dynamic> data,
   ) async {
-    if (_localNotifications == null || notification == null) return;
+    if (kIsWeb || _localNotifications == null || notification == null) return;
 
     final androidDetails = AndroidNotificationDetails(
       'admin_lms_default',
@@ -225,7 +228,6 @@ class AdminNotificationService {
   void _handleTap(RemoteMessage? message) {
     if (message == null) return;
     final data = Map<String, dynamic>.from(message.data);
-    // Route admin notification taps to relevant sections
     final section = data['section'] ?? 'dashboard';
     String url;
     switch (section) {
@@ -244,7 +246,6 @@ class AdminNotificationService {
     if (_onTap != null) {
       _onTap!.call(url, data);
     } else {
-      // Queue for later processing
       _pendingTaps.add({'url': url, 'data': data});
     }
   }
@@ -265,8 +266,7 @@ class AdminNotificationService {
   Future<bool> _registerDevice() async {
     if (_fcmToken == null || _deviceId == null) return false;
 
-    const storage = FlutterSecureStorage();
-    final sessionCookie = await storage.read(key: 'admin_session_cookie') ?? '';
+    final sessionCookie = await AdminSessionStorage.getSessionCookie();
     if (sessionCookie.isEmpty && !kIsWeb) {
       debugPrint('[AdminNotification] Session cookie missing, deferring device registration');
       return false;
@@ -289,8 +289,8 @@ class AdminNotificationService {
       debugPrint('[AdminNotification] register failed: ${res.statusCode}');
       return false;
     } catch (e) {
-        debugPrint('[AdminNotification] register error: $e');
-        return false;
-      }
+      debugPrint('[AdminNotification] register error: $e');
+      return false;
+    }
   }
 }
