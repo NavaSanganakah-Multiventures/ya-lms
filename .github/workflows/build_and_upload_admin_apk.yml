@@ -1,4 +1,4 @@
-name: Build and Upload Admin Flutter APK & AAB to R2
+name: Build and Upload Admin Flutter APK & AAB to R2 and Play Store
 
 on:
   workflow_dispatch:
@@ -87,6 +87,9 @@ jobs:
             --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
 
       - name: Upload to Google Play Console
+        # Skip Play Console upload if the service account secret is not configured;
+        # the APK/AAB are already available on R2.
+        if: ${{ secrets.FLUTTER_ADMIN_SERVICE_ACCOUNT_JSON != '' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.FLUTTER_ADMIN_SERVICE_ACCOUNT_JSON }}
@@ -95,3 +98,4 @@ jobs:
           tracks: ${{ github.event.inputs.track }}
           status: completed
           whatsNewDirectory: ./playstore/whatsnew/
+        continue-on-error: true
