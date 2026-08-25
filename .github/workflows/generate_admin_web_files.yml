@@ -1,0 +1,63 @@
+name: Generate Admin Flutter Web Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Feature branch name for generated web files'
+        required: false
+        default: 'bot/generate-admin-web'
+      base_branch:
+        description: 'Base branch to open PR against'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate_web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Enable web support and generate files
+        working-directory: ./flutter/admin_app
+        run: |
+          flutter config --enable-web
+          flutter create --platforms=web .
+          flutter pub get
+
+      - name: Inspect generated files
+        working-directory: ./flutter/admin_app
+        run: ls -la web/
+
+      - name: Commit generated web files and create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.email "bot@yagyaashram.com"
+          git config --global user.name "Flutter Web Bot"
+          TIMESTAMP=$(date +%s)
+          BRANCH="${{ github.event.inputs.branch_name }}-$TIMESTAMP"
+          git checkout -b "$BRANCH"
+          git add flutter/admin_app/
+          git status
+          git commit -m "chore(flutter/admin_app): add web platform support via flutter create" || echo "No changes to commit"
+          git push origin "$BRANCH"
+          gh pr create             --base "${{ github.event.inputs.base_branch }}"             --head "$BRANCH"             --title "Add Flutter web support to admin_app"             --body "This PR was generated automatically by running `flutter create --platforms=web .` in `flutter/admin_app`. It adds the required web/ folder and metadata so the admin panel can be built for web."
