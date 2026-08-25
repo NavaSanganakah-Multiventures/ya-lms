@@ -267,7 +267,7 @@ class AdminNotificationService {
     if (_fcmToken == null || _deviceId == null) return false;
 
     final sessionCookie = await AdminSessionStorage.getSessionCookie();
-    if (sessionCookie.isEmpty) {
+    if (sessionCookie.isEmpty && !kIsWeb) {
       debugPrint('[AdminNotification] Session cookie missing, deferring device registration');
       return false;
     }
