@@ -107,6 +107,9 @@ class AdminProvider with ChangeNotifier {
           final userId = _adminUser?['id']?.toString();
           await _setTelemetryUser(userId);
 
+          // Register device for push notifications now that session cookie is set.
+          AdminNotificationService.instance.registerDevice().catchError((_) {});
+
           if (_disposed) return false;
           notifyListeners();
           return true;
