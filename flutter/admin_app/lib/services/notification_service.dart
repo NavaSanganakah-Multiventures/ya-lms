@@ -267,7 +267,7 @@ class AdminNotificationService {
 
     const storage = FlutterSecureStorage();
     final sessionCookie = await storage.read(key: 'admin_session_cookie') ?? '';
-    if (sessionCookie.isEmpty) {
+    if (sessionCookie.isEmpty && !kIsWeb) {
       debugPrint('[AdminNotification] Session cookie missing, deferring device registration');
       return false;
     }
