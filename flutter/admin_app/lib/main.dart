@@ -535,7 +535,7 @@ class _MoreCardLayout extends StatelessWidget {
         contentPadding: const EdgeInsets.all(16),
         leading: Container(
           width: 48, height: 48,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: color.withAlpha(36), borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, color: color),
         ),
         title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
