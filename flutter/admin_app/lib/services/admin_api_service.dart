@@ -3,14 +3,13 @@ import 'package:dio/dio.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'admin_routes.dart';
 import 'notification_service.dart';
+import 'session_storage_service.dart';
 import '../utils/signature_util.dart';
 
 class AdminApiService {
   static String get baseUrl => AdminRoutes.baseUrl;
-  static const _storage = FlutterSecureStorage();
 
   static VoidCallback? onUnauthorized;
 
@@ -28,27 +27,29 @@ class AdminApiService {
         'Accept': 'application/json',
         'User-Agent': 'AdityanveshanAdmin/1.0',
       },
+      // The browser must send/receive HttpOnly session cookies on web.
+      extra: kIsWeb ? {'withCredentials': true} : null,
       validateStatus: (status) => status != null && status >= 200 && status < 300,
     ),
   )..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         try {
-          final cookie = await getSessionCookie();
-          if (cookie.isNotEmpty) {
-            options.headers['Cookie'] = cookie;
+          // On web the browser cookie jar handles the session cookie; do not
+          // override it manually because CORS requests require credentials mode.
+          if (!kIsWeb) {
+            final cookie = await AdminSessionStorage.getSessionCookie();
+            if (cookie.isNotEmpty) {
+              options.headers['Cookie'] = cookie;
+            }
           }
           final sigHeaders = SignatureUtil.generateSignatureHeaders(options.method.toUpperCase(), options.path);
           options.headers.addAll(sigHeaders);
         } on StateError catch (e) {
-          // Signature secret missing is a fatal configuration error.
-          // Fail closed rather than sending an unsigned request.
           debugPrint('[AdminApi] signature error: $e');
           return handler.reject(
             DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
           );
         } catch (e) {
-          // Fail closed: if cookie or signature generation errors unexpectedly,
-          // reject the request rather than sending it unsigned (which would get 4xx/5xx)
           debugPrint('[AdminApi] onRequest error: $e');
           return handler.reject(
             DioException(requestOptions: options, error: e, type: DioExceptionType.unknown),
@@ -58,11 +59,9 @@ class AdminApiService {
       },
       onResponse: (response, handler) async {
         try {
-          await _updateCookie(response);
-        } catch (e) {
-          debugPrint('[AdminApi] _updateCookie error: $e');
-        }
-        try {
+          if (!kIsWeb) {
+            await _updateCookie(response);
+          }
           if (response.statusCode == 401 || response.statusCode == 403) {
             _clearSessionAndNotify();
           }
@@ -83,8 +82,6 @@ class AdminApiService {
           if (error.response?.statusCode == 401 || error.response?.statusCode == 403) {
             _clearSessionAndNotify();
           }
-          // Only report network-level errors (connection refused, timeout, DNS, etc.)
-          // and server errors (5xx) to Crashlytics — not 4xx business-logic errors
           if (error.response == null || (error.response?.statusCode ?? 0) >= 500) {
             await _reportDioException(error);
           }
@@ -96,16 +93,16 @@ class AdminApiService {
     ));
 
   static void _clearSessionAndNotify() {
-    clearSession();
+    AdminSessionStorage.clearSession();
     final callback = onUnauthorized;
     callback?.call();
   }
 
   static Future<void> _reportDioException(DioException error) async {
+    if (kIsWeb) return;
     try {
       final response = error.response;
       final request = error.requestOptions;
-
       await FirebaseCrashlytics.instance.recordError(
         error,
         error.stackTrace,
@@ -120,9 +117,7 @@ class AdminApiService {
           'message: ${error.message ?? ''}',
         ],
       );
-    } catch (_) {
-      // Never crash because of telemetry.
-    }
+    } catch (_) {}
   }
 
   static Future<void> _reportApiError(
@@ -130,6 +125,7 @@ class AdminApiService {
     RequestOptions request, {
     int? statusCode,
   }) async {
+    if (kIsWeb) return;
     try {
       await FirebaseCrashlytics.instance.recordError(
         message,
@@ -143,41 +139,25 @@ class AdminApiService {
           'status_code: ${statusCode?.toString() ?? 'none'}',
         ],
       );
-    } catch (_) {
-      // Never crash because of telemetry.
-    }
+    } catch (_) {}
   }
 
-  static Future<String> getSessionCookie() async {
-    return await _storage.read(key: 'admin_session_cookie') ?? '';
-  }
-
-  static Future<Map<String, String>?> getSessionCookieParts() async {
-    final cookie = await getSessionCookie();
-    if (cookie.isEmpty) return null;
-    final index = cookie.indexOf('=');
-    if (index == -1) return null;
-    final name = cookie.substring(0, index).trim();
-    final value = cookie.substring(index + 1).trim();
-    if (name.isEmpty || value.isEmpty) return null;
-    return {'name': name, 'value': value};
-  }
+  static Future<String> getSessionCookie() => AdminSessionStorage.getSessionCookie();
+  static Future<Map<String, String>?> getSessionCookieParts() => AdminSessionStorage.getSessionCookieParts();
 
   static Future<void> _updateCookie(Response response) async {
     try {
       final rawCookies = response.headers['set-cookie'];
       if (rawCookies == null || rawCookies.isEmpty) return;
-      // Prefer the 'session' cookie by name; fall back to first cookie
       final rawCookie = rawCookies.firstWhere(
         (c) => c.trim().startsWith('session='),
         orElse: () => rawCookies.first,
       );
       int index = rawCookie.indexOf(';');
       String cookie = (index == -1) ? rawCookie : rawCookie.substring(0, index);
-      final oldCookie = await _storage.read(key: 'admin_session_cookie');
-      await _storage.write(key: 'admin_session_cookie', value: cookie);
+      final oldCookie = await AdminSessionStorage.getSessionCookie();
+      await AdminSessionStorage.setSessionCookie(cookie);
       if (oldCookie != cookie) {
-        // Fire-and-forget: device registration is not critical for the current request
         AdminNotificationService.instance.registerDevice();
       }
     } catch (e) {
@@ -185,9 +165,7 @@ class AdminApiService {
     }
   }
 
-  static Future<void> clearSession() async {
-    await _storage.delete(key: 'admin_session_cookie');
-  }
+  static Future<void> clearSession() => AdminSessionStorage.clearSession();
 
   static Future<Response> logout(String? deviceId) async {
     final data = deviceId != null ? {'device_id': deviceId} : <String, dynamic>{};
@@ -197,8 +175,6 @@ class AdminApiService {
   static Future<Response> validateSession() async {
     return await _dio.get('/api/auth/me');
   }
-
-  // --- API Methods ---
 
   static Future<Response> sendLoginOtp(String email) async {
     return await _dio.post('/api/auth/send-otp', data: {'email': email, 'type': 'admin_login'});
@@ -319,8 +295,6 @@ class AdminApiService {
     return await _dio.delete('/api/admin/live/$sessionId');
   }
 
-  // --- Live Class Token & Leave (Admin joins via native RealtimeKit) ---
-
   static Future<Response> getLiveClassToken({String? meetingId, String? sessionId}) async {
     final payload = <String, dynamic>{};
     if (meetingId != null && meetingId.isNotEmpty) payload['meetingId'] = meetingId;
@@ -353,8 +327,6 @@ class AdminApiService {
   static Future<Response> getAiModels() async {
     return await _dio.get('/api/admin/ai-models');
   }
-
-  // --- Async Admin Commands (processed by Durable Object) ---
 
   static Future<Response> queueAdminCommand({
     required String path,
@@ -436,8 +408,6 @@ class AdminApiService {
   static Future<Response> deleteBookLesson(String bookId, String lessonId) async {
     return await _dio.delete('/api/admin/books/$bookId/lessons/$lessonId');
   }
-
-  // ========== KV Secrets ==========
 
   static Future<Map<String, String>> getSecrets() async {
     try {
