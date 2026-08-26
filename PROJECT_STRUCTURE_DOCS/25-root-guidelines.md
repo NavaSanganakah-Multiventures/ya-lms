@@ -60,7 +60,7 @@ npm run deploy  → Cloudflare डिप्लॉय
 | प्लेटफ़ॉर्म | सेटअप निर्देश |
 |-------------|---------------|
 | **वेब** | Firebase कॉन्फ़िग → FCM v1 API → Service Worker |
-| **Flutter Android** | google-services.json, Firebaseプロजेक्ट सेटअप |
+| **Flutter Android** | google-services.json, Firebase project setup |
 | **Flutter iOS** | GoogleService-Info.plist, APNs सेटअप |
 
 **FlutterFire CLI कमांड्स:**
