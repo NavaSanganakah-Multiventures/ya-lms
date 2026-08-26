@@ -133,7 +133,7 @@ export default function AdminAiModelsPage() {
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
             <Bot className="w-8 h-8 text-orange-500" /> AI मॉडल्स (AI Models)
           </h1>
-          <p className="text-neutral-400 mt-2 text-sm">मॉडल्स Workers AI binding (env.AI) से सीधे चलते हैं — तैयार करने की जरूरत नहीं है। Model ID अपने <strong>@cf/...</strong> वाला होना चाहिए (उपलब्ध: 5 रुपये/रिक्वेस्ट)।</p>
+          <p className="text-neutral-400 mt-2 text-sm">मॉडल्स Workers AI binding (env.AI) से सीधे चलते हैं – किसी gateway/token सेटअप की ज़रूरत नहीं है। Model ID में @cf/... वाला मॉडल होना चाहिए (उपलब्ध: 5)।</p>
         </div>
         <button
           onClick={() => {
