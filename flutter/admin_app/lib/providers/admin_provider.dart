@@ -41,11 +41,10 @@ class AdminProvider with ChangeNotifier {
 
     try {
       final cookie = await AdminApiService.getSessionCookie();
-      if (cookie.isNotEmpty) {
+      if (cookie.isNotEmpty || kIsWeb) {
         final response = await AdminApiService.validateSession();
         if (response.statusCode == 200) {
           _isAuthenticated = true;
-          // Dashboard stats fetched lazily by AdminDashboardScreen initState
         } else {
           _isAuthenticated = false;
           _error = 'Access denied: Invalid admin session';
@@ -108,6 +107,9 @@ class AdminProvider with ChangeNotifier {
           final userId = _adminUser?['id']?.toString();
           await _setTelemetryUser(userId);
 
+          // Register device for push notifications now that session cookie is set.
+          AdminNotificationService.instance.registerDevice().catchError((_) {});
+
           if (_disposed) return false;
           notifyListeners();
           return true;
@@ -159,7 +161,9 @@ class AdminProvider with ChangeNotifier {
   Future<void> _setTelemetryUser(String? userId) async {
     if (userId == null || userId.isEmpty) return;
     try {
-      await FirebaseCrashlytics.instance.setUserIdentifier(userId);
+      if (!kIsWeb) {
+        await FirebaseCrashlytics.instance.setUserIdentifier(userId);
+      }
       await AnalyticsService.instance.setUserId(userId);
     } catch (e) {
       if (kDebugMode) {
@@ -170,7 +174,9 @@ class AdminProvider with ChangeNotifier {
 
   Future<void> _clearTelemetryUser() async {
     try {
-      await FirebaseCrashlytics.instance.setUserIdentifier('');
+      if (!kIsWeb) {
+        await FirebaseCrashlytics.instance.setUserIdentifier('');
+      }
       await AnalyticsService.instance.setUserId(null);
     } catch (e) {
       if (kDebugMode) {

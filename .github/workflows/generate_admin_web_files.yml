@@ -1,0 +1,43 @@
+name: Generate Admin Flutter Web Files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate_web:
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.commit_files.outputs.branch_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate web files
+        working-directory: ./flutter/admin_app
+        run: |
+          flutter config --enable-web
+          flutter create --platforms=web .
+
+      - name: Commit generated files to branch
+        id: commit_files
+        run: |
+          git config --global user.email "bot@yagyaashram.com"
+          git config --global user.name "Flutter Web Bot"
+          BRANCH="bot/generate-admin-web-$(date +%s)"
+          git checkout -b "$BRANCH"
+          git add -f flutter/admin_app/web/
+          git add flutter/admin_app/.metadata
+          git add flutter/admin_app/pubspec.lock
+          git status
+          git commit -m "chore(flutter/admin_app): add web platform support via flutter create" || echo "No changes to commit"
+          git push origin "$BRANCH"
+          echo "Generated branch: $BRANCH" >> $GITHUB_STEP_SUMMARY
+          echo "branch_name=$BRANCH" >> $GITHUB_OUTPUT

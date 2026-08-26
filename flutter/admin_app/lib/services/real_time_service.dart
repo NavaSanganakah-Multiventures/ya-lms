@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
 
 import 'admin_routes.dart';
+import 'session_storage_service.dart';
+import 'real_time_channel_stub.dart'
+    if (dart.library.html) 'real_time_channel_html.dart'
+    if (dart.library.io) 'real_time_channel_io.dart' as channel_factory;
 
 class AdminRealTimeService with WidgetsBindingObserver {
   AdminRealTimeService._() {
@@ -35,7 +38,6 @@ class AdminRealTimeService with WidgetsBindingObserver {
   Timer? _pingTimer;
   final Set<String> _subscribedChannels = {};
   bool _shouldReconnect = false;
-  static const _storage = FlutterSecureStorage();
   static const int _maxReconnectAttempts = 20;
 
   final _dataController = StreamController<Map<String, dynamic>>.broadcast();
@@ -52,12 +54,15 @@ class AdminRealTimeService with WidgetsBindingObserver {
         .replaceFirst('http://', 'ws://');
   }
 
-  Future<String> _getSessionCookie() async {
-    try {
-      return await _storage.read(key: 'admin_session_cookie') ?? '';
-    } catch (_) {
-      return '';
-    }
+  Future<Map<String, String>> _getConnectionHeaders() async {
+    // The web browser sends cookies automatically for same-origin requests.
+    // For cross-origin WebSockets the cookie is only sent when configured
+    // correctly on the backend; we avoid custom headers on web because the
+    // browser WebSocket API does not support them.
+    if (kIsWeb) return {};
+    final cookie = await AdminSessionStorage.getSessionCookie();
+    if (cookie.isEmpty) return {};
+    return {'Cookie': cookie};
   }
 
   Future<void> connect() async {
@@ -82,20 +87,17 @@ class AdminRealTimeService with WidgetsBindingObserver {
 
   Future<void> _doConnect() async {
     try {
-      final cookie = await _getSessionCookie();
-      if (cookie.isEmpty) {
+      final headers = await _getConnectionHeaders();
+
+      // On mobile we still require a stored session cookie.
+      if (!kIsWeb && headers.isEmpty) {
         debugPrint('[AdminRealTime] No session cookie — skipping WebSocket connect');
         return;
       }
 
-      // Token is sent via Cookie header — do NOT add it as query param (logs leak)
       final uri = Uri.parse('$_wsUrl/api/data');
 
-      final headers = <String, String>{
-        'Cookie': cookie,
-      };
-
-      _channel = IOWebSocketChannel.connect(uri, headers: headers);
+      _channel = channel_factory.connect(uri, headers: headers);
       await _channel!.ready;
 
       _isConnected = true;
@@ -103,7 +105,6 @@ class AdminRealTimeService with WidgetsBindingObserver {
       _connectionStateController.add(true);
       debugPrint('[AdminRealTime] WebSocket connected');
 
-      // Cloudflare Edge WebSocket Hibernation handles 'ping' automatically
       _pingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
         try {
           _channel?.sink.add(jsonEncode({'type': 'ping'}));

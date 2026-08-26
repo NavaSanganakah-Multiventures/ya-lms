@@ -41,6 +41,8 @@ flutter/**/ios/
 flutter/**/linux/
 flutter/**/macos/
 flutter/**/web/
+# Allow admin web app files to be tracked
+!flutter/admin_app/web/
 flutter/**/windows/
 *.orig
 

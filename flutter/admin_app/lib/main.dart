@@ -49,36 +49,46 @@ Future<void> _initializeFirebase() async {
       );
     }
 
+    // Crashlytics is only supported on Android/iOS. Keep error presenters
+    // universal, but send reports only on native platforms.
     FlutterError.onError = (errorDetails) {
-      FirebaseCrashlytics.instance.recordFlutterError(errorDetails);
+      if (!kIsWeb) {
+        FirebaseCrashlytics.instance.recordFlutterError(errorDetails);
+      }
       FlutterError.presentError(errorDetails);
     };
 
     PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        error,
-        stack,
-        fatal: false,
-        reason: 'unhandled_async_error',
-      );
+      if (!kIsWeb) {
+        FirebaseCrashlytics.instance.recordError(
+          error,
+          stack,
+          fatal: false,
+          reason: 'unhandled_async_error',
+        );
+      }
       return true;
     };
 
-    // Optionally disable collection in debug builds to reduce noise.
-    if (kDebugMode) {
+    if (!kIsWeb && kDebugMode) {
       await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
     }
 
     AnalyticsService.instance.init(FirebaseAnalytics.instance);
 
-    FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
+    // Background FCM handler is only applicable on mobile.
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(adminFirebaseMessagingBackgroundHandler);
+    }
     await AdminNotificationService.instance.init();
 
   } catch (e, stack) {
     if (kDebugMode) {
       debugPrint('[Admin Firebase init error] $e');
     }
-    await FirebaseCrashlytics.instance.recordError(e, stack, reason: 'firebase_init_failed');
+    if (!kIsWeb) {
+      await FirebaseCrashlytics.instance.recordError(e, stack, reason: 'firebase_init_failed');
+    }
   }
 }
 
@@ -525,7 +535,7 @@ class _MoreCardLayout extends StatelessWidget {
         contentPadding: const EdgeInsets.all(16),
         leading: Container(
           width: 48, height: 48,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: color.withAlpha(38), borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, color: color),
         ),
         title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
