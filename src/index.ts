@@ -2293,6 +2293,13 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email)
       .first();
 
+
+    if (type === "admin_login") {
+      const adminExists: any = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND role = 'admin'").bind(email).first();
+      if (!adminExists) {
+        return new Response(JSON.stringify({ error: "Access denied: Admin role required." }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
+    }
     if (type === "register" && userExists) {
       return new Response(
         JSON.stringify({ error: "This email is already registered. Please log in instead." }),
