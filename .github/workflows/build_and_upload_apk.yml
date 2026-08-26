@@ -79,7 +79,20 @@ jobs:
             s3://yagyaashram-lms/apps/student_app.aab \
             --endpoint-url https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
 
+      - name: Check Play Console secrets
+        id: play_secrets
+        env:
+          SA_JSON: ${{ secrets.FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$SA_JSON" ]; then
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON not set; skipping Play Console upload."
+          fi
+
       - name: Upload to Google Play Console
+        if: steps.play_secrets.outputs.has_secret == 'true'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.FLUTTER_STUDENT_SERVICE_ACCOUNT_JSON }}
@@ -88,3 +101,5 @@ jobs:
           tracks: ${{ github.event.inputs.track }}
           status: completed
           whatsNewDirectory: ./playstore/whatsnew/
+          changesNotSentForReview: true
+        continue-on-error: true
