@@ -21,13 +21,16 @@ function LivePageContent() {
     }
     if (!activeSession) {
       fetch('/api/auth/me')
-        .then(res => res.ok ? res.json() : null)
+        .then(res => {
+          if (!res.ok) throw new Error('Authentication failed');
+          return res.json();
+        })
         .then((data: any) => {
           const isAdmin = data?.user?.role === 'admin' || data?.user?.role === 'teacher';
-          startSession(roomId, sessionId || roomId, isAdmin);
+          startSession(roomId, sessionId || undefined, isAdmin);
         })
-        .catch(() => {
-          startSession(roomId, sessionId || roomId, false);
+        .catch((err) => {
+          setError(err?.message || 'Aap logged in nahi hain. Kripya login karke fir try karein.');
         });
     }
   }, [roomId, sessionId, startSession, activeSession]);
