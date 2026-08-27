@@ -27,7 +27,7 @@ function LivePageContent() {
         })
         .then((data: any) => {
           const isAdmin = data?.user?.role === 'admin' || data?.user?.role === 'teacher';
-          startSession(roomId, sessionId || undefined, isAdmin);
+          startSession(roomId, sessionId || roomId, isAdmin);
         })
         .catch((err) => {
           setError(err?.message || 'Aap logged in nahi hain. Kripya login karke fir try karein.');
