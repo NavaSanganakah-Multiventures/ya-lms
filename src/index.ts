@@ -13680,7 +13680,7 @@ async function createRealtimeMeeting(
     webhooks: [
       {
         url: `${hostUrl}/api/webhooks/realtime`,
-        events: ["recording.statusUpdate"],
+        events: ["recording.statusUpdate", "participant.joined", "participant.left"],
       },
     ],
   });
@@ -14197,6 +14197,44 @@ async function handleAdminProcessRecording(
   }
 }
 
+async function handleRealtimeParticipantWebhook(payload: any, env: Env): Promise<void> {
+  try {
+    const meetingId = payload?.meeting_id || payload?.meetingId || payload?.data?.meeting_id;
+    if (!meetingId) return;
+
+    const participant = payload?.participant || payload?.data?.participant || {};
+    const customId = participant?.custom_participant_id || participant?.id;
+    if (!customId) return;
+
+    const user: any = await env.DB.prepare("SELECT id, role FROM Users WHERE id = ?").bind(customId).first();
+    if (!user || user.role !== "student") return;
+
+    const session: any = await env.DB.prepare(
+      "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1"
+    ).bind(meetingId).first();
+    if (!session) return;
+
+    const eventType = payload?.event || payload?.type;
+    if (eventType === "participant.joined") {
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL"
+      ).bind(session.id, user.id).first();
+      if (!existing) {
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)"
+        ).bind(attId, session.id, user.id).run();
+      }
+    } else if (eventType === "participant.left") {
+      await env.DB.prepare(
+        "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ? AND left_at IS NULL"
+      ).bind(session.id, user.id).run();
+    }
+  } catch (err) {
+    console.error("[RealtimeWebhook] Participant event processing failed", err);
+  }
+}
+
 async function handleRealtimeWebhook(
   request: Request,
   env: Env,
@@ -14205,6 +14243,12 @@ async function handleRealtimeWebhook(
   try {
     const payload = (await request.json()) as any;
     const eventType = payload?.event || payload?.type;
+
+    // Real-time attendance tracking from RealtimeKit participant events
+    if (eventType === "participant.joined" || eventType === "participant.left") {
+      ctx.waitUntil(handleRealtimeParticipantWebhook(payload, env).catch(() => {}));
+      return new Response("OK", { status: 200 });
+    }
 
     // We only care about recording status updates for now
     if (eventType !== "recording.statusUpdate") {
@@ -23974,15 +24018,25 @@ else if (url.pathname === "/api/auth/verify-otp")
 
               let sessionResult: any = null;
               if (requestedSessionId) {
-                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id, start_time FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, batch_id, is_free, rtc_room_id, start_time, status FROM LiveSessions WHERE id = ?").bind(requestedSessionId).first()) as any;
               }
               if (!sessionResult && requestedMeetingId) {
-                sessionResult = (await env.DB.prepare("SELECT id, course_id, is_free, rtc_room_id, start_time FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
+                sessionResult = (await env.DB.prepare("SELECT id, course_id, batch_id, is_free, rtc_room_id, start_time, status FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1").bind(requestedMeetingId).first()) as any;
               }
               const resolvedMeetingId = String(
                 sessionResult?.rtc_room_id || requestedMeetingId,
               ).trim();
               const targetSessionId = sessionResult?.id || requestedSessionId;
+
+              if (sessionResult && sessionResult.status === "ended") {
+                return new Response(JSON.stringify({
+                  error: "LIVE_SESSION_ENDED",
+                  message: "Yeh live class already end ho chuki hai.",
+                }), {
+                  status: 410,
+                  headers: { "Content-Type": "application/json" },
+                });
+              }
 
               if (!resolvedMeetingId) {
                 return new Response(JSON.stringify({
