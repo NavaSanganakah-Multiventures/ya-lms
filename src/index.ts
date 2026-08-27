@@ -16196,13 +16196,21 @@ async function verifyLiveSessionAccess(
 
   if (isTeacher) return { allowed: true, isTeacher: true };
 
-  // Students must be enrolled in the course or the session must be free.
+  // Students must be enrolled, have subscription access, or the session must be free.
   if (role === 'student') {
     const isEnrolled = await env.DB.prepare(
       `SELECT id FROM Enrollments WHERE user_id = ? AND course_id = ? AND status = 'active'`
     ).bind(userId, session.course_id).first();
     if (isEnrolled) return { allowed: true, isTeacher: false };
     if (Number(session.is_free) === 1) return { allowed: true, isTeacher: false };
+
+    // Check subscription-based access
+    const accessProfile = await getUserAccessProfile(userId, env);
+    if (accessProfile.liveSessionAccess) return { allowed: true, isTeacher: false };
+    if (session.batch_id && accessProfile.allowedBatchIds.includes(session.batch_id)) return { allowed: true, isTeacher: false };
+    if (session.course_id && (accessProfile.courseAccessType === "all" || accessProfile.allowedCourseIds.includes(session.course_id))) {
+      return { allowed: true, isTeacher: false };
+    }
   }
 
   return { allowed: false, isTeacher: false, reason: "Not authorized for this session" };
@@ -24267,25 +24275,18 @@ else if (url.pathname === "/api/auth/verify-otp")
                     .first()) as any;
                 }
                 if (sessionResult) {
-                  const result = await env.DB.prepare(
+                  await env.DB.prepare(
                     `UPDATE Attendance SET left_at = CURRENT_TIMESTAMP
                  WHERE session_id = ? AND user_id = ? AND left_at IS NULL`,
                   )
                     .bind(sessionResult.id, payload.sub)
                     .run();
-                  if ((result as any)?.meta?.changes === 0) {
-                    console.log(`[Live.Leave] No open attendance — possible duplicate leave for user ${payload.sub} session ${sessionResult.id}`);
-                    response = new Response(JSON.stringify({ success: true, message: "Already left" }), {
-                      status: 200,
-                      headers: { "Content-Type": "application/json" },
-                    });
-                  } else {
-                    await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
-                    response = new Response(JSON.stringify({ success: true }), {
-                      status: 200,
-                      headers: { 'Content-Type': 'application/json' },
-                    });
-                  }
+                  // Reconcile credits even if already left (idempotent via charge lock)
+                  await chargeAttendanceGroupClassCredits(env, payload.sub, sessionResult.id);
+                  response = new Response(JSON.stringify({ success: true }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                  });
                 } else {
                   response = new Response(JSON.stringify({ success: true }), {
                     status: 200,
