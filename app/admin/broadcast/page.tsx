@@ -558,7 +558,7 @@ export default function AdminBroadcastPage() {
                 </label>
                 <div className="p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl space-y-3">
                   <p className="text-[11px] text-neutral-400 leading-relaxed">
-                    ब्रॉडकास्ट भेजने के लिए OTP अनिवार्य है। "OTP भेजें" बटन दबाकर अपने ईमेल पर OTP प्राप्त करें।
+                    ब्रॉडकास्ट भेजने के लिए OTP अनिवार्य है। &quot;OTP भेजें&quot; बटन दबाकर अपने ईमेल पर OTP प्राप्त करें।
                   </p>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <input
