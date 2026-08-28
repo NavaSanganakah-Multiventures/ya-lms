@@ -14235,6 +14235,40 @@ async function handleRealtimeParticipantWebhook(payload: any, env: Env): Promise
   }
 }
 
+async function handleRealtimeParticipantWebhook(payload: any, env: Env): Promise<void> {
+  try {
+    const meetingId = payload?.meeting_id || payload?.meetingId || payload?.data?.meeting_id;
+    if (!meetingId) return;
+    const participant = payload?.participant || payload?.data?.participant || {};
+    const customId = participant?.custom_participant_id || participant?.id;
+    if (!customId) return;
+    const user: any = await env.DB.prepare("SELECT id, role FROM Users WHERE id = ?").bind(customId).first();
+    if (!user || user.role !== "student") return;
+    const session: any = await env.DB.prepare(
+      "SELECT id FROM LiveSessions WHERE rtc_room_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1"
+    ).bind(meetingId).first();
+    if (!session) return;
+    const eventType = payload?.event || payload?.type;
+    if (eventType === "participant.joined") {
+      const existing = await env.DB.prepare(
+        "SELECT id FROM Attendance WHERE session_id = ? AND user_id = ? AND left_at IS NULL"
+      ).bind(session.id, user.id).first();
+      if (!existing) {
+        const attId = generateCustomId("YA-ATT");
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO Attendance (id, session_id, user_id) VALUES (?, ?, ?)"
+        ).bind(attId, session.id, user.id).run();
+      }
+    } else if (eventType === "participant.left") {
+      await env.DB.prepare(
+        "UPDATE Attendance SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND user_id = ? AND left_at IS NULL"
+      ).bind(session.id, user.id).run();
+    }
+  } catch (err) {
+    console.error("[RealtimeWebhook] Participant event processing failed", err);
+  }
+}
+
 async function handleRealtimeWebhook(
   request: Request,
   env: Env,
