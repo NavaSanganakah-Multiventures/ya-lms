@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy, Calendar } from 'lucide-react';
+import { Send, Users, BookOpen, Layers, Bell, Mail, Loader2, CheckCircle2, AlertCircle, Info, Save, Clock, Copy, Calendar, ShieldCheck } from 'lucide-react';
 import { formatLocalDate } from '@/lib/time';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '@/contexts/ToastContext';
@@ -20,6 +20,7 @@ export default function AdminBroadcastPage() {
   const [pushHistory, setPushHistory] = useState<any[]>([]);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
 
   const [broadcastData, setBroadcastData] = useState({
     target: 'all', // all, course, batch, custom
@@ -27,6 +28,7 @@ export default function AdminBroadcastPage() {
     customEmails: '',
     subject: '',
     message: '',
+    otp: '',
     sendEmail: true,
     sendNotification: true,
     sendPush: true,
@@ -132,6 +134,28 @@ export default function AdminBroadcastPage() {
     }
   };
 
+  const handleSendOtp = async () => {
+    setIsSendingOtp(true);
+    try {
+      const res = await fetch('/api/admin/actions/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json() as any;
+      if (res.ok) {
+        showSuccess(data.message || "OTP आपके ईमेल पर भेज दिया गया है।");
+      } else {
+        showError(data.error || "OTP भेजने में विफल।");
+      }
+    } catch (e) {
+      console.error(e);
+      showError("OTP भेजने में एक त्रुटि हुई।");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
   const handleReuse = (item: any) => {
     setBroadcastData({
       target: item.target_type || 'all',
@@ -143,6 +167,7 @@ export default function AdminBroadcastPage() {
       sendNotification: item.send_notification === 1,
       sendPush: item.send_push === 1,
       pushAudience: item.push_audience || 'all',
+      otp: '',
     });
     setActiveTab('new');
   };
@@ -200,6 +225,7 @@ export default function AdminBroadcastPage() {
     if (broadcastData.target === 'course' && !broadcastData.targetId) return showError("कृपया कोर्स चुनें।");
     if (broadcastData.target === 'batch' && !broadcastData.targetId) return showError("कृपया बैच चुनें।");
     if (broadcastData.target === 'custom' && !broadcastData.customEmails) return showError("कृपया कस्टम ईमेल दर्ज करें।");
+    if (!broadcastData.otp || broadcastData.otp.trim().length < 4) return showError("कृपया OTP दर्ज करें (सुरक्षा सत्यापन के लिए)।");
 
     if (!confirm(`क्या आप वाकई ${broadcastData.target === 'all' ? 'सभी छात्रों' : 'चयनित समूह'} को यह ब्रॉडकास्ट भेजना चाहते हैं?`)) return;
 
@@ -220,7 +246,7 @@ export default function AdminBroadcastPage() {
           showSuccess(data.message || "ब्रॉडकास्ट सफलतापूर्वक भेज दिया गया!");
         }
 
-        setBroadcastData({ ...broadcastData, subject: '', message: '' });
+        setBroadcastData({ ...broadcastData, subject: '', message: '', otp: '' });
       } else {
         showError(data.error || "ब्रॉडकास्ट भेजने में विफल।");
       }
@@ -522,6 +548,39 @@ export default function AdminBroadcastPage() {
                     onChange={(e) => setBroadcastData({ ...broadcastData, message: e.target.value })}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-neutral-700 resize-none leading-relaxed"
                   />
+                </div>
+              </div>
+
+              {/* OTP Verification */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" /> सुरक्षा सत्यापन (OTP)
+                </label>
+                <div className="p-4 bg-neutral-950/50 border border-neutral-800 rounded-2xl space-y-3">
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    ब्रॉडकास्ट भेजने के लिए OTP अनिवार्य है। "OTP भेजें" बटन दबाकर अपने ईमेल पर OTP प्राप्त करें।
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="6-अंकीय OTP दर्ज करें"
+                      value={broadcastData.otp}
+                      onChange={(e) => setBroadcastData({ ...broadcastData, otp: e.target.value.replace(/[^0-9]/g, '') })}
+                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-neutral-700 font-mono text-center tracking-[0.4em]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={isSendingOtp || isSubmitting}
+                      className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 border border-emerald-500/30"
+                    >
+                      {isSendingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                      OTP भेजें
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
