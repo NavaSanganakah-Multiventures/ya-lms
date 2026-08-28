@@ -664,8 +664,7 @@ export default function LiveClassWindow({
          }).catch(() => {});
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, roomId]);
+  }, [isAdmin, roomId, sessionId]);
 
   // Also catch window unload for safety
   useEffect(() => {
