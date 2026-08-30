@@ -2293,13 +2293,6 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       .bind(email)
       .first();
 
-
-    if (type === "admin_login") {
-      const adminExists: any = await env.DB.prepare("SELECT id FROM Users WHERE email = ? AND role = 'admin'").bind(email).first();
-      if (!adminExists) {
-        return new Response(JSON.stringify({ error: "Access denied: Admin role required." }), { status: 403, headers: { "Content-Type": "application/json" } });
-      }
-    }
     if (type === "register" && userExists) {
       return new Response(
         JSON.stringify({ error: "This email is already registered. Please log in instead." }),
@@ -2331,6 +2324,22 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
         JSON.stringify({ error: `Too many OTP requests for this email. Please wait ${waitSeconds} second(s).` }),
         { status: 429, headers: { "Content-Type": "application/json" } },
       );
+    }
+
+    // Admin login: verify the account actually has the admin role before
+    // sending an OTP. Rate limiting above runs first so this check cannot be
+    // used to enumerate admin emails at high speed, and the response is kept
+    // identical to a successful OTP send to avoid leaking which emails are admins.
+    if (type === "admin_login") {
+      const adminExists: any = await env.DB.prepare(
+        "SELECT id FROM Users WHERE email = ? AND role = 'admin'"
+      ).bind(email).first();
+      if (!adminExists) {
+        return new Response(
+          JSON.stringify({ message: "OTP sent successfully to your email." }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
     }
 
     // Atomic rate limiting: first delete expired OTPs, then check remaining
