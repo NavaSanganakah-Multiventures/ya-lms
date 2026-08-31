@@ -129,7 +129,7 @@ class _LiveClassCardV2State extends State<LiveClassCardV2>
       width: 280,
       height: 210,
       child: YuvaCard(
-        onTap: widget.isLive ? widget.onJoin : null,
+        onTap: widget.onJoin,
         gradient: widget.isLive
             ? const LinearGradient(
                 colors: [Color(0xFF2A0A0A), Color(0xFF1A0505)],
@@ -221,8 +221,8 @@ class _LiveClassCardV2State extends State<LiveClassCardV2>
             ],
             const Spacer(),
             YuvaButton(
-              label: widget.isLive ? 'JOIN CLASS' : 'SCHEDULED',
-              onPressed: widget.isLive ? widget.onJoin : null,
+              label: widget.isLive ? 'JOIN CLASS' : 'JOIN EARLY',
+              onPressed: widget.onJoin,
               variant: widget.isLive ? YuvaButtonVariant.secondary : YuvaButtonVariant.outline,
               height: 42,
             ),

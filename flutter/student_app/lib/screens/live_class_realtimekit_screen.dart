@@ -111,7 +111,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  if (remaining <= 0) {
  timer.cancel();
  _handleTimeUp();
- } else if (remaining <= 60 && !_isTimeWarningShown) {
+ } else if (remaining <= 180 && !_isTimeWarningShown) {
  _isTimeWarningShown = true;
  _showLowCreditWarning();
  }
@@ -230,7 +230,7 @@ class _LiveClassRealtimeKitScreenState extends State<LiveClassRealtimeKitScreen>
  authToken: token,
  enableAudio: false,
  enableVideo: false,
- baseDomain: 'realtime.cloudflare.com',
+ // Default RealtimeKit base domain is encoded in auth token
  );
  final realtimeKitUIInfo = RealtimeKitUIInfo(
  meetingInfo,
