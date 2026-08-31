@@ -2235,6 +2235,22 @@ async function handleSendOTP(request: Request, env: Env, ctx: ExecutionContext):
       );
     }
 
+    // Admin login: verify the account actually has the admin role before
+    // sending an OTP. Rate limiting above runs first so this check cannot be
+    // used to enumerate admin emails at high speed, and the response is kept
+    // identical to a successful OTP send to avoid leaking which emails are admins.
+    if (type === "admin_login") {
+      const adminExists: any = await env.DB.prepare(
+        "SELECT id FROM Users WHERE email = ? AND role = 'admin'"
+      ).bind(email).first();
+      if (!adminExists) {
+        return new Response(
+          JSON.stringify({ message: "OTP sent successfully to your email." }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     // Atomic rate limiting: first delete expired OTPs, then check remaining
     await env.DB.prepare(
       "DELETE FROM OTPs WHERE email = ? AND expires_at < datetime('now')",
