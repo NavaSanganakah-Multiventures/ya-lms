@@ -1017,9 +1017,3 @@ CREATE TABLE IF NOT EXISTS UserEvents (
   FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_userevents_user_id ON UserEvents(user_id);
-
-
--- Attendance integrity: prevent duplicate open records
-CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_open_session_user
-ON Attendance(session_id, user_id)
-WHERE left_at IS NULL;

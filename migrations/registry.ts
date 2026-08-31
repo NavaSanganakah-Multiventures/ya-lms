@@ -23,6 +23,7 @@ import SQL_0049_DROP_RUPEE_COLUMNS from './0049_drop_rupee_columns.sql';
 import SQL_0050_ADD_FREE_ENROLL from './0050_add_free_enroll_to_form_templates.sql';
 import SQL_0051_SET_DEFAULT_MODEL_LLAMA from './0051_set_default_model_llama.sql';
 import SQL_0052_SET_DEFAULT_MODEL_SCOUT from './0052_set_default_model_scout.sql';
+import SQL_0053_ATTENDANCE_OPEN_IDX from './0053_add_attendance_open_index.sql';
 // Migration Registry — SQL files imported as Text via wrangler rules
 // Each entry: { version: string, filename: string, sql: string }
 // Auto-applied by the intelligent migration system in db-migrate.ts
@@ -120,4 +121,5 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
   { id: 'sql_0050', version: 49,  filename: '0050_add_free_enroll_to_form_templates.sql',  sql: SQL_0050_ADD_FREE_ENROLL },
   { id: 'sql_0051', version: 50,  filename: '0051_set_default_model_llama.sql',  sql: SQL_0051_SET_DEFAULT_MODEL_LLAMA },
   { id: 'sql_0052', version: 51,  filename: '0052_set_default_model_scout.sql',  sql: SQL_0052_SET_DEFAULT_MODEL_SCOUT },
+  { id: 'sql_0053', version: 52,  filename: '0053_add_attendance_open_index.sql',  sql: SQL_0053_ATTENDANCE_OPEN_IDX },
 ].sort((a, b) => a.version - b.version);

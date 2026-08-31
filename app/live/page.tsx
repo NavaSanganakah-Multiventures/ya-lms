@@ -29,8 +29,8 @@ function LivePageContent() {
           const isAdmin = data?.user?.role === 'admin' || data?.user?.role === 'teacher';
           startSession(roomId, sessionId || roomId, isAdmin);
         })
-        .catch((err) => {
-          setError(err?.message || 'Aap logged in nahi hain. Kripya login karke fir try karein.');
+        .catch(() => {
+          setError('Aap logged in nahi hain. Kripya login karke phir se try karein.');
         });
     }
   }, [roomId, sessionId, startSession, activeSession]);
