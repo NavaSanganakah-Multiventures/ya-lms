@@ -218,3 +218,42 @@ export function base64UrlEncodeBytes(bytes: Uint8Array): string {
 export function base64UrlEncodeJson(value: any): string {
   return btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
+
+export function generateCustomId(prefix: string): string {
+  const randomPart = crypto.randomUUID().substring(0, 12).toUpperCase();
+  const timestampPart = Date.now().toString(36).toUpperCase().slice(-6);
+  return `${prefix}-${randomPart}${timestampPart}`;
+}
+
+export function sanitizeJson(text: string): string {
+  if (!text) return "{}";
+
+  // Replace smart/curly quotes with standard quotes
+  let sanitized = text.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+
+  // Remove markdown blocks
+  sanitized = sanitized
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  // Extract JSON string
+  const firstBrace = sanitized.indexOf("{");
+  const lastBrace = sanitized.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    sanitized = sanitized.substring(firstBrace, lastBrace + 1);
+  } else {
+    // If AI hallucinates plain text instead of JSON, wrap it safely
+    // so JSON.parse doesn't crash downstream.
+    return JSON.stringify({ reply: text.trim() });
+  }
+
+  // Safest for AI output that is just simple JSON is to remove newlines completely.
+  sanitized = sanitized
+    .replace(/\n/g, " ")
+    .replace(/\r/g, " ")
+    .replace(/\t/g, " ");
+  sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+  return sanitized;
+}
